@@ -1,0 +1,34 @@
+#!/bin/bash
+bwrap \
+ --ro-bind /usr /usr \
+ --ro-bind /lib /lib \
+ --ro-bind /lib64 /lib64 \
+ --ro-bind /bin /bin \
+ --ro-bind $HOME/.cargo/bin $HOME/.cargo/bin \
+ --ro-bind $HOME/.cargo/git $HOME/.cargo/git \
+ --ro-bind $HOME/.cargo/registry $HOME/.cargo/registry \
+ --ro-bind $HOME/.rustup $HOME/.rustup \
+ --dev /dev \
+ --tmpfs /var \
+ --tmpfs /tmp \
+ --tmpfs /run \
+ --tmpfs /usr/share \
+ --proc /proc \
+ --ro-bind $PWD $PWD \
+ --bind $PWD/target $PWD/target \
+ --unshare-all \
+ --uid 1000 \
+ --gid 1000 \
+ --hostname none \
+ --new-session \
+ --clearenv \
+ --setenv USER user \
+ --setenv PATH $PATH \
+ --setenv HOME $HOME \
+ "$@"
+
+exit 0
+
+ --setenv PATH /usr/bin:/bin:/usr/sbin:$HOME/.cargo/bin \
+
+#

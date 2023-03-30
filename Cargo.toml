@@ -1,0 +1,30 @@
+[package]
+name = "cackle"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.62"
+license = "MIT OR Apache-2.0"
+description = "A Rust code ACL checker"
+readme = "README.md"
+repository = "https://github.com/davidlattimore/cackle"
+
+[dependencies]
+anyhow = "1.0.33"
+clap = { version = "4.2.1", features = [ "derive" ] }
+ra_ap_ide = "0.0.149"
+ra_ap_ide_db = "0.0.149"
+ra_ap_project_model = "0.0.149"
+ra_ap_paths = "0.0.149"
+ra_ap_vfs = "0.0.149"
+ra_ap_vfs-notify = "0.0.149"
+ra_ap_hir = "0.0.149"
+ra_ap_base_db = "0.0.149"
+ra_ap_syntax = "0.0.149"
+serde = "1.0.136"
+toml = "0.7.3"
+
+[profile.dev]
+# The speedup from optimization significantly exceeds any slowdown in compilation.
+opt-level = 2
+# Debug is disabled in order to speed up builds.
+debug = 1

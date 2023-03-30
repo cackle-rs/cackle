@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crab1",
+    "crab2",
+    "crab3",
+    "crab-bin",
+]

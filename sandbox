@@ -1,0 +1,42 @@
+#!/bin/sh
+
+set -e
+
+BASE=$(dirname ${BASH_SOURCE})
+
+$BASE/create-bpf.py
+
+exec 3<a.bpf
+
+exec 4>sandbox-info.json
+
+bwrap \
+ --ro-bind /usr /usr \
+ --ro-bind /lib /lib \
+ --ro-bind /lib64 /lib64 \
+ --ro-bind /bin /bin \
+ --dev /dev \
+ --tmpfs /var \
+ --tmpfs /tmp \
+ --tmpfs /usr/share \
+ --proc /proc \
+ --bind $HOME/tmp/bubblewrap/env1 /home/user \
+ --unshare-all \
+ --uid 1000 \
+ --gid 1000 \
+ --hostname none \
+ --clearenv \
+ --seccomp 3 \
+ --info-fd 4 \
+ --setenv PATH /usr/bin:/bin:/usr/sbin \
+ --setenv USER user \
+ --setenv TERM "$TERM" \
+ --setenv HOME /home/user \
+ "$@"
+
+exit 0
+
+# --new-session \
+
+# --ro-bind $HOME/.Xauthority $HOME/.Xauthority \
+

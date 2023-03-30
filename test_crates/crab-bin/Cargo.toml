@@ -1,0 +1,9 @@
+[package]
+name = "crab-bin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crab1 = { path = "../crab1" }
+crab2 = { path = "../crab2" }
+
