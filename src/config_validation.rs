@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::config::PermissionName;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -24,7 +25,7 @@ enum Problem {
     RedefinedBuiltin(PermissionName),
 }
 
-pub(crate) fn validate(config: &Config, config_path: PathBuf) -> Result<(), InvalidConfig> {
+pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
     let mut problems = Vec::new();
     let mut permission_names: HashSet<_> = config.perms.keys().collect();
     for built_in in built_in_perms::ALL {
@@ -43,7 +44,7 @@ pub(crate) fn validate(config: &Config, config_path: PathBuf) -> Result<(), Inva
         Ok(())
     } else {
         Err(InvalidConfig {
-            config_path,
+            config_path: config_path.to_owned(),
             problems,
         })
     }

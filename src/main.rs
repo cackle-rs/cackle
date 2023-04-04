@@ -9,8 +9,10 @@ mod built_in_perms;
 mod checker;
 mod config;
 mod config_validation;
-mod ra_based_analyser;
 mod sandbox;
+
+#[cfg(feature = "rust-analyzer")]
+mod ra_based_analyser;
 
 use anyhow::anyhow;
 use anyhow::Result;
@@ -57,16 +59,30 @@ fn main() -> Result<()> {
 
     let root_path = args
         .path
+        .clone()
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| anyhow!("Failed to get current working directory"))?;
 
-    let config_path = args.cackle.unwrap_or_else(|| root_path.join("Cackle.toml"));
+    let config_path = args
+        .cackle
+        .clone()
+        .unwrap_or_else(|| root_path.join("Cackle.toml"));
 
-    let config = config::parse_file(config_path)?;
+    let config = config::parse_file(&config_path)?;
 
-    let analysis_output = ra_based_analyser::analyse_crate(&config, &root_path)?;
+    #[cfg(feature = "rust-analyzer")]
+    {
+        ra_main(&args, &config, &root_path)?;
+    }
 
-    match args.command {
+    Ok(())
+}
+
+#[cfg(feature = "rust-analyzer")]
+fn ra_main(args: &Args, config: &config::Config, root_path: &std::path::Path) -> Result<()> {
+    let analysis_output = ra_based_analyser::analyse_crate(&config, root_path)?;
+
+    match &args.command {
         Command::Usage => {
             //for crate_info in analysis_output.crate_infos {
             //    let mut perms = Vec::from_iter(crate_info.permission_usage.keys());
@@ -122,6 +138,5 @@ fn main() -> Result<()> {
             }
         }
     }
-
     Ok(())
 }

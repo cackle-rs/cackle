@@ -11,20 +11,34 @@ repository = "https://github.com/davidlattimore/cackle"
 [dependencies]
 anyhow = "1.0.33"
 clap = { version = "4.2.1", features = [ "derive" ] }
-ra_ap_ide = "0.0.149"
-ra_ap_ide_db = "0.0.149"
-ra_ap_project_model = "0.0.149"
-ra_ap_paths = "0.0.149"
-ra_ap_vfs = "0.0.149"
-ra_ap_vfs-notify = "0.0.149"
-ra_ap_hir = "0.0.149"
-ra_ap_base_db = "0.0.149"
-ra_ap_syntax = "0.0.149"
-serde = "1.0.136"
+serde = { version = "1.0.136", features = [ "derive" ] }
 toml = "0.7.3"
+
+ra_ap_ide = { version = "0.0.149", optional = true }
+ra_ap_ide_db = { version = "0.0.149", optional = true }
+ra_ap_project_model = { version = "0.0.149", optional = true }
+ra_ap_paths = { version = "0.0.149", optional = true }
+ra_ap_vfs = { version = "0.0.149", optional = true }
+ra_ap_vfs-notify = { version = "0.0.149", optional = true }
+ra_ap_hir = { version = "0.0.149", optional = true }
+ra_ap_base_db = { version = "0.0.149", optional = true }
+ra_ap_syntax = { version = "0.0.149", optional = true }
 
 [profile.dev]
 # The speedup from optimization significantly exceeds any slowdown in compilation.
 opt-level = 2
 # Debug is disabled in order to speed up builds.
 debug = 1
+
+[features]
+rust-analyzer = [
+    "ra_ap_ide",
+    "ra_ap_ide_db",
+    "ra_ap_project_model",
+    "ra_ap_paths",
+    "ra_ap_vfs",
+    "ra_ap_vfs-notify",
+    "ra_ap_hir",
+    "ra_ap_base_db",
+    "ra_ap_syntax",
+]

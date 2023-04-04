@@ -11,7 +11,7 @@ use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -66,14 +66,14 @@ pub(crate) struct CrateConfig {
     build: Option<Box<CrateConfig>>,
 }
 
-pub(crate) fn parse_file(cackle_path: PathBuf) -> Result<Config> {
-    let cackle: String = std::fs::read_to_string(&cackle_path)
+pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
+    let cackle: String = std::fs::read_to_string(cackle_path)
         .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
 
     parse(&cackle, cackle_path)
 }
 
-pub(crate) fn parse(cackle: &str, cackle_path: PathBuf) -> Result<Config> {
+pub(crate) fn parse(cackle: &str, cackle_path: &Path) -> Result<Config> {
     let mut config = toml::from_str(cackle)?;
     crate::config_validation::validate(&config, cackle_path)?;
     flatten(&mut config);
@@ -107,11 +107,10 @@ impl Display for PermissionName {
 
 #[cfg(test)]
 mod tests {
-    use super::Config;
-    use anyhow::Result;
+    use super::*;
 
     fn parse(cackle: &str) -> Result<Config> {
-        super::parse(cackle, "/dev/null".into())
+        super::parse(cackle, Path::new("/dev/null"))
     }
 
     #[test]
