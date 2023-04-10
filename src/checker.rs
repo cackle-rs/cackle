@@ -30,9 +30,9 @@ pub(crate) struct CrateInfo {
     /// warning or error if the config refers to a crate that isn't in the
     /// dependency tree.
     used: bool,
-    /// Permissions that are allowed for this crate according to Cackle.toml.
+    /// Permissions that are allowed for this crate according to cackle.toml.
     allowed_perms: HashSet<PermId>,
-    /// Permissions that are allowed for this crate according to Cackle.toml,
+    /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermId>,
     /// Permissions that are not permitted for use by this crate but where found

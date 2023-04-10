@@ -36,7 +36,7 @@ struct Args {
     #[clap(short, long)]
     path: Option<PathBuf>,
 
-    /// Path to Cackle.toml. If not specified, looks in the directory containing
+    /// Path to cackle.toml. If not specified, looks in the directory containing
     /// the crate to be analyzed.
     #[clap(short, long)]
     cackle: Option<PathBuf>,
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     let config_path = args
         .cackle
         .clone()
-        .unwrap_or_else(|| root_path.join("Cackle.toml"));
+        .unwrap_or_else(|| root_path.join("cackle.toml"));
 
     let config = config::parse_file(&config_path).context("Invalid config file")?;
 

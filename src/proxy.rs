@@ -4,14 +4,14 @@
 //!
 //! We wrap rustc for the following purposes:
 //!
-//! * So that we can add -Funsafe-code to all crates that aren't listed in Cackle.toml as allowing
+//! * So that we can add -Funsafe-code to all crates that aren't listed in cackle.toml as allowing
 //!   unsafe code.
 //! * So that we can override the linker with `-C linker=...`
 //!
 //! We wrap the linker so that:
 //!
 //! * We can get a list of all the objects and rlibs that are going to be linked and check that the
-//!   rules in Cackle.toml are satisfied.
+//!   rules in cackle.toml are satisfied.
 //! * We can prevent the actual linker from being invoked if the rules aren't satisfied.
 
 use crate::config::Config;
@@ -52,7 +52,7 @@ pub(crate) fn invoke_cargo_build(
     }
     let _ = std::fs::remove_file("/tmp/cackle.log");
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
-    // to carefully track changes to things we care about, like Cackle.toml.
+    // to carefully track changes to things we care about, like cackle.toml.
     run_command(&mut cargo::command("clean", dir))?;
 
     let target_dir = dir.join("target");

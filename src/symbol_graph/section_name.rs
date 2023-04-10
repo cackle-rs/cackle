@@ -6,6 +6,8 @@ pub(crate) struct SectionName {
     bytes: Vec<u8>,
 }
 
+/// The name of a linker section. e.g. ".text.foo". Allows invalid UTF-8, but when it is valid
+/// UTF-8, displays nicely, including demangling.
 impl SectionName {
     pub(crate) fn new<T: Into<Vec<u8>>>(bytes: T) -> Self {
         Self {
