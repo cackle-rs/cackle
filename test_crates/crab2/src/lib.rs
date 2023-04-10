@@ -8,5 +8,6 @@ pub mod stuff {
             crate::woozle("/tmp/foo.bar", &[42]).unwrap();
             true
         });
+        crab3::do_stuff();
     }
 }

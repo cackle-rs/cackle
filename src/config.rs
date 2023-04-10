@@ -9,10 +9,12 @@ use std::path::Path;
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
+    pub(crate) version: u32,
     #[serde(default, rename = "perm")]
     pub(crate) perms: HashMap<PermissionName, PermConfig>,
     #[serde(default, rename = "crate")]
     pub(crate) crates: HashMap<String, CrateConfig>,
+    #[allow(dead_code)]
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
 }
@@ -52,6 +54,8 @@ pub(crate) enum SandboxKind {
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CrateConfig {
+    #[serde(default)]
+    allow_unsafe: bool,
     #[serde(default)]
     pub(crate) allow: Vec<PermissionName>,
     /// Configuration for this crate's build.rs. Only used during parsing, after
@@ -98,13 +102,30 @@ impl Display for PermissionName {
     }
 }
 
+impl Config {
+    pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &str) -> bool {
+        self.crates
+            .get(crate_name)
+            .map(|crate_config| crate_config.allow_unsafe)
+            .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    pub(crate) fn parse(cackle: &str) -> anyhow::Result<super::Config> {
+        let cackle_with_header = format!(
+            "version = 1\n\
+            {cackle}
+        "
+        );
+        super::parse(&cackle_with_header, std::path::Path::new("/dev/null"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    fn parse(cackle: &str) -> Result<Config> {
-        super::parse(cackle, Path::new("/dev/null"))
-    }
+    use super::testing::parse;
 
     #[test]
     fn empty() {

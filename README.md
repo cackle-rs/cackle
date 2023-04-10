@@ -12,12 +12,16 @@ result, but is actually using network APIs.
 
 ## Limitations and precautions
 
+* Exported macros that expand to unsafe code cause neither the crate defining the macro, nor the
+  crate using the macro to be flagged as using unsafe. This can be used to circumvent all other
+  protections.
+* A proc macro might detect that it's being run under Cackle and emit different code.
 * Analyzing a crate could well end up executing arbitrary code provided by that crate. If this is a
   concern, then running in a sandbox is recommended.
 * This tool is intended to supplement and aid manual review of 3rd party code, not replace it.
-* There are undoubtedly countless ways that a determined person could circumvent detect that they're
-  using some APIs. With time we may try to prevent such circumventions, but you shouldn't assume
-  that this is in any way unable to be circumvented.
+* There are undoubtedly countless ways that a determined person could circumvent detection that
+  they're using some APIs. With time we may try to prevent such circumventions, but you shouldn't
+  assume that this is in any way unable to be circumvented.
 
 ## License
 

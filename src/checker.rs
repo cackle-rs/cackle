@@ -1,15 +1,18 @@
 use crate::config::PermissionName;
+use crate::proxy::rpc::CanContinueResponse;
+use crate::CheckConfig;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::path::PathBuf;
 
 #[derive(Default)]
 pub(crate) struct Checker {
     permission_names: Vec<PermissionName>,
     permission_name_to_id: HashMap<PermissionName, PermId>,
-    inclusions: HashMap<String, PermId>,
-    exclusions: HashMap<String, PermId>,
+    inclusions: HashMap<String, Vec<PermId>>,
+    exclusions: HashMap<String, Vec<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
 }
@@ -39,7 +42,7 @@ pub(crate) struct CrateInfo {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Usage {
-    pub(crate) filename: String,
+    pub(crate) filename: PathBuf,
     // Line number (0 based)
     pub(crate) line_number: u32,
 }
@@ -56,10 +59,18 @@ impl Checker {
         for (perm_name, api) in &config.perms {
             let id = checker.perm_id(perm_name);
             for prefix in &api.include {
-                checker.inclusions.insert(prefix.to_owned(), id);
+                checker
+                    .inclusions
+                    .entry(prefix.to_owned())
+                    .or_default()
+                    .push(id);
             }
             for prefix in &api.exclude {
-                checker.exclusions.insert(prefix.to_owned(), id);
+                checker
+                    .exclusions
+                    .entry(prefix.to_owned())
+                    .or_default()
+                    .push(id);
             }
         }
         for (crate_name, crate_config) in &config.crates {
@@ -72,6 +83,39 @@ impl Checker {
             }
         }
         checker
+    }
+
+    pub(crate) fn report_problems(&self, check_config: &CheckConfig) -> CanContinueResponse {
+        let mut failed = false;
+        for crate_info in &self.crate_infos {
+            if crate_info.disallowed_usage.is_empty() {
+                continue;
+            }
+            failed = true;
+            println!("Crate '{}' uses disallowed APIs:", crate_info.name);
+            for (perm_id, usages) in &crate_info.disallowed_usage {
+                let perm = self.permission_name(perm_id);
+                println!("  {perm}:");
+                let cap = if check_config.usage_report_cap < 0 {
+                    usages.len()
+                } else {
+                    check_config.usage_report_cap as usize
+                };
+                for usage in usages.iter().take(cap) {
+                    println!(
+                        "    {} {}:{}",
+                        perm,
+                        usage.filename.display(),
+                        usage.line_number + 1
+                    );
+                }
+            }
+        }
+        if failed {
+            CanContinueResponse::Deny
+        } else {
+            CanContinueResponse::Proceed
+        }
     }
 
     fn perm_id(&mut self, permission: &PermissionName) -> PermId {
@@ -115,6 +159,12 @@ impl Checker {
         name_parts: &[String],
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
+        for perm_id in self.apis_for_path(name_parts) {
+            self.permission_id_used(crate_id, perm_id, &mut compute_usage_fn);
+        }
+    }
+
+    fn apis_for_path(&mut self, name_parts: &[String]) -> HashSet<PermId> {
         let mut matched = HashSet::new();
         let mut name = String::new();
         for name_part in name_parts {
@@ -122,29 +172,24 @@ impl Checker {
                 name.push_str("::");
             }
             name.push_str(name_part);
-            if let Some(perm_id) = self.inclusions.get(&name) {
+            for perm_id in self
+                .inclusions
+                .get(&name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[])
+            {
                 matched.insert(*perm_id);
             }
-            if let Some(perm_id) = self.exclusions.get(&name) {
+            for perm_id in self
+                .exclusions
+                .get(&name)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[])
+            {
                 matched.remove(perm_id);
             }
         }
-        if matched.is_empty() {
-            return;
-        }
-        for perm_id in matched {
-            self.permission_id_used(crate_id, perm_id, &mut compute_usage_fn);
-        }
-    }
-
-    pub(crate) fn permission_used(
-        &mut self,
-        crate_id: CrateId,
-        permission: &PermissionName,
-        compute_usage_fn: &mut impl FnMut() -> Usage,
-    ) {
-        let perm_id = self.perm_id(permission);
-        self.permission_id_used(crate_id, perm_id, compute_usage_fn);
+        matched
     }
 
     fn permission_id_used(
@@ -211,5 +256,46 @@ impl Display for UnusedConfig {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::testing::parse;
+
+    #[track_caller]
+    fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
+        let mut checker = Checker::from_config(&parse(config).unwrap());
+
+        let path: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+        let apis = checker.apis_for_path(&path);
+        let mut api_names: Vec<_> = apis
+            .iter()
+            .map(|perm_id| checker.permission_name(perm_id).to_string())
+            .collect();
+        api_names.sort();
+        assert_eq!(api_names, expected);
+    }
+
+    #[test]
+    fn test_apis_for_path() {
+        let config = r#"
+                [perm.fs]
+                include = [
+                    "std::env",
+                ]
+                exclude = [
+                    "std::env::var",
+                ]
+                
+                [perm.env]
+                include = ["std::env"]
+
+                [perm.env2]
+                include = ["std::env"]
+                "#;
+        assert_perms(config, &["std", "env", "var"], &["env", "env2"]);
+        assert_perms(config, &["std", "env", "exe"], &["env", "env2", "fs"]);
     }
 }

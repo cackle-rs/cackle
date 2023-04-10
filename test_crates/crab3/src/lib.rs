@@ -18,6 +18,7 @@ macro_rules! macro_that_uses_unsafe {
 }
 
 pub fn do_stuff() {
-    let _ = include!(concat!(env!("OUT_DIR"), "/extra_code.rs"));
+    let path = include!(concat!(env!("OUT_DIR"), "/extra_code.rs"));
+    println!("{path:?}");
     foo!();
 }

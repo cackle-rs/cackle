@@ -16,10 +16,14 @@ pub(crate) struct InvalidConfig {
 enum Problem {
     UnknownPermission(PermissionName),
     RedefinedBuiltin(PermissionName),
+    UnsupportedVersion(u32),
 }
 
 pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
     let mut problems = Vec::new();
+    if config.version != 1 {
+        problems.push(Problem::UnsupportedVersion(config.version));
+    }
     let mut permission_names: HashSet<_> = config.perms.keys().collect();
     for built_in in built_in_perms::ALL {
         if !permission_names.insert(built_in) {
@@ -51,6 +55,9 @@ impl Display for InvalidConfig {
                 Problem::UnknownPermission(x) => write!(f, "  Unknown permission '{}'", x.name)?,
                 Problem::RedefinedBuiltin(x) => {
                     write!(f, "  Redefined built-in permission '{}'", x.name)?
+                }
+                Problem::UnsupportedVersion(version) => {
+                    write!(f, "  Unsupported version '{version}'")?
                 }
             }
         }
