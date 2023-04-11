@@ -1,10 +1,11 @@
 use crate::config::PermissionName;
 use crate::proxy::rpc::CanContinueResponse;
-use crate::CheckConfig;
+use crate::Args;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -23,9 +24,13 @@ pub(crate) struct PermId(usize);
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CrateId(pub(crate) usize);
 
+pub(crate) const UNKNOWN_CRATE_ID: CrateId = CrateId(0);
+
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
-    pub(crate) name: String,
+    pub(crate) name: Option<String>,
+    /// Whether the config file mentions this crate.
+    has_config: bool,
     /// Whether a crate with this name was found in the tree. Used to issue a
     /// warning or error if the config refers to a crate that isn't in the
     /// dependency tree.
@@ -35,13 +40,24 @@ pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermId>,
-    /// Permissions that are not permitted for use by this crate but where found
-    /// to be used (keys) and the locations of those usages.
+    /// Permissions that are not permitted for use by this crate but where found to be used (keys)
+    /// and the locations of those usages.
     pub(crate) disallowed_usage: HashMap<PermId, Vec<Usage>>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Usage {
+pub(crate) enum Usage {
+    Source(SourceLocation),
+    Unknown(UnknownLocation),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct UnknownLocation {
+    pub(crate) object_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
     // Line number (0 based)
     pub(crate) line_number: u32,
@@ -56,6 +72,10 @@ pub(crate) struct UnusedConfig {
 impl Checker {
     pub(crate) fn from_config(config: &crate::config::Config) -> Self {
         let mut checker = Checker::default();
+
+        // Allocate UNKNOWN_CRATE_ID as the first crate.
+        checker.crate_infos.push(CrateInfo::default());
+
         for (perm_name, api) in &config.perms {
             let id = checker.perm_id(perm_name);
             for prefix in &api.include {
@@ -75,8 +95,12 @@ impl Checker {
         }
         for (crate_name, crate_config) in &config.crates {
             let crate_id = checker.crate_id_from_name(crate_name);
+            let crate_info = &mut checker.crate_infos[crate_id.0];
+            crate_info.has_config = true;
             for perm in &crate_config.allow {
                 let perm_id = checker.perm_id(perm);
+                // Find `crate_info` again. Need to do this here because the `perm_id` above needs
+                // to borrow `checker`.
                 let crate_info = &mut checker.crate_infos[crate_id.0];
                 crate_info.allowed_perms.insert(perm_id);
                 crate_info.unused_allowed_perms.insert(perm_id);
@@ -85,29 +109,44 @@ impl Checker {
         checker
     }
 
-    pub(crate) fn report_problems(&self, check_config: &CheckConfig) -> CanContinueResponse {
+    pub(crate) fn report_problems(&self, args: &Args) -> CanContinueResponse {
         let mut failed = false;
         for crate_info in &self.crate_infos {
             if crate_info.disallowed_usage.is_empty() {
                 continue;
             }
             failed = true;
-            println!("Crate '{}' uses disallowed APIs:", crate_info.name);
+            if let Some(crate_name) = &crate_info.name {
+                println!("Crate '{crate_name}' uses disallowed APIs:");
+            } else {
+                println!(
+                    "APIs were used by code where we couldn't identify the crate responsible:"
+                );
+            }
             for (perm_id, usages) in &crate_info.disallowed_usage {
                 let perm = self.permission_name(perm_id);
                 println!("  {perm}:");
-                let cap = if check_config.usage_report_cap < 0 {
+                let cap = if args.usage_report_cap < 0 {
                     usages.len()
                 } else {
-                    check_config.usage_report_cap as usize
+                    args.usage_report_cap as usize
                 };
                 for usage in usages.iter().take(cap) {
-                    println!(
-                        "    {} {}:{}",
-                        perm,
-                        usage.filename.display(),
-                        usage.line_number + 1
-                    );
+                    match usage {
+                        Usage::Source(location) => {
+                            println!(
+                                "    {}:{}",
+                                location.filename.display(),
+                                location.line_number + 1
+                            );
+                        }
+                        Usage::Unknown(location) => {
+                            println!(
+                                "    Unknown source location in `{}`",
+                                to_relative_path(&location.object_path).display()
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -141,7 +180,7 @@ impl Checker {
         self.crate_name_to_index
             .insert(crate_name.to_owned(), crate_id);
         self.crate_infos.push(CrateInfo {
-            name: crate_name.to_owned(),
+            name: Some(crate_name.to_owned()),
             ..CrateInfo::default()
         });
         crate_id
@@ -159,6 +198,8 @@ impl Checker {
         name_parts: &[String],
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
+        // TODO: If compute_usage_fn is not expensive, then just pass it in instead of using a
+        // closure.
         for perm_id in self.apis_for_path(name_parts) {
             self.permission_id_used(crate_id, perm_id, &mut compute_usage_fn);
         }
@@ -212,12 +253,13 @@ impl Checker {
     pub(crate) fn check_unused(&self) -> Result<(), UnusedConfig> {
         let mut unused_config = UnusedConfig::default();
         for crate_info in &self.crate_infos {
-            if !crate_info.used {
-                unused_config.unknown_crates.push(crate_info.name.clone());
+            let Some(crate_name) = crate_info.name.as_ref() else { continue };
+            if !crate_info.used && crate_info.has_config {
+                unused_config.unknown_crates.push(crate_name.clone());
             }
             if !crate_info.unused_allowed_perms.is_empty() {
                 unused_config.unused_allow_apis.insert(
-                    crate_info.name.clone(),
+                    crate_name.clone(),
                     crate_info
                         .unused_allowed_perms
                         .iter()
@@ -233,6 +275,16 @@ impl Checker {
             Err(unused_config)
         }
     }
+}
+
+/// Returns `input_path` relative to the current directory, or if that fails, falls back to
+/// `input_path`. Only works if `input_path` is absolute and is a subdirectory of the current
+/// directory - i.e. it won't use "..".
+fn to_relative_path(input_path: &Path) -> &std::path::Path {
+    std::env::current_dir()
+        .ok()
+        .and_then(|current_dir| input_path.strip_prefix(current_dir).ok())
+        .unwrap_or(input_path)
 }
 
 impl Display for UnusedConfig {

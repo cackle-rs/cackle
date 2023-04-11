@@ -3,6 +3,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -55,5 +56,14 @@ impl SourceMapping {
             .values()
             .map(String::as_str)
             .collect()
+    }
+}
+
+impl Display for SourceMapping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (path, name) in &self.path_to_crate_name {
+            writeln!(f, "{} -> {name}", path.display())?;
+        }
+        Ok(())
     }
 }

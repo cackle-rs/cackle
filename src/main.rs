@@ -10,6 +10,7 @@ mod crate_paths;
 mod proxy;
 #[allow(dead_code)]
 mod sandbox;
+pub(crate) mod section_name;
 pub(crate) mod symbol;
 mod symbol_graph;
 
@@ -18,7 +19,6 @@ use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
-use clap::Subcommand;
 use config::Config;
 use crate_paths::SourceMapping;
 use proxy::rpc::CanContinueResponse;
@@ -41,24 +41,15 @@ struct Args {
     #[clap(short, long)]
     cackle: Option<PathBuf>,
 
-    #[clap(subcommand)]
-    command: Command,
-
     /// Print all references (may be large). Useful for debugging why something is passing when you
     /// think it shouldn't be.
     #[clap(long)]
     print_all_references: bool,
-}
 
-#[derive(Subcommand, Debug)]
-enum Command {
-    Usage,
-    ShowReferences,
-    Check(CheckConfig),
-}
+    /// Print the mapping from paths to crate names. Useful for debugging.
+    #[clap(long)]
+    print_path_to_crate_map: bool,
 
-#[derive(Parser, Debug)]
-struct CheckConfig {
     /// Maximum number of source locations that use an API that should be
     /// reported.
     #[clap(long, default_value = "2")]
@@ -120,6 +111,9 @@ impl Cackle {
     fn new(config: Config, root_path: &Path, args: Args) -> Result<Self> {
         let mut checker = Checker::from_config(&config);
         let source_mapping = SourceMapping::new(root_path)?;
+        if args.print_path_to_crate_map {
+            println!("{source_mapping}");
+        }
         for crate_name in source_mapping.crate_names() {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_crate_used(crate_id);
@@ -161,15 +155,15 @@ impl Cackle {
         for arg in linker_args {
             let path = Path::new(arg);
             if self.should_check(path) {
+                // TODO: Delete this
+                //std::fs::copy(path, Path::new("/tmp/f1").join(path.file_name().unwrap())).unwrap();
                 graph
                     .process_file(Path::new(arg))
                     .with_context(|| format!("Failed to process `{arg}`"))?;
             }
         }
         graph.apply_to_checker(&mut self.checker, &self.source_mapping)?;
-        let mut can_proceed = self.checker.report_problems(&CheckConfig {
-            usage_report_cap: 2,
-        });
+        let mut can_proceed = self.checker.report_problems(&self.args);
         if self.args.print_all_references {
             println!("{graph}");
         }

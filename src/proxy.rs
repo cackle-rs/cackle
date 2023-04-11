@@ -14,6 +14,8 @@
 //!   rules in cackle.toml are satisfied.
 //! * We can prevent the actual linker from being invoked if the rules aren't satisfied.
 
+use self::errors::ErrorKind;
+use self::rpc::RpcClient;
 use crate::config::Config;
 use anyhow::bail;
 use anyhow::Context;
@@ -28,9 +30,6 @@ use std::process::Command;
 use std::process::ExitStatus;
 use std::thread::JoinHandle;
 use std::time::Duration;
-
-use self::errors::ErrorKind;
-use self::rpc::RpcClient;
 
 mod cargo;
 mod errors;
@@ -172,6 +171,8 @@ fn proxy_rustc(
     linker_arg.push(cackle_exe()?);
     command.arg("--error-format=json");
     command.arg("-C").arg(linker_arg);
+    // If something goes wrong, it can be handy to have object files left around to examine.
+    command.arg("-C").arg("save-temps");
     if let Some(crate_name) = &crate_name {
         if !config.unsafe_permitted_for_crate(crate_name) {
             command.arg("-Funsafe-code");

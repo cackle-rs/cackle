@@ -5,10 +5,13 @@
 //! We also parse the Dwarf debug information to determine what source file each linker section came
 //! from.
 
-use self::section_name::SectionName;
 use crate::checker::Checker;
+use crate::checker::SourceLocation;
+use crate::checker::UnknownLocation;
 use crate::checker::Usage;
+use crate::checker::UNKNOWN_CRATE_ID;
 use crate::crate_paths::SourceMapping;
+use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use anyhow::bail;
 use anyhow::Context;
@@ -29,8 +32,6 @@ use std::io::Read;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
-
-mod section_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Filetype {
@@ -90,18 +91,30 @@ impl SymGraph {
         mapping: &SourceMapping,
     ) -> Result<()> {
         for section in &self.sections {
-            if let Some(source_filename) = &section.source_filename {
-                if let Some(crate_name) = mapping.crate_name_for_path(source_filename) {
-                    let crate_id = checker.crate_id_from_name(crate_name);
-                    for reference in &section.references {
-                        if let Reference::Name(ref_name) = reference {
-                            for name_parts in ref_name.parts()? {
-                                checker.path_used(crate_id, &name_parts, || Usage {
-                                    filename: source_filename.to_owned(),
+            let source_filename = section.source_filename.as_ref();
+            // Ignore sources from the rust standard library.
+            if source_filename.map_or(false, |s| s.starts_with("/rustc/")) {
+                continue;
+            }
+            let crate_id = source_filename
+                .and_then(|source_filename| mapping.crate_name_for_path(source_filename))
+                .map(|crate_name| checker.crate_id_from_name(crate_name))
+                .unwrap_or(UNKNOWN_CRATE_ID);
+            for reference in &section.references {
+                if let Some(ref_name) = self.referenced_symbol(reference) {
+                    for name_parts in ref_name.parts()? {
+                        checker.path_used(crate_id, &name_parts, || {
+                            if let Some(filename) = section.source_filename.clone() {
+                                Usage::Source(SourceLocation {
+                                    filename,
                                     line_number: 0,
-                                });
+                                })
+                            } else {
+                                Usage::Unknown(UnknownLocation {
+                                    object_path: section.defined_in.clone(),
+                                })
                             }
-                        }
+                        });
                     }
                 }
             }
@@ -130,6 +143,13 @@ impl SymGraph {
             );
         }
         Ok(())
+    }
+
+    fn referenced_symbol<'a>(&'a self, reference: &'a Reference) -> Option<&'a Symbol> {
+        match reference {
+            Reference::Section(section_index) => self.sections[*section_index].definitions.first(),
+            Reference::Name(symbol) => Some(symbol),
+        }
     }
 
     fn process_file_bytes(&mut self, filename: &Path, file_bytes: &[u8]) -> Result<()> {
@@ -280,7 +300,11 @@ impl SymGraph {
 impl Display for SymGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for section in &self.sections {
-            writeln!(f, "{}", section.name)?;
+            write!(f, "{}", section.name)?;
+            if let Some(path) = &section.source_filename {
+                write!(f, " ({})", path.display())?;
+            }
+            writeln!(f)?;
             for reference in &section.references {
                 match reference {
                     Reference::Section(section_index) => {
