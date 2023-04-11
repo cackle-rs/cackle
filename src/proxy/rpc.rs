@@ -10,6 +10,8 @@ use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
+use crate::link_info::LinkInfo;
+
 use super::errors;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -43,9 +45,9 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn linker_args(&self, args: Vec<String>) -> Result<CanContinueResponse> {
+    pub(crate) fn linker_invoked(&self, info: LinkInfo) -> Result<CanContinueResponse> {
         let mut ipc = self.connect()?;
-        write_to_stream(&Request::LinkerArgs(args), &mut ipc)?;
+        write_to_stream(&Request::LinkerInvoked(info), &mut ipc)?;
         read_from_stream(&mut ipc)
     }
 
@@ -66,7 +68,7 @@ impl RpcClient {
 pub(crate) enum Request {
     /// Advises that the specified crate failed to compile because it uses unsafe.
     CrateUsesUnsafe(UnsafeUsage),
-    LinkerArgs(Vec<String>),
+    LinkerInvoked(LinkInfo),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

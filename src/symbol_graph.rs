@@ -12,6 +12,7 @@ use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
 use crate::checker::UNKNOWN_CRATE_ID;
+use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::source_mapping::SourceMapping;
 use crate::symbol::Symbol;
@@ -133,9 +134,10 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Problems {
         let mut multiple_defs = 0;
         let mut sample_section_name = None;
+        let mut problems = Problems::default();
         for section in &self.sections {
             if section.definitions.len() > 1 {
                 multiple_defs += 1;
@@ -143,16 +145,18 @@ impl SymGraph {
             }
         }
         if let Some(name) = sample_section_name {
-            bail!("Multiple definitions for {multiple_defs} sections, e.g. {name}");
+            problems.push(format!(
+                "Multiple definitions for {multiple_defs} sections, e.g. {name}"
+            ));
         }
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
-            bail!(
+            problems.push(format!(
                 "Multiple definitions for {} symbols, e.g. {}",
                 self.duplicate_symbol_section_indexes.len(),
                 dup
-            );
+            ));
         }
-        Ok(())
+        problems
     }
 
     fn referenced_symbol<'a>(&'a self, reference: &'a Reference) -> Option<&'a Symbol> {

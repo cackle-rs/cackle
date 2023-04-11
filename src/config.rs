@@ -12,8 +12,8 @@ pub(crate) struct Config {
     pub(crate) version: u32,
     #[serde(default, rename = "perm")]
     pub(crate) perms: HashMap<PermissionName, PermConfig>,
-    #[serde(default, rename = "crate")]
-    pub(crate) crates: HashMap<String, CrateConfig>,
+    #[serde(default, rename = "pkg")]
+    pub(crate) packages: HashMap<String, PackageConfig>,
     #[allow(dead_code)]
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
@@ -53,14 +53,14 @@ pub(crate) enum SandboxKind {
 
 #[derive(Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct CrateConfig {
+pub(crate) struct PackageConfig {
     #[serde(default)]
     allow_unsafe: bool,
     #[serde(default)]
     pub(crate) allow: Vec<PermissionName>,
     /// Configuration for this crate's build.rs. Only used during parsing, after
     /// which it's flattened out.
-    build: Option<Box<CrateConfig>>,
+    build: Option<Box<PackageConfig>>,
 }
 
 pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
@@ -79,13 +79,13 @@ pub(crate) fn parse(cackle: &str, cackle_path: &Path) -> Result<Config> {
 
 fn flatten(config: &mut Config) {
     let mut crates_by_name = HashMap::new();
-    for (name, mut crate_config) in config.crates.drain() {
+    for (name, mut crate_config) in config.packages.drain() {
         if let Some(build_config) = crate_config.build.take() {
             crates_by_name.insert(format!("{name}.build"), *build_config);
         }
         crates_by_name.insert(name, crate_config);
     }
-    config.crates = crates_by_name;
+    config.packages = crates_by_name;
 }
 
 impl PermissionName {
@@ -104,7 +104,7 @@ impl Display for PermissionName {
 
 impl Config {
     pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &str) -> bool {
-        self.crates
+        self.packages
             .get(crate_name)
             .map(|crate_config| crate_config.allow_unsafe)
             .unwrap_or(false)
@@ -131,7 +131,7 @@ mod tests {
     fn empty() {
         let config = parse("").unwrap();
         assert!(config.perms.is_empty());
-        assert!(config.crates.is_empty());
+        assert!(config.packages.is_empty());
     }
 
     #[track_caller]
@@ -150,7 +150,7 @@ mod tests {
     fn unknown_crate_field() {
         check_unknown_field(
             r#"
-            [crate.foo]
+            [pkg.foo]
         "#,
         );
     }
@@ -169,7 +169,7 @@ mod tests {
     fn unknown_api() {
         let result = parse(
             r#"
-            [[crate]]
+            [[pkg]]
             name = "foo"
             allow_apis = ["typo"]
         "#,
@@ -181,10 +181,10 @@ mod tests {
     fn crate_build_config() {
         let config = parse(
             r#"
-            [crate.foo.build]
+            [pkg.foo.build]
         "#,
         )
         .unwrap();
-        assert!(config.crates.contains_key("foo.build"));
+        assert!(config.packages.contains_key("foo.build"));
     }
 }

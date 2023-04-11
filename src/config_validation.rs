@@ -30,7 +30,7 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
             problems.push(Problem::RedefinedBuiltin(built_in.clone()));
         }
     }
-    for crate_config in config.crates.values() {
+    for crate_config in config.packages.values() {
         for permission_name in &crate_config.allow {
             if !permission_names.contains(permission_name) {
                 problems.push(Problem::UnknownPermission(permission_name.clone()));

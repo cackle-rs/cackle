@@ -1,7 +1,10 @@
 use crate::config::PermissionName;
+use crate::problem::Problem;
+use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use crate::Args;
+use anyhow::bail;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -84,10 +87,6 @@ pub(crate) struct UnusedConfig {
     unused_allow_apis: HashMap<String, Vec<PermissionName>>,
 }
 
-pub(crate) struct Problem {
-    text: String,
-}
-
 impl Checker {
     pub(crate) fn from_config(config: &crate::config::Config) -> Self {
         let mut checker = Checker::default();
@@ -112,7 +111,7 @@ impl Checker {
                     .push(id);
             }
         }
-        for (crate_name, crate_config) in &config.crates {
+        for (crate_name, crate_config) in &config.packages {
             let crate_id = checker.crate_id_from_name(crate_name);
             let crate_info = &mut checker.crate_infos[crate_id.0];
             crate_info.has_config = true;
@@ -128,8 +127,8 @@ impl Checker {
         checker
     }
 
-    pub(crate) fn problems(&self, args: &Args) -> Vec<Problem> {
-        let mut problems = Vec::new();
+    pub(crate) fn problems(&self, args: &Args) -> Problems {
+        let mut problems = Problems::default();
         for crate_info in &self.crate_infos {
             if crate_info.disallowed_usage.is_empty() {
                 continue;
@@ -152,9 +151,19 @@ impl Checker {
                     writeln!(&mut problem, "    {usage}").unwrap();
                 }
             }
-            problems.push(Problem { text: problem });
+            problems.push(Problem::new(problem));
         }
         problems
+    }
+
+    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Result<()> {
+        let pkg_id = self.crate_id_from_name(&format!("{package_name}.build"));
+        let crate_info = &mut self.crate_infos[pkg_id.0];
+        if !crate_info.has_config {
+            bail!("Package {package_name} has a build script, but config file doesn't have [pkg.{package_name}.build]");
+        }
+        crate_info.used = true;
+        Ok(())
     }
 
     fn perm_id(&mut self, permission: &PermissionName) -> PermId {
@@ -287,27 +296,21 @@ fn to_relative_path(input_path: &Path) -> &std::path::Path {
         .unwrap_or(input_path)
 }
 
-impl Display for Problem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.text)
-    }
-}
-
 impl Display for UnusedConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.unknown_crates.is_empty() {
             writeln!(
                 f,
-                "Warning: Config supplied for crates not in dependency tree:"
+                "Warning: Config supplied for packages not in dependency tree:"
             )?;
             for crate_name in &self.unknown_crates {
                 writeln!(f, "    {crate_name}")?;
             }
         }
-        for (crate_name, used_apis) in &self.unused_allow_apis {
+        for (pkg_name, used_apis) in &self.unused_allow_apis {
             writeln!(
                 f,
-                "The config for crate '{crate_name}' allows the following APIs that aren't used:"
+                "Warning: The config for package '{pkg_name}' allows the following APIs that aren't used:"
             )?;
             for api in used_apis {
                 writeln!(f, "    {api}")?;

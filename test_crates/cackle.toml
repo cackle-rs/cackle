@@ -59,15 +59,17 @@ include = [
     "std::process::exit",
 ]
 
-[crate.crab1]
+[pkg.crab1]
 allow_unsafe = true
 
-[crate.crab2]
+[pkg.crab2]
 allow = [
     "fs",
 ]
 
-[crate.crab3]
+[pkg.crab2.build]
+
+[pkg.crab3]
 # We can't currently identify this usage
 #allow_unsafe = true
 allow = [
@@ -76,7 +78,7 @@ allow = [
     "env",
 ]
 
-[crate.crab3.build]
+[pkg.crab3.build]
 allow = [
     "env",
     "fs",

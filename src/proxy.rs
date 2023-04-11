@@ -17,6 +17,7 @@
 use self::errors::ErrorKind;
 use self::rpc::RpcClient;
 use crate::config::Config;
+use crate::link_info::LinkInfo;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -126,7 +127,8 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     } else {
         // If we're not proxying rustc, then we assume we're proxying the linker. If we ever need to
         // proxy anything else, we might need to look at the arguments to identify what we're doing.
-        match rpc_client.linker_args(std::env::args().skip(1).collect())? {
+        let link_info = LinkInfo::from_env()?;
+        match rpc_client.linker_invoked(link_info)? {
             rpc::CanContinueResponse::Proceed => proxy_linker(args)?,
             rpc::CanContinueResponse::Deny => std::process::exit(0),
         }

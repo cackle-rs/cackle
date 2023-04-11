@@ -6,6 +6,8 @@ mod built_in_perms;
 mod checker;
 mod config;
 mod config_validation;
+pub(crate) mod link_info;
+pub(crate) mod problem;
 mod proxy;
 #[allow(dead_code)]
 mod sandbox;
@@ -20,7 +22,9 @@ use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
 use config::Config;
-use proxy::rpc::CanContinueResponse;
+use link_info::LinkInfo;
+use problem::Problem;
+use problem::Problems;
 use source_mapping::SourceMapping;
 use std::path::Path;
 use std::path::PathBuf;
@@ -89,13 +93,15 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let mut problems = Problems::default();
     let build_result = proxy::invoke_cargo_build(&root_path, &config_path, |request| {
-        cackle.check_acls(request)
+        problems.merge(cackle.check_acls(request));
+        problems.can_continue()
     });
 
-    if !cackle.errors.is_empty() {
-        for error in cackle.errors {
-            println!("{error:?}");
+    if !problems.is_empty() {
+        for problem in problems {
+            println!("{problem}");
         }
         std::process::exit(1);
     }
@@ -106,14 +112,13 @@ fn main() -> Result<()> {
         println!("{}", unused);
     }
 
-    println!("Cackle check succeeded");
+    println!("Cackle succcess");
 
     Ok(())
 }
 
 struct Cackle {
     checker: Checker,
-    errors: Vec<anyhow::Error>,
     target_dir: PathBuf,
     source_mapping: SourceMapping,
     args: Args,
@@ -132,53 +137,36 @@ impl Cackle {
         }
         Ok(Self {
             checker,
-            errors: Vec::new(),
             target_dir: root_path.join("target"),
             source_mapping,
             args,
         })
     }
 
-    fn check_acls(&mut self, request: proxy::rpc::Request) -> CanContinueResponse {
+    fn check_acls(&mut self, request: proxy::rpc::Request) -> Problems {
         match request {
             proxy::rpc::Request::CrateUsesUnsafe(usage) => {
-                self.errors.push(anyhow!(
+                return Problem::new(format!(
                     "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-                    usage.crate_name,
-                    usage.error_info.file_name,
-                    usage.error_info.start_line
-                ));
-                CanContinueResponse::Deny
+                    usage.crate_name, usage.error_info.file_name, usage.error_info.start_line
+                ))
+                .into();
             }
-            proxy::rpc::Request::LinkerArgs(linker_args) => {
-                match self.check_link_args(&linker_args) {
-                    Ok(()) => {
-                        if self.errors.is_empty() {
-                            CanContinueResponse::Proceed
-                        } else {
-                            CanContinueResponse::Deny
-                        }
-                    }
-                    Err(error) => {
-                        self.errors.push(error);
-                        CanContinueResponse::Deny
-                    }
-                }
+            proxy::rpc::Request::LinkerInvoked(link_info) => {
+                self.check_linker_invocation(&link_info).into()
             }
         }
     }
 
-    fn check_link_args(&mut self, linker_args: &[String]) -> Result<()> {
-        //println!("\n\nLINK\n{linker_args:?}");
-        let paths: Vec<_> = linker_args
-            .iter()
-            .map(PathBuf::from)
-            .filter(|path| self.should_check(path))
-            .collect();
-        self.check_object_paths(&paths)
+    fn check_linker_invocation(&mut self, info: &LinkInfo) -> Result<Problems> {
+        if info.is_build_script {
+            self.checker
+                .verify_build_script_permitted(&info.package_name)?;
+        }
+        self.check_object_paths(&info.object_paths_under(&self.target_dir))
     }
 
-    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
+    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<Problems> {
         let mut graph = SymGraph::default();
         for path in paths {
             graph
@@ -186,35 +174,11 @@ impl Cackle {
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
         graph.apply_to_checker(&mut self.checker, &self.source_mapping)?;
-        let problems = self.checker.problems(&self.args);
-        for problem in problems {
-            self.errors.push(anyhow!("{problem}"));
-        }
+        let mut problems = self.checker.problems(&self.args);
         if self.args.print_all_references {
             println!("{graph}");
         }
-        if let Err(error) = graph.validate() {
-            // TODO: Decide if we're printing errors to stdout or stderr and make sure we're
-            // consistent.
-            self.errors.push(error);
-        }
-        Ok(())
-    }
-
-    fn should_check(&self, path: &Path) -> bool {
-        if !self.has_supported_extension(path) {
-            return false;
-        }
-        path.canonicalize()
-            .map(|path| path.starts_with(&self.target_dir))
-            .unwrap_or(false)
-    }
-
-    fn has_supported_extension(&self, path: &Path) -> bool {
-        const EXTENSIONS: &[&str] = &["rlib", "o"];
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| EXTENSIONS.contains(&ext))
-            .unwrap_or(false)
+        problems.merge(graph.validate());
+        Ok(problems)
     }
 }
