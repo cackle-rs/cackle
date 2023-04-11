@@ -39,6 +39,7 @@ impl SourceMapping {
     }
 
     pub(crate) fn crate_name_for_path(&self, mut path: &Path) -> Option<&str> {
+        let x = path;
         loop {
             if let Some(crate_name) = self.path_to_crate_name.get(path) {
                 return Some(crate_name);
@@ -46,6 +47,7 @@ impl SourceMapping {
             if let Some(parent) = path.parent() {
                 path = parent;
             } else {
+                println!("No crate name for {}", x.display());
                 return None;
             }
         }

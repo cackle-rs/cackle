@@ -6,12 +6,14 @@
 //! from.
 
 use crate::checker::Checker;
+use crate::checker::Referee;
 use crate::checker::SourceLocation;
 use crate::checker::UnknownLocation;
 use crate::checker::Usage;
+use crate::checker::UsageLocation;
 use crate::checker::UNKNOWN_CRATE_ID;
-use crate::crate_paths::SourceMapping;
 use crate::section_name::SectionName;
+use crate::source_mapping::SourceMapping;
 use crate::symbol::Symbol;
 use anyhow::bail;
 use anyhow::Context;
@@ -61,6 +63,9 @@ pub(crate) struct SymGraph {
     sections: Vec<SectionInfo>,
     /// The index of the section in which each non-private symbol is defined.
     symbol_to_section: HashMap<Symbol, usize>,
+    /// The index of the section in which each private symbol is defined. Cleared with each object
+    /// file that we parse.
+    sym_to_local_section: HashMap<Symbol, usize>,
     duplicate_symbol_section_indexes: HashMap<Symbol, Vec<usize>>,
 }
 
@@ -104,15 +109,20 @@ impl SymGraph {
                 if let Some(ref_name) = self.referenced_symbol(reference) {
                     for name_parts in ref_name.parts()? {
                         checker.path_used(crate_id, &name_parts, || {
-                            if let Some(filename) = section.source_filename.clone() {
-                                Usage::Source(SourceLocation {
+                            let location = if let Some(filename) = section.source_filename.clone() {
+                                UsageLocation::Source(SourceLocation {
                                     filename,
                                     line_number: 0,
                                 })
                             } else {
-                                Usage::Unknown(UnknownLocation {
+                                UsageLocation::Unknown(UnknownLocation {
                                     object_path: section.defined_in.clone(),
                                 })
+                            };
+                            Usage {
+                                location,
+                                from: section.as_referee(),
+                                to: ref_name.clone(),
                             }
                         });
                     }
@@ -167,7 +177,8 @@ impl SymGraph {
     }
 
     fn process_object_relocations(&mut self, obj: &object::File, filename: &Path) -> Result<()> {
-        // TODO: Do we need to ignore this stuff?
+        // TODO: Does ignoring all these sections allow hiding stuff? If we assign all references in
+        // these sections to "current" crate, can we not ignore them?
         static IGNORED_SECTIONS: OnceCell<HashSet<&str>> = OnceCell::new();
         let ignored_sections = IGNORED_SECTIONS.get_or_init(|| {
             let mut s = HashSet::new();
@@ -176,6 +187,11 @@ impl SymGraph {
             s.insert(".note.GNU-stack");
             s.insert(".strtab");
             s.insert(".symtab");
+            s.insert(".data.rel.ro");
+            s.insert(".debug_info");
+            s.insert(".debug_aranges");
+            s.insert(".debug_ranges");
+            s.insert(".debug_line");
 
             // If we don't ignore these, then we get duplicate symbol definitions.
             s.insert(".data.DW.ref.rust_eh_personality");
@@ -186,7 +202,12 @@ impl SymGraph {
         let mut section_name_to_index = HashMap::new();
         for section in obj.sections() {
             if let Ok(name) = section.name() {
-                if name.starts_with(".rela") || ignored_sections.contains(name) {
+                if name.starts_with(".rela")
+                    || name.starts_with(".data.rel")
+                    // TODO: Definitely look into if we can not ignore .rodata.
+                    || name.starts_with(".rodata")
+                    || ignored_sections.contains(name)
+                {
                     continue;
                 }
                 let index = self.sections.len();
@@ -194,7 +215,7 @@ impl SymGraph {
                 self.sections.push(SectionInfo::new(filename, name));
             }
         }
-        let mut sym_to_local_section = HashMap::new();
+        self.sym_to_local_section.clear();
         for sym in obj.symbols() {
             let name = sym.name_bytes().unwrap_or_default();
             if name.is_empty() {
@@ -204,7 +225,7 @@ impl SymGraph {
             let Some(&index) = section_name_to_index.get(&section_name) else { continue };
             self.sections[index].definitions.push(Symbol::new(name));
             if sym.is_local() {
-                sym_to_local_section.insert(name, index);
+                self.sym_to_local_section.insert(Symbol::new(name), index);
             } else if let Some(old_index) = self.symbol_to_section.insert(Symbol::new(name), index)
             {
                 let dup_indexes = self
@@ -233,14 +254,16 @@ impl SymGraph {
                                 .push(Reference::Section(*section_index));
                         }
                     }
-                } else if let Some(local_index) = sym_to_local_section.get(name) {
-                    section_info
-                        .references
-                        .push(Reference::Section(*local_index));
                 } else {
-                    section_info
-                        .references
-                        .push(Reference::Name(Symbol::new(name)));
+                    let symbol = Symbol::new(name);
+
+                    if let Some(local_index) = self.sym_to_local_section.get(&symbol) {
+                        section_info
+                            .references
+                            .push(Reference::Section(*local_index));
+                    } else {
+                        section_info.references.push(Reference::Name(symbol));
+                    }
                 }
             }
         }
@@ -285,8 +308,9 @@ impl SymGraph {
                 ));
 
                 let symbol = Symbol::new(symbol.to_vec());
-                let Some(&section_id) = self.symbol_to_section.get(&symbol) else {
+                let Some(&section_id) = self.sym_to_local_section.get(&symbol).or_else(|| self.symbol_to_section.get(&symbol)) else {
                     // TODO: Investigate this
+                    //println!("SYM NOT FOUND: {symbol}");
                     continue;
                     //bail!("Debug info references unknown symbol `{symbol}`");
                 };
@@ -326,6 +350,14 @@ impl SectionInfo {
             name: SectionName::new(name.as_bytes()),
             defined_in: defined_in.to_owned(),
             ..Default::default()
+        }
+    }
+
+    fn as_referee(&self) -> Referee {
+        if let Some(sym) = self.definitions.first() {
+            Referee::Symbol(sym.clone())
+        } else {
+            Referee::Section(self.name.clone())
         }
     }
 }

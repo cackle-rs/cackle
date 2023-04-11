@@ -68,6 +68,7 @@ allow = [
 ]
 
 [crate.crab3]
+# We can't currently identify this usage
 #allow_unsafe = true
 allow = [
     "terminate",

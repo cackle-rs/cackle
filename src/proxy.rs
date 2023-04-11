@@ -173,6 +173,7 @@ fn proxy_rustc(
     command.arg("-C").arg(linker_arg);
     // If something goes wrong, it can be handy to have object files left around to examine.
     command.arg("-C").arg("save-temps");
+    command.arg("-Ccodegen-units=1");
     if let Some(crate_name) = &crate_name {
         if !config.unsafe_permitted_for_crate(crate_name) {
             command.arg("-Funsafe-code");

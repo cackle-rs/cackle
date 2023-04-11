@@ -3,7 +3,7 @@ use rustc_demangle::demangle;
 use std::fmt::Debug;
 use std::fmt::Display;
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub(crate) struct Symbol {
     bytes: Vec<u8>,
 }
@@ -63,7 +63,7 @@ impl Symbol {
 impl Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(sym_string) = std::str::from_utf8(&self.bytes) {
-            write!(f, "{}", demangle(sym_string))?;
+            write!(f, "{:#}", demangle(sym_string))?;
         } else {
             write!(f, "INVALID-UTF-8({:?})", &self.bytes)?;
         }
@@ -107,6 +107,14 @@ mod tests {
                 vec!["std", "rt", "lang_start"],
                 vec!["{{closure}}"],
             ]
+        );
+    }
+    #[test]
+    fn test_display() {
+        let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
+        assert_eq!(
+            symbol.to_string(),
+            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
         );
     }
 }

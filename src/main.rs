@@ -6,11 +6,11 @@ mod built_in_perms;
 mod checker;
 mod config;
 mod config_validation;
-mod crate_paths;
 mod proxy;
 #[allow(dead_code)]
 mod sandbox;
 pub(crate) mod section_name;
+mod source_mapping;
 pub(crate) mod symbol;
 mod symbol_graph;
 
@@ -20,8 +20,8 @@ use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
 use config::Config;
-use crate_paths::SourceMapping;
 use proxy::rpc::CanContinueResponse;
+use source_mapping::SourceMapping;
 use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         println!("{}", unused);
     }
 
-    println!("Cackle done");
+    println!("Cackle check succeeded");
 
     Ok(())
 }
@@ -152,7 +152,13 @@ impl Cackle {
             }
             proxy::rpc::Request::LinkerArgs(linker_args) => {
                 match self.check_link_args(&linker_args) {
-                    Ok(response) => response,
+                    Ok(()) => {
+                        if self.errors.is_empty() {
+                            CanContinueResponse::Proceed
+                        } else {
+                            CanContinueResponse::Deny
+                        }
+                    }
                     Err(error) => {
                         self.errors.push(error);
                         CanContinueResponse::Deny
@@ -162,7 +168,8 @@ impl Cackle {
         }
     }
 
-    fn check_link_args(&mut self, linker_args: &[String]) -> Result<CanContinueResponse> {
+    fn check_link_args(&mut self, linker_args: &[String]) -> Result<()> {
+        //println!("\n\nLINK\n{linker_args:?}");
         let paths: Vec<_> = linker_args
             .iter()
             .map(PathBuf::from)
@@ -171,7 +178,7 @@ impl Cackle {
         self.check_object_paths(&paths)
     }
 
-    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<CanContinueResponse> {
+    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<()> {
         let mut graph = SymGraph::default();
         for path in paths {
             graph
@@ -179,18 +186,19 @@ impl Cackle {
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
         graph.apply_to_checker(&mut self.checker, &self.source_mapping)?;
-        let mut can_proceed = self.checker.report_problems(&self.args);
+        let problems = self.checker.problems(&self.args);
+        for problem in problems {
+            self.errors.push(anyhow!("{problem}"));
+        }
         if self.args.print_all_references {
             println!("{graph}");
         }
         if let Err(error) = graph.validate() {
             // TODO: Decide if we're printing errors to stdout or stderr and make sure we're
             // consistent.
-            println!("{error}");
-            can_proceed = CanContinueResponse::Deny;
+            self.errors.push(error);
         }
-        //graph.print_stats();
-        Ok(can_proceed)
+        Ok(())
     }
 
     fn should_check(&self, path: &Path) -> bool {

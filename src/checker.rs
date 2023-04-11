@@ -1,10 +1,12 @@
 use crate::config::PermissionName;
-use crate::proxy::rpc::CanContinueResponse;
+use crate::section_name::SectionName;
+use crate::symbol::Symbol;
 use crate::Args;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
+use std::fmt::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -46,7 +48,20 @@ pub(crate) struct CrateInfo {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Usage {
+pub(crate) struct Usage {
+    pub(crate) location: UsageLocation,
+    pub(crate) from: Referee,
+    pub(crate) to: Symbol,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Referee {
+    Symbol(Symbol),
+    Section(SectionName),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum UsageLocation {
     Source(SourceLocation),
     Unknown(UnknownLocation),
 }
@@ -67,6 +82,10 @@ pub(crate) struct SourceLocation {
 pub(crate) struct UnusedConfig {
     unknown_crates: Vec<String>,
     unused_allow_apis: HashMap<String, Vec<PermissionName>>,
+}
+
+pub(crate) struct Problem {
+    text: String,
 }
 
 impl Checker {
@@ -109,52 +128,33 @@ impl Checker {
         checker
     }
 
-    pub(crate) fn report_problems(&self, args: &Args) -> CanContinueResponse {
-        let mut failed = false;
+    pub(crate) fn problems(&self, args: &Args) -> Vec<Problem> {
+        let mut problems = Vec::new();
         for crate_info in &self.crate_infos {
             if crate_info.disallowed_usage.is_empty() {
                 continue;
             }
-            failed = true;
-            if let Some(crate_name) = &crate_info.name {
-                println!("Crate '{crate_name}' uses disallowed APIs:");
+            let mut problem = if let Some(crate_name) = &crate_info.name {
+                format!("Crate '{crate_name}' uses disallowed APIs:\n")
             } else {
-                println!(
-                    "APIs were used by code where we couldn't identify the crate responsible:"
-                );
-            }
+                "APIs were used by code where we couldn't identify the crate responsible:\n"
+                    .to_owned()
+            };
             for (perm_id, usages) in &crate_info.disallowed_usage {
                 let perm = self.permission_name(perm_id);
-                println!("  {perm}:");
+                writeln!(&mut problem, "  {perm}:").unwrap();
                 let cap = if args.usage_report_cap < 0 {
                     usages.len()
                 } else {
                     args.usage_report_cap as usize
                 };
                 for usage in usages.iter().take(cap) {
-                    match usage {
-                        Usage::Source(location) => {
-                            println!(
-                                "    {}:{}",
-                                location.filename.display(),
-                                location.line_number + 1
-                            );
-                        }
-                        Usage::Unknown(location) => {
-                            println!(
-                                "    Unknown source location in `{}`",
-                                to_relative_path(&location.object_path).display()
-                            );
-                        }
-                    }
+                    writeln!(&mut problem, "    {usage}").unwrap();
                 }
             }
+            problems.push(Problem { text: problem });
         }
-        if failed {
-            CanContinueResponse::Deny
-        } else {
-            CanContinueResponse::Proceed
-        }
+        problems
     }
 
     fn perm_id(&mut self, permission: &PermissionName) -> PermId {
@@ -287,6 +287,12 @@ fn to_relative_path(input_path: &Path) -> &std::path::Path {
         .unwrap_or(input_path)
 }
 
+impl Display for Problem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
 impl Display for UnusedConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.unknown_crates.is_empty() {
@@ -308,6 +314,43 @@ impl Display for UnusedConfig {
             }
         }
         Ok(())
+    }
+}
+
+impl Display for Usage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {} ", self.from, self.to)?;
+        match &self.location {
+            UsageLocation::Source(location) => {
+                write!(
+                    f,
+                    "[{}:{}]",
+                    location.filename.display(),
+                    location.line_number + 1
+                )?;
+            }
+            UsageLocation::Unknown(location) => {
+                write!(
+                    f,
+                    "[Unknown source location in `{}`]",
+                    to_relative_path(&location.object_path).display()
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for Referee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Referee::Symbol(sym) => {
+                write!(f, "{sym}")
+            }
+            Referee::Section(name) => {
+                write!(f, "{name}")
+            }
+        }
     }
 }
 
