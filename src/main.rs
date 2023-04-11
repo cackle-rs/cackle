@@ -39,7 +39,7 @@ struct Args {
     /// Path to cackle.toml. If not specified, looks in the directory containing
     /// the crate to be analyzed.
     #[clap(short, long)]
-    cackle: Option<PathBuf>,
+    cackle_path: Option<PathBuf>,
 
     /// Print all references (may be large). Useful for debugging why something is passing when you
     /// think it shouldn't be.
@@ -54,6 +54,10 @@ struct Args {
     /// reported.
     #[clap(long, default_value = "2")]
     usage_report_cap: i32,
+
+    /// Analyse specified object file(s). Useful for debugging.
+    #[clap(long, num_args = 1.., value_delimiter = ' ')]
+    object_paths: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -71,16 +75,24 @@ fn main() -> Result<()> {
         .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
     let config_path = args
-        .cackle
+        .cackle_path
         .clone()
         .unwrap_or_else(|| root_path.join("cackle.toml"));
 
     let config = config::parse_file(&config_path).context("Invalid config file")?;
 
     let mut cackle = Cackle::new(config, &root_path, args)?;
+
+    if !cackle.args.object_paths.is_empty() {
+        let paths: Vec<_> = cackle.args.object_paths.clone();
+        cackle.check_object_paths(&paths)?;
+        return Ok(());
+    }
+
     let build_result = proxy::invoke_cargo_build(&root_path, &config_path, |request| {
         cackle.check_acls(request)
     });
+
     if !cackle.errors.is_empty() {
         for error in cackle.errors {
             println!("{error:?}");
@@ -151,16 +163,20 @@ impl Cackle {
     }
 
     fn check_link_args(&mut self, linker_args: &[String]) -> Result<CanContinueResponse> {
+        let paths: Vec<_> = linker_args
+            .iter()
+            .map(PathBuf::from)
+            .filter(|path| self.should_check(path))
+            .collect();
+        self.check_object_paths(&paths)
+    }
+
+    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<CanContinueResponse> {
         let mut graph = SymGraph::default();
-        for arg in linker_args {
-            let path = Path::new(arg);
-            if self.should_check(path) {
-                // TODO: Delete this
-                //std::fs::copy(path, Path::new("/tmp/f1").join(path.file_name().unwrap())).unwrap();
-                graph
-                    .process_file(Path::new(arg))
-                    .with_context(|| format!("Failed to process `{arg}`"))?;
-            }
+        for path in paths {
+            graph
+                .process_file(path)
+                .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
         graph.apply_to_checker(&mut self.checker, &self.source_mapping)?;
         let mut can_proceed = self.checker.report_problems(&self.args);
