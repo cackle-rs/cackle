@@ -19,6 +19,8 @@ use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
+use clap::ValueEnum;
+use colored::Colorize;
 use config::Config;
 use link_info::LinkInfo;
 use problem::Problem;
@@ -60,13 +62,31 @@ struct Args {
     /// Analyse specified object file(s). Useful for debugging.
     #[clap(long, num_args = 1.., value_delimiter = ' ')]
     object_paths: Vec<PathBuf>,
+
+    /// Whether to use coloured output.
+    #[clap(long, alias = "color", default_value = "auto")]
+    colour: Colour,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub(crate) enum Colour {
+    Auto,
+    Always,
+    Never,
 }
 
 fn main() -> Result<()> {
-    proxy::handle_wrapped_binaries()?;
+    proxy::subprocess::handle_wrapped_binaries()?;
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+    args.colour = args.colour.detect();
+    if let Err(error) = run(args) {
+        println!("{} {:#}", "ERROR:".red(), error);
+    }
+    Ok(())
+}
 
+fn run(args: Args) -> Result<()> {
     let root_path = args
         .path
         .clone()
@@ -92,23 +112,27 @@ fn main() -> Result<()> {
     }
 
     let mut problems = Problems::default();
-    let build_result = proxy::invoke_cargo_build(&root_path, &config_path, |request| {
-        problems.merge(cackle.check_acls(request));
-        problems.can_continue()
-    });
+    let build_result =
+        proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
+            problems.merge(cackle.check_acls(request));
+            problems.can_continue()
+        });
 
     if !problems.is_empty() {
         for problem in problems {
-            println!("{problem}");
+            println!("{} {problem}", "ERROR:".red());
         }
-        std::process::exit(1);
+        std::process::exit(-1);
     }
 
     // We only check if the build failed if there were no ACL check errors.
-    build_result.context("Cargo build failed")?;
+    if let Some(build_failure) = build_result? {
+        println!("{build_failure}");
+        std::process::exit(-1);
+    }
 
     if let Err(unused) = cackle.checker.check_unused() {
-        println!("{}", unused);
+        println!("{} {}", "WARNING: ".yellow(), unused);
     }
 
     println!("Cackle succcess");
@@ -179,5 +203,37 @@ impl Cackle {
         }
         problems.merge(graph.validate());
         Ok(problems)
+    }
+}
+
+impl Colour {
+    pub(crate) fn should_use_colour(&self) -> bool {
+        match self {
+            Colour::Auto => panic!("Missing call to Colour::detect"),
+            Colour::Always => true,
+            Colour::Never => false,
+        }
+    }
+
+    /// Resolves "auto" to either "always" or "never" depending on if the output is a tty. Also
+    /// updates the colored crate's override if the flag was already set to "never" or "always".
+    fn detect(self) -> Self {
+        match self {
+            Colour::Auto => {
+                if atty::is(atty::Stream::Stdout) {
+                    Colour::Always
+                } else {
+                    Colour::Never
+                }
+            }
+            Colour::Always => {
+                colored::control::set_override(true);
+                self
+            }
+            Colour::Never => {
+                colored::control::set_override(false);
+                self
+            }
+        }
     }
 }
