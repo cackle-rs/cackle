@@ -5,12 +5,12 @@
 mod checker;
 mod config;
 mod config_validation;
+mod crate_index;
 pub(crate) mod link_info;
 pub(crate) mod problem;
 mod proxy;
 mod sandbox;
 pub(crate) mod section_name;
-mod source_mapping;
 pub(crate) mod symbol;
 mod symbol_graph;
 
@@ -22,10 +22,10 @@ use clap::Parser;
 use clap::ValueEnum;
 use colored::Colorize;
 use config::Config;
+use crate_index::CrateIndex;
 use link_info::LinkInfo;
 use problem::Problem;
 use problem::Problems;
-use source_mapping::SourceMapping;
 use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
@@ -111,12 +111,15 @@ fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    let mut problems = Problems::default();
-    let build_result =
+    let mut problems = cackle.checker.problems(&cackle.args);
+    let build_result = if problems.is_empty() {
         proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
             problems.merge(cackle.check_acls(request));
             problems.can_continue()
-        });
+        })
+    } else {
+        Ok(None)
+    };
 
     if !problems.is_empty() {
         for problem in problems {
@@ -143,25 +146,29 @@ fn run(args: Args) -> Result<()> {
 struct Cackle {
     checker: Checker,
     target_dir: PathBuf,
-    source_mapping: SourceMapping,
+    crate_index: CrateIndex,
     args: Args,
 }
 
 impl Cackle {
     fn new(config: Config, root_path: &Path, args: Args) -> Result<Self> {
         let mut checker = Checker::from_config(&config);
-        let source_mapping = SourceMapping::new(root_path)?;
+        let crate_index = CrateIndex::new(root_path)?;
         if args.print_path_to_crate_map {
-            println!("{source_mapping}");
+            println!("{crate_index}");
         }
-        for crate_name in source_mapping.crate_names() {
+        for crate_name in crate_index.crate_names() {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_crate_used(crate_id);
+        }
+        for crate_name in &crate_index.proc_macros {
+            let crate_id = checker.crate_id_from_name(crate_name);
+            checker.report_proc_macro(crate_id);
         }
         Ok(Self {
             checker,
             target_dir: root_path.join("target"),
-            source_mapping,
+            crate_index,
             args,
         })
     }
@@ -196,7 +203,7 @@ impl Cackle {
                 .process_file(path)
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
-        graph.apply_to_checker(&mut self.checker, &self.source_mapping)?;
+        graph.apply_to_checker(&mut self.checker, &self.crate_index)?;
         let mut problems = self.checker.problems(&self.args);
         if self.args.print_all_references {
             println!("{graph}");

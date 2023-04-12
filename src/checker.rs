@@ -34,20 +34,31 @@ pub(crate) const UNKNOWN_CRATE_ID: CrateId = CrateId(0);
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
     pub(crate) name: Option<String>,
+
     /// Whether the config file mentions this crate.
     has_config: bool,
+
     /// Whether a crate with this name was found in the tree. Used to issue a
     /// warning or error if the config refers to a crate that isn't in the
     /// dependency tree.
     used: bool,
+
     /// Permissions that are allowed for this crate according to cackle.toml.
     allowed_perms: HashSet<PermId>,
+
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermId>,
+
     /// Permissions that are not permitted for use by this crate but where found to be used (keys)
     /// and the locations of those usages.
     pub(crate) disallowed_usage: HashMap<PermId, Vec<Usage>>,
+
+    /// Whether this crate is a proc macro according to cargo metadata.
+    is_proc_macro: bool,
+
+    /// Whether this crate is allowed to be a proc macro according to our config.
+    allow_proc_macro: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +126,7 @@ impl Checker {
             let crate_id = checker.crate_id_from_name(crate_name);
             let crate_info = &mut checker.crate_infos[crate_id.0];
             crate_info.has_config = true;
+            crate_info.allow_proc_macro = crate_config.allow_proc_macro;
             for perm in &crate_config.allow_apis {
                 let perm_id = checker.perm_id(perm);
                 // Find `crate_info` again. Need to do this here because the `perm_id` above needs
@@ -130,6 +142,13 @@ impl Checker {
     pub(crate) fn problems(&self, args: &Args) -> Problems {
         let mut problems = Problems::default();
         for crate_info in &self.crate_infos {
+            if crate_info.is_proc_macro && !crate_info.allow_proc_macro {
+                if let Some(crate_name) = &crate_info.name {
+                    problems.push(Problem::new(format!(
+                        "Crate `{crate_name}` is a proc macro but doesn't set allow_proc_macro"
+                    )));
+                }
+            }
             if crate_info.disallowed_usage.is_empty() {
                 continue;
             }
@@ -197,6 +216,10 @@ impl Checker {
 
     pub(crate) fn report_crate_used(&mut self, crate_id: CrateId) {
         self.crate_infos[crate_id.0].used = true;
+    }
+
+    pub(crate) fn report_proc_macro(&mut self, crate_id: CrateId) {
+        self.crate_infos[crate_id.0].is_proc_macro = true;
     }
 
     /// Report that the specified crate used the path constructed by joining

@@ -10,10 +10,13 @@ use std::path::Path;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     pub(crate) version: u32,
+
     #[serde(default, rename = "api")]
     pub(crate) apis: HashMap<PermissionName, PermConfig>,
+
     #[serde(default, rename = "pkg")]
     pub(crate) packages: HashMap<String, PackageConfig>,
+
     #[allow(dead_code)]
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
@@ -24,8 +27,10 @@ pub(crate) struct Config {
 pub(crate) struct SandboxConfig {
     #[serde(default)]
     pub(crate) kind: SandboxKind,
+
     #[serde(default)]
     pub(crate) allow_read: Vec<String>,
+
     #[serde(default)]
     pub(crate) extra_args: Vec<String>,
 }
@@ -34,6 +39,7 @@ pub(crate) struct SandboxConfig {
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
     pub(crate) include: Vec<String>,
+
     #[serde(default)]
     pub(crate) exclude: Vec<String>,
 }
@@ -56,8 +62,13 @@ pub(crate) enum SandboxKind {
 pub(crate) struct PackageConfig {
     #[serde(default)]
     allow_unsafe: bool,
+
     #[serde(default)]
     pub(crate) allow_apis: Vec<PermissionName>,
+
+    #[serde(default)]
+    pub(crate) allow_proc_macro: bool,
+
     /// Configuration for this crate's build.rs. Only used during parsing, after
     /// which it's flattened out.
     build: Option<Box<PackageConfig>>,

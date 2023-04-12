@@ -12,9 +12,9 @@ use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
 use crate::checker::UNKNOWN_CRATE_ID;
+use crate::crate_index::CrateIndex;
 use crate::problem::Problems;
 use crate::section_name::SectionName;
-use crate::source_mapping::SourceMapping;
 use crate::symbol::Symbol;
 use anyhow::bail;
 use anyhow::Context;
@@ -94,7 +94,7 @@ impl SymGraph {
     pub(crate) fn apply_to_checker(
         &self,
         checker: &mut Checker,
-        mapping: &SourceMapping,
+        mapping: &CrateIndex,
     ) -> Result<()> {
         for section in &self.sections {
             let source_filename = section.source_filename.as_ref();

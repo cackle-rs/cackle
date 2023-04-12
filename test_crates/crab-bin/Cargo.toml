@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 crab1 = { path = "../crab1" }
 crab2 = { path = "../crab2" }
-
+pmacro1 = { path = "../pmacro1" }

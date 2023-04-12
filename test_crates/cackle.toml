@@ -83,3 +83,14 @@ allow_apis = [
     "env",
     "fs",
 ]
+
+[pkg.pmacro1]
+allow_proc_macro = true
+allow_apis = [
+    "env"
+]
+
+[pkg.crab-bin]
+allow_apis = [
+    "fs",
+]

@@ -1,4 +1,5 @@
-//! Code to figure out while source files belong to which crates.
+//! This module extracts various bits of information from cargo metadata, such as which paths belong
+//! to which crates, which are proc macros etc.
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -8,11 +9,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Default, Debug)]
-pub(crate) struct SourceMapping {
+pub(crate) struct CrateIndex {
     path_to_crate_name: HashMap<PathBuf, String>,
+    pub(crate) proc_macros: HashSet<String>,
 }
 
-impl SourceMapping {
+impl CrateIndex {
     pub(crate) fn new(dir: &Path) -> Result<Self> {
         let metadata = cargo_metadata::MetadataCommand::new()
             .manifest_path(dir.join("Cargo.toml"))
@@ -32,6 +34,9 @@ impl SourceMapping {
                         package.name.clone()
                     };
                     mapping.path_to_crate_name.insert(target_dir.into(), name);
+                }
+                if target.kind.iter().any(|kind| kind == "proc-macro") {
+                    mapping.proc_macros.insert(package.name.clone());
                 }
             }
         }
@@ -61,7 +66,7 @@ impl SourceMapping {
     }
 }
 
-impl Display for SourceMapping {
+impl Display for CrateIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (path, name) in &self.path_to_crate_name {
             writeln!(f, "{} -> {name}", path.display())?;
