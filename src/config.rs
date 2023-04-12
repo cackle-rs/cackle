@@ -10,8 +10,8 @@ use std::path::Path;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     pub(crate) version: u32,
-    #[serde(default, rename = "perm")]
-    pub(crate) perms: HashMap<PermissionName, PermConfig>,
+    #[serde(default, rename = "api")]
+    pub(crate) apis: HashMap<PermissionName, PermConfig>,
     #[serde(default, rename = "pkg")]
     pub(crate) packages: HashMap<String, PackageConfig>,
     #[allow(dead_code)]
@@ -57,7 +57,7 @@ pub(crate) struct PackageConfig {
     #[serde(default)]
     allow_unsafe: bool,
     #[serde(default)]
-    pub(crate) allow: Vec<PermissionName>,
+    pub(crate) allow_apis: Vec<PermissionName>,
     /// Configuration for this crate's build.rs. Only used during parsing, after
     /// which it's flattened out.
     build: Option<Box<PackageConfig>>,
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn empty() {
         let config = parse("").unwrap();
-        assert!(config.perms.is_empty());
+        assert!(config.apis.is_empty());
         assert!(config.packages.is_empty());
     }
 
@@ -151,7 +151,7 @@ mod tests {
     fn unknown_permission_field() {
         check_unknown_field(
             r#"
-            [perm.foo]
+            [api.foo]
             include = [ "bar" ]
         "#,
         );

@@ -22,9 +22,9 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
     if config.version != 1 {
         problems.push(Problem::UnsupportedVersion(config.version));
     }
-    let permission_names: HashSet<_> = config.perms.keys().collect();
+    let permission_names: HashSet<_> = config.apis.keys().collect();
     for crate_config in config.packages.values() {
-        for permission_name in &crate_config.allow {
+        for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
                 problems.push(Problem::UnknownPermission(permission_name.clone()));
             }

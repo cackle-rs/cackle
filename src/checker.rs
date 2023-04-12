@@ -94,7 +94,7 @@ impl Checker {
         // Allocate UNKNOWN_CRATE_ID as the first crate.
         checker.crate_infos.push(CrateInfo::default());
 
-        for (perm_name, api) in &config.perms {
+        for (perm_name, api) in &config.apis {
             let id = checker.perm_id(perm_name);
             for prefix in &api.include {
                 checker
@@ -115,7 +115,7 @@ impl Checker {
             let crate_id = checker.crate_id_from_name(crate_name);
             let crate_info = &mut checker.crate_infos[crate_id.0];
             crate_info.has_config = true;
-            for perm in &crate_config.allow {
+            for perm in &crate_config.allow_apis {
                 let perm_id = checker.perm_id(perm);
                 // Find `crate_info` again. Need to do this here because the `perm_id` above needs
                 // to borrow `checker`.
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn test_apis_for_path() {
         let config = r#"
-                [perm.fs]
+                [api.fs]
                 include = [
                     "std::env",
                 ]
@@ -387,10 +387,10 @@ mod tests {
                     "std::env::var",
                 ]
                 
-                [perm.env]
+                [api.env]
                 include = ["std::env"]
 
-                [perm.env2]
+                [api.env2]
                 include = ["std::env"]
                 "#;
         assert_perms(config, &["std", "env", "var"], &["env", "env2"]);
