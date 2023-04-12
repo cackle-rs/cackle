@@ -88,8 +88,6 @@ pub(crate) struct UnknownLocation {
 #[derive(Debug, Clone)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
-    // Line number (0 based)
-    pub(crate) line_number: u32,
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -348,12 +346,7 @@ impl Display for Usage {
         write!(f, "{} -> {} ", self.from, self.to)?;
         match &self.location {
             UsageLocation::Source(location) => {
-                write!(
-                    f,
-                    "[{}:{}]",
-                    location.filename.display(),
-                    location.line_number + 1
-                )?;
+                write!(f, "[{}]", location.filename.display())?;
             }
             UsageLocation::Unknown(location) => {
                 write!(

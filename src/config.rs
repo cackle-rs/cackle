@@ -17,7 +17,6 @@ pub(crate) struct Config {
     #[serde(default, rename = "pkg")]
     pub(crate) packages: HashMap<String, PackageConfig>,
 
-    #[allow(dead_code)]
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
 }

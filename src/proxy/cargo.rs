@@ -1,4 +1,4 @@
-use crate::Colour;
+use crate::colour::Colour;
 use std::path::Path;
 use std::process::Command;
 

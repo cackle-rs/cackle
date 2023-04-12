@@ -1,8 +1,10 @@
+//! Analyses rust crates and their dependent crates to see what categories of APIs and language
+//! features are used.
+
 #![forbid(unsafe_code)]
 
-// TODO: Search for all uses of #[allow(dead_code)] and remove.
-
 mod checker;
+mod colour;
 mod config;
 mod config_validation;
 mod crate_index;
@@ -19,7 +21,6 @@ use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
-use clap::ValueEnum;
 use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
@@ -30,10 +31,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
 
-/// Analyses rust crates and their dependent crates to see what categories of
-/// APIs and language features are used.
 #[derive(Parser, Debug)]
-#[clap(version, about, long_about = None)]
+#[clap(version, about)]
 struct Args {
     /// Directory containing crate to analyze. Defaults to current working
     /// directory.
@@ -65,14 +64,7 @@ struct Args {
 
     /// Whether to use coloured output.
     #[clap(long, alias = "color", default_value = "auto")]
-    colour: Colour,
-}
-
-#[derive(ValueEnum, Debug, Clone, Copy)]
-pub(crate) enum Colour {
-    Auto,
-    Always,
-    Never,
+    colour: colour::Colour,
 }
 
 fn main() -> Result<()> {
@@ -118,6 +110,7 @@ fn run(args: Args) -> Result<()> {
             problems.can_continue()
         })
     } else {
+        // We've already detected problems before running cargo, don't run cargo.
         Ok(None)
     };
 
@@ -210,37 +203,5 @@ impl Cackle {
         }
         problems.merge(graph.validate());
         Ok(problems)
-    }
-}
-
-impl Colour {
-    pub(crate) fn should_use_colour(&self) -> bool {
-        match self {
-            Colour::Auto => panic!("Missing call to Colour::detect"),
-            Colour::Always => true,
-            Colour::Never => false,
-        }
-    }
-
-    /// Resolves "auto" to either "always" or "never" depending on if the output is a tty. Also
-    /// updates the colored crate's override if the flag was already set to "never" or "always".
-    fn detect(self) -> Self {
-        match self {
-            Colour::Auto => {
-                if atty::is(atty::Stream::Stdout) {
-                    Colour::Always
-                } else {
-                    Colour::Never
-                }
-            }
-            Colour::Always => {
-                colored::control::set_override(true);
-                self
-            }
-            Colour::Never => {
-                colored::control::set_override(false);
-                self
-            }
-        }
     }
 }

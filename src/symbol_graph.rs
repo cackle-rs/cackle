@@ -32,6 +32,8 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Index;
+use std::ops::IndexMut;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -43,32 +45,47 @@ enum Filetype {
 }
 
 enum Reference {
-    Section(usize),
+    Section(SectionIndex),
     Name(Symbol),
 }
 
 #[derive(Default)]
 struct SectionInfo {
     name: SectionName,
-    /// The object file that this section was contained in. Not currently used. TODO: Remove this
-    /// unless we end up using it for something.
-    #[allow(dead_code)]
+
+    /// The object file that this section was contained in.
     defined_in: PathBuf,
+
+    /// Outgoing references from this section.
     references: Vec<Reference>,
+
+    /// The rust source file that defined this section if we were able to determine this from the
+    /// debug info.
     source_filename: Option<PathBuf>,
+
+    /// Symbols that this section defines. Generally there should be exactly one, at least with the
+    /// compilation settings that we should be using.
     definitions: Vec<Symbol>,
 }
 
 #[derive(Default)]
 pub(crate) struct SymGraph {
     sections: Vec<SectionInfo>,
+
     /// The index of the section in which each non-private symbol is defined.
-    symbol_to_section: HashMap<Symbol, usize>,
+    symbol_to_section: HashMap<Symbol, SectionIndex>,
+
     /// The index of the section in which each private symbol is defined. Cleared with each object
     /// file that we parse.
-    sym_to_local_section: HashMap<Symbol, usize>,
-    duplicate_symbol_section_indexes: HashMap<Symbol, Vec<usize>>,
+    sym_to_local_section: HashMap<Symbol, SectionIndex>,
+
+    /// For each symbol that has two or more definitions, stores the indices of the sections that
+    /// defined that symbol.
+    duplicate_symbol_section_indexes: HashMap<Symbol, Vec<SectionIndex>>,
 }
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionIndex(usize);
 
 impl SymGraph {
     pub(crate) fn process_file(&mut self, filename: &Path) -> Result<()> {
@@ -111,10 +128,7 @@ impl SymGraph {
                     for name_parts in ref_name.parts()? {
                         checker.path_used(crate_id, &name_parts, || {
                             let location = if let Some(filename) = section.source_filename.clone() {
-                                UsageLocation::Source(SourceLocation {
-                                    filename,
-                                    line_number: 0,
-                                })
+                                UsageLocation::Source(SourceLocation { filename })
                             } else {
                                 UsageLocation::Unknown(UnknownLocation {
                                     object_path: section.defined_in.clone(),
@@ -129,7 +143,6 @@ impl SymGraph {
                     }
                 }
             }
-            //checker.path_used(crate_id, name_parts, compute_usage_fn);
         }
         Ok(())
     }
@@ -174,7 +187,7 @@ impl SymGraph {
         for (sym, indexes) in &self.duplicate_symbol_section_indexes {
             println!("Duplicate symbol `{sym}` defined in:");
             for i in indexes {
-                println!("  {}", self.sections[*i].name);
+                println!("  {}", self.sections[i.0].name);
             }
         }
         Ok(())
@@ -214,7 +227,7 @@ impl SymGraph {
                 {
                     continue;
                 }
-                let index = self.sections.len();
+                let index = SectionIndex(self.sections.len());
                 section_name_to_index.insert(name.to_owned(), index);
                 self.sections.push(SectionInfo::new(filename, name));
             }
@@ -322,6 +335,20 @@ impl SymGraph {
             }
         }
         Ok(())
+    }
+}
+
+impl Index<SectionIndex> for Vec<SectionInfo> {
+    type Output = SectionInfo;
+
+    fn index(&self, index: SectionIndex) -> &Self::Output {
+        &self[index.0]
+    }
+}
+
+impl IndexMut<SectionIndex> for Vec<SectionInfo> {
+    fn index_mut(&mut self, index: SectionIndex) -> &mut Self::Output {
+        &mut self[index.0]
     }
 }
 

@@ -20,6 +20,7 @@
 //! * We can run them inside a sandbox if the config says to do so.
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
+use crate::colour::Colour;
 use anyhow::Context;
 use anyhow::Result;
 use std::fmt::Display;
@@ -30,8 +31,6 @@ use std::process;
 use std::process::Command;
 use std::thread::JoinHandle;
 use std::time::Duration;
-
-use crate::Colour;
 
 mod cargo;
 mod errors;

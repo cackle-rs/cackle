@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 cargo test
-cargo run -- --path ~/work/cackle/test_crates check
+cargo run -- --path ~/work/cackle/test_crates

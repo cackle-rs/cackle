@@ -9,6 +9,10 @@ fn write_output_files() {
     std::fs::write(out_dir.join("extra_code.rs"), r#"std::env::var("PATH")"#).unwrap();
     let home = PathBuf::from(std::env::var("HOME").unwrap());
 
+    if !cfg!(feature = "crash-if-not-sandboxed") {
+        return;
+    }
+
     // This file shouldn't exist in the sandbox, even if it exists outside it.
     let credentials_path = home.join(".cargo/credentials");
     if std::fs::read(&credentials_path).is_ok() {

@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 crab3 = { path = "../crab3" }
 
+[features]
+crash-if-not-sandboxed = []
