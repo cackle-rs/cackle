@@ -88,14 +88,6 @@ fn flatten(config: &mut Config) {
     config.packages = crates_by_name;
 }
 
-impl PermissionName {
-    pub(crate) const fn new(name: &'static str) -> Self {
-        Self {
-            name: Cow::Borrowed(name),
-        }
-    }
-}
-
 impl Display for PermissionName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)

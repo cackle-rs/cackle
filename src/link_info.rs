@@ -1,3 +1,4 @@
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
@@ -11,6 +12,7 @@ pub(crate) struct LinkInfo {
     pub(crate) is_build_script: bool,
     pub(crate) package_name: String,
     pub(crate) object_paths: Vec<PathBuf>,
+    pub(crate) output_file: PathBuf,
 }
 
 impl LinkInfo {
@@ -26,6 +28,7 @@ impl LinkInfo {
             is_build_script: crate_name == "build_script_build",
             package_name,
             object_paths,
+            output_file: get_output_file()?,
         })
     }
 
@@ -37,6 +40,18 @@ impl LinkInfo {
             .filter(|path| path.starts_with(dir))
             .collect()
     }
+}
+
+fn get_output_file() -> Result<PathBuf> {
+    let mut args = std::env::args();
+    while let Some(arg) = args.next() {
+        if arg == "-o" {
+            if let Some(output) = args.next() {
+                return Ok(PathBuf::from(output));
+            }
+        }
+    }
+    bail!("Failed to find output file in linker command line");
 }
 
 fn has_supported_extension(path: &Path) -> bool {

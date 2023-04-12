@@ -1,30 +1,25 @@
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
-use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
+use std::ffi::OsStr;
 use std::path::Path;
+use std::process::Command;
 
 pub(crate) struct SandboxCommand {
-    pub(crate) command_line: Vec<String>,
+    pub(crate) command: Command,
 }
 
 impl SandboxCommand {
-    pub(crate) fn from_config(config: &SandboxConfig, crate_root: &Path) -> Result<Option<Self>> {
-        let mut sandbox = Self {
-            command_line: vec![],
-        };
+    pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Self>> {
+        let mut sandbox;
         match &config.kind {
             SandboxKind::Disabled => return Ok(None),
             SandboxKind::Bubblewrap => {
-                let home = std::env::var("HOME")?;
-                let crate_root = crate_root
-                    .to_str()
-                    .ok_or_else(|| anyhow!("Crate root needs to be valid UTF-8, but isn't"))?;
-                let target_dir = format!("{crate_root}/target");
-                std::fs::create_dir_all(&target_dir)
-                    .with_context(|| format!("Failed to create target directory {target_dir}"))?;
-                sandbox.args(&["bwrap"]);
+                let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
+                sandbox = SandboxCommand {
+                    command: Command::new("bwrap"),
+                };
                 for dir in &config.allow_read {
                     sandbox.ro_bind(dir);
                 }
@@ -41,8 +36,6 @@ impl SandboxCommand {
                 sandbox.ro_bind(&format!("{home}/.cargo/git"));
                 sandbox.ro_bind(&format!("{home}/.cargo/registry"));
                 sandbox.ro_bind(&format!("{home}/.rustup"));
-                sandbox.ro_bind(crate_root);
-                sandbox.writable_bind(&target_dir);
                 sandbox.tmpfs("/var");
                 sandbox.tmpfs("/tmp");
                 sandbox.tmpfs("/run");
@@ -66,26 +59,47 @@ impl SandboxCommand {
         Ok(Some(sandbox))
     }
 
-    pub(crate) fn args(&mut self, args: &[&str]) {
-        self.command_line
-            .extend(args.iter().map(|arg| -> String { arg.to_string() }))
+    pub(crate) fn arg<S: AsRef<OsStr>>(&mut self, arg: S) {
+        self.command.arg(arg);
     }
 
-    fn tmpfs(&mut self, dir: &str) {
+    pub(crate) fn args(&mut self, args: &[&str]) {
+        self.command.args(args);
+    }
+
+    pub(crate) fn tmpfs(&mut self, dir: &str) {
         self.args(&["--tmpfs", dir])
     }
 
-    fn ro_bind(&mut self, dir: &str) {
-        self.args(&["--ro-bind", dir, dir])
+    pub(crate) fn ro_bind<S: AsRef<OsStr>>(&mut self, dir: S) {
+        self.arg("--ro-bind");
+        let dir = dir.as_ref();
+        self.arg(dir);
+        self.arg(dir);
     }
 
-    fn writable_bind(&mut self, dir: &str) {
+    pub(crate) fn writable_bind(&mut self, dir: &str) {
         self.args(&["--bind-try", dir, dir])
     }
 
-    fn pass_env(&mut self, env_var_name: &str) {
+    pub(crate) fn pass_env(&mut self, env_var_name: &str) {
         if let Ok(value) = std::env::var(env_var_name) {
             self.args(&["--setenv", env_var_name, &value]);
         }
+    }
+
+    /// Pass through all cargo environment variables.
+    pub(crate) fn pass_cargo_env(&mut self) {
+        self.pass_env("OUT_DIR");
+        for (var, value) in std::env::vars_os() {
+            self.arg("--setenv");
+            self.arg(var);
+            self.arg(value);
+        }
+    }
+
+    pub(crate) fn command_to_run(mut self, binary: &Path) -> Command {
+        self.arg(binary);
+        self.command
     }
 }

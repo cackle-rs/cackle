@@ -2,14 +2,12 @@
 
 // TODO: Search for all uses of #[allow(dead_code)] and remove.
 
-mod built_in_perms;
 mod checker;
 mod config;
 mod config_validation;
 pub(crate) mod link_info;
 pub(crate) mod problem;
 mod proxy;
-#[allow(dead_code)]
 mod sandbox;
 pub(crate) mod section_name;
 mod source_mapping;
@@ -105,6 +103,7 @@ fn main() -> Result<()> {
         }
         std::process::exit(1);
     }
+
     // We only check if the build failed if there were no ACL check errors.
     build_result.context("Cargo build failed")?;
 

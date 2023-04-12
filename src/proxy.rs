@@ -1,4 +1,4 @@
-//! This module handles wrapping and invocation of both rustc and the linker.
+//! This module handles wrapping and invocation of rustc, the linker and build.rs binaries.
 //!
 //! We always call through (proxy) to the real rustc and on the happy path, call the real linker.
 //!
@@ -13,14 +13,23 @@
 //! * We can get a list of all the objects and rlibs that are going to be linked and check that the
 //!   rules in cackle.toml are satisfied.
 //! * We can prevent the actual linker from being invoked if the rules aren't satisfied.
+//! * We can put our binary in place of the output for build scripts so that we can proxy them.
+//!
+//! We wrap build.rs binaries so that:
+//!
+//! * We can run them inside a sandbox if the config says to do so.
+//! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use self::errors::ErrorKind;
 use self::rpc::RpcClient;
 use crate::config::Config;
 use crate::link_info::LinkInfo;
+use crate::sandbox::SandboxCommand;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io::Write;
 use std::os::unix::net::UnixListener;
@@ -87,7 +96,7 @@ pub(crate) fn invoke_cargo_build(
             // Deleting the socket is best-effort only, so we don't report an error if we can't.
             let _ = std::fs::remove_file(&ipc_path);
             if output.status.code() != Some(0) {
-                bail!("cargo build exited with non-zero exit status");
+                bail!("{}", String::from_utf8_lossy(&output.stderr));
             }
             break;
         }
@@ -119,21 +128,104 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     let rpc_client = RpcClient::new(socket_path.into());
 
     let mut args = std::env::args().peekable();
-    args.next();
-    let exit_status = if args.peek().map(|arg| arg == "rustc").unwrap_or(false) {
+    let binary_name = PathBuf::from(args.next().ok_or_else(|| anyhow!("Missing all args"))?);
+    let exit_status;
+    if let Some(orig_build_script) = proxied_build_rs_bin_path(&binary_name) {
+        // We're wrapping a build script.
+        exit_status = proxy_build_script(orig_build_script)?;
+    } else if args.peek().map(|arg| arg == "rustc").unwrap_or(false) {
+        // We're wrapping rustc.
         args.next();
-        // We're wrapping rustc, call the real rustc.
-        proxy_rustc(&mut args, &rpc_client)?
+        exit_status = proxy_rustc(&mut args, &rpc_client)?;
+    } else if let Ok(link_info) = LinkInfo::from_env() {
+        // We're wrapping the linker.
+        exit_status = proxy_linker(link_info, rpc_client, args)?;
     } else {
-        // If we're not proxying rustc, then we assume we're proxying the linker. If we ever need to
-        // proxy anything else, we might need to look at the arguments to identify what we're doing.
-        let link_info = LinkInfo::from_env()?;
-        match rpc_client.linker_invoked(link_info)? {
-            rpc::CanContinueResponse::Proceed => proxy_linker(args)?,
-            rpc::CanContinueResponse::Deny => std::process::exit(0),
-        }
+        // We're not sure what we're wrapping, something went wrong.
+        let args: Vec<String> = std::env::args().collect();
+        bail!("Unexpected proxy invocation with args: {args:?}");
     };
     std::process::exit(exit_status.code().unwrap_or(-1));
+}
+
+/// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
+/// the build script.
+fn setup_build_script_wrapper(build_script_bin: &PathBuf) -> Result<()> {
+    std::fs::rename(build_script_bin, orig_build_rs_bin_path(&build_script_bin)).with_context(
+        || {
+            format!(
+                "Failed to rename build.rs binary `{}`",
+                build_script_bin.display()
+            )
+        },
+    )?;
+    let cackle_exe = cackle_exe()?;
+    // Note, we use hard links rather than symbolic links because cargo apparently canonicalises the
+    // path to the build script binary when it runs it, so if we give it a symlink, we don't know
+    // what we're supposed to be proxying, we just see arg[0] as the path to cackle.
+    if std::fs::hard_link(&cackle_exe, build_script_bin).is_err() {
+        // If hard linking fails, e.g. because the cackle binary is on a different filesystem to
+        // where we're building, then fall back to copying.
+        std::fs::copy(&cackle_exe, build_script_bin).with_context(|| {
+            format!(
+                "Failed to copy {} to {}",
+                cackle_exe.display(),
+                build_script_bin.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Determines if we're supposed to be running a build script and if we are, returns the path to the
+/// actual build script. `binary_path` should be the path via which we were invoked - i.e. arg[0].
+fn proxied_build_rs_bin_path(binary_name: &Path) -> Option<PathBuf> {
+    let orig = orig_build_rs_bin_path(binary_name);
+    if orig.exists() {
+        Some(orig)
+    } else {
+        None
+    }
+}
+
+/// Returns the name of the actual build.rs file after we've renamed it.
+fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
+    path.with_file_name("original-build-script")
+}
+
+fn proxy_build_script(orig_build_script: PathBuf) -> Result<ExitStatus> {
+    let config = get_config_from_env()?;
+    //let package_name = get_env("CARGO_PKG_NAME")?;
+    if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&config.sandbox)? {
+        let out_dir = get_env("OUT_DIR")?;
+        sandbox_cmd.ro_bind(target_subdir(&orig_build_script)?);
+        sandbox_cmd.writable_bind(&out_dir);
+        sandbox_cmd.pass_cargo_env();
+
+        Ok(sandbox_cmd.command_to_run(&orig_build_script).status()?)
+    } else {
+        Ok(Command::new(orig_build_script).status()?)
+    }
+}
+
+/// Given some path in our target/profile directory, returns the profile directory. This is always
+/// "cackle", since we specify what profile to use.
+fn target_subdir(build_script_path: &Path) -> Result<&Path> {
+    let mut path = build_script_path;
+    loop {
+        if path.file_name() == Some(OsStr::new(cargo::PROFILE_NAME)) {
+            return Ok(path);
+        }
+        if let Some(parent) = path.parent() {
+            path = parent;
+        } else {
+            bail!(
+                "Build script path `{}` expected to be under `{}`",
+                build_script_path.display(),
+                cargo::PROFILE_NAME
+            );
+        }
+    }
 }
 
 fn proxy_rustc(
@@ -141,7 +233,7 @@ fn proxy_rustc(
     rpc_client: &RpcClient,
 ) -> Result<ExitStatus, anyhow::Error> {
     let config = get_config_from_env()?;
-    let crate_name = get_crate_name_from_args();
+    let crate_name = get_crate_name_from_rustc_args();
 
     let mut command = Command::new("rustc");
     let mut linker_arg = OsString::new();
@@ -212,18 +304,37 @@ fn handle_rustc_errors(
     Ok(())
 }
 
-fn proxy_linker(args: std::iter::Peekable<std::env::Args>) -> Result<ExitStatus, anyhow::Error> {
+/// Advises our parent process that the linker has been invoked, then once it is done checking the
+/// object files, proceeds to run the actual linker or fails.
+fn proxy_linker(
+    link_info: LinkInfo,
+    rpc_client: RpcClient,
+    args: std::iter::Peekable<std::env::Args>,
+) -> Result<ExitStatus, anyhow::Error> {
+    let build_script_bin = link_info
+        .is_build_script
+        .then(|| link_info.output_file.clone());
+    match rpc_client.linker_invoked(link_info)? {
+        rpc::CanContinueResponse::Proceed => {
+            let exit_status = invoke_real_linker(args)?;
+            if exit_status.code() == Some(0) {
+                if let Some(build_script_bin) = build_script_bin {
+                    setup_build_script_wrapper(&build_script_bin)?;
+                }
+            }
+            Ok(exit_status)
+        }
+        rpc::CanContinueResponse::Deny => std::process::exit(1),
+    }
+}
+
+fn invoke_real_linker(
+    args: std::iter::Peekable<std::env::Args>,
+) -> Result<ExitStatus, anyhow::Error> {
     let orig_linker = std::env::var(ORIG_LINKER_ENV)
         .ok()
         .unwrap_or_else(default_linker);
-    //let mut command = Command::new(orig_linker);
-    let mut command = Command::new("strace");
-    command
-        .arg("-f")
-        .arg("-o")
-        .arg("/tmp/l.strace")
-        .arg("--string-limit=1000")
-        .arg(orig_linker);
+    let mut command = Command::new(orig_linker);
     command.args(args);
     run_command(&mut command)
 }
@@ -252,7 +363,7 @@ fn get_config_from_env() -> Result<Config> {
 }
 
 /// Looks for `--crate-name` in the arguments and if found, returns the subsequent argument.
-fn get_crate_name_from_args() -> Option<String> {
+fn get_crate_name_from_rustc_args() -> Option<String> {
     let mut args = std::env::args();
     while let Some(arg) = args.next() {
         if arg == "--crate-name" {
@@ -260,4 +371,8 @@ fn get_crate_name_from_args() -> Option<String> {
         }
     }
     None
+}
+
+fn get_env(var_name: &str) -> Result<String> {
+    std::env::var(var_name).with_context(|| "Failed to get environment variable `{var_name}`")
 }
