@@ -78,8 +78,11 @@ impl SandboxCommand {
         self.arg(dir);
     }
 
-    pub(crate) fn writable_bind(&mut self, dir: &str) {
-        self.args(&["--bind-try", dir, dir])
+    pub(crate) fn writable_bind<S: AsRef<OsStr>>(&mut self, dir: S) {
+        let dir = dir.as_ref();
+        self.arg("--bind-try");
+        self.arg(dir);
+        self.arg(dir);
     }
 
     pub(crate) fn pass_env(&mut self, env_var_name: &str) {

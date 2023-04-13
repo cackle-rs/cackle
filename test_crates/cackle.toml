@@ -68,6 +68,11 @@ allow_apis = [
 ]
 
 [pkg.crab2.build]
+allow_apis = [
+    "process",
+    "env",
+    "fs",
+]
 
 [pkg.crab3]
 # We can't currently identify this usage

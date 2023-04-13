@@ -103,9 +103,11 @@ fn proxy_build_script(orig_build_script: PathBuf) -> Result<ExitStatus> {
     let config = get_config_from_env()?;
     //let package_name = get_env("CARGO_PKG_NAME")?;
     if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&config.sandbox)? {
-        let out_dir = get_env("OUT_DIR")?;
+        // Allow read access to the crate's root source directory.
+        sandbox_cmd.ro_bind(get_env("CARGO_MANIFEST_DIR")?);
         sandbox_cmd.ro_bind(target_subdir(&orig_build_script)?);
-        sandbox_cmd.writable_bind(&out_dir);
+        // Allow write access to OUT_DIR.
+        sandbox_cmd.writable_bind(get_env("OUT_DIR")?);
         sandbox_cmd.pass_cargo_env();
 
         Ok(sandbox_cmd.command_to_run(&orig_build_script).status()?)
