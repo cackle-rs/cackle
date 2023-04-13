@@ -51,6 +51,15 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
+    pub(crate) fn buid_script_complete(
+        &self,
+        info: BuildScriptOutput,
+    ) -> Result<CanContinueResponse> {
+        let mut ipc = self.connect()?;
+        write_to_stream(&Request::BuildScriptComplete(info), &mut ipc)?;
+        read_from_stream(&mut ipc)
+    }
+
     /// Creates a new connection to the socket. We only send a single request/response on each
     /// connection because it makes things simpler. In general a single request/response is all we
     /// need anyway.
@@ -64,11 +73,28 @@ impl RpcClient {
     }
 }
 
+impl CanContinueResponse {
+    /// Exit if we can't continue.
+    pub(crate) fn maybe_exit(&self) {
+        if *self == CanContinueResponse::Deny {
+            std::process::exit(-1)
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub(crate) enum Request {
     /// Advises that the specified crate failed to compile because it uses unsafe.
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
+    BuildScriptComplete(BuildScriptOutput),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub(crate) struct BuildScriptOutput {
+    pub(crate) stdout: Vec<u8>,
+    pub(crate) stderr: Vec<u8>,
+    pub(crate) package_name: String,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -95,6 +121,16 @@ pub(crate) fn read_from_stream<T: DeserializeOwned>(stream: &mut impl Read) -> R
     stream.read_exact(&mut buf)?;
     let serialized = std::str::from_utf8(&buf)?;
     serde_json::from_str(serialized).with_context(|| format!("Invalid message `{serialized}`"))
+}
+
+impl BuildScriptOutput {
+    pub(crate) fn new(value: &std::process::Output, package_name: String) -> Self {
+        Self {
+            stdout: value.stdout.clone(),
+            stderr: value.stderr.clone(),
+            package_name,
+        }
+    }
 }
 
 #[cfg(test)]

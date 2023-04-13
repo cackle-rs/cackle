@@ -19,6 +19,7 @@ use std::process::Command;
 use std::process::ExitStatus;
 
 use super::cackle_exe;
+use super::rpc::BuildScriptOutput;
 use super::rpc::CanContinueResponse;
 use super::run_command;
 use super::CONFIG_PATH_ENV;
@@ -38,7 +39,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     let exit_status;
     if let Some(orig_build_script) = proxied_build_rs_bin_path(&binary_name) {
         // We're wrapping a build script.
-        exit_status = proxy_build_script(orig_build_script)?;
+        exit_status = proxy_build_script(orig_build_script, &rpc_client)?;
     } else if args.peek().map(|arg| arg == "rustc").unwrap_or(false) {
         // We're wrapping rustc.
         args.next();
@@ -99,9 +100,9 @@ fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
     path.with_file_name("original-build-script")
 }
 
-fn proxy_build_script(orig_build_script: PathBuf) -> Result<ExitStatus> {
+fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitStatus> {
     let config = get_config_from_env()?;
-    //let package_name = get_env("CARGO_PKG_NAME")?;
+    let package_name = get_env("CARGO_PKG_NAME")?;
     if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&config.sandbox)? {
         // Allow read access to the crate's root source directory.
         sandbox_cmd.ro_bind(get_env("CARGO_MANIFEST_DIR")?);
@@ -110,7 +111,15 @@ fn proxy_build_script(orig_build_script: PathBuf) -> Result<ExitStatus> {
         sandbox_cmd.writable_bind(get_env("OUT_DIR")?);
         sandbox_cmd.pass_cargo_env();
 
-        Ok(sandbox_cmd.command_to_run(&orig_build_script).status()?)
+        let output = sandbox_cmd.command_to_run(&orig_build_script).output()?;
+        if output.status.code() == Some(0) {
+            rpc_client
+                .buid_script_complete(BuildScriptOutput::new(&output, package_name))?
+                .maybe_exit();
+        }
+        std::io::stderr().lock().write(&output.stderr)?;
+        std::io::stdout().lock().write(&output.stdout)?;
+        Ok(output.status)
     } else {
         Ok(Command::new(orig_build_script).status()?)
     }

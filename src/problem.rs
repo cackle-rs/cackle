@@ -6,7 +6,7 @@ use anyhow::Error;
 use anyhow::Result;
 use std::fmt::Display;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, PartialEq)]
 pub(crate) struct Problems {
     problems: Vec<Problem>,
 }
@@ -94,6 +94,16 @@ impl From<Result<Problems>> for Problems {
         match value {
             Ok(problems) => problems,
             Err(error) => Problem::from_error(error).into(),
+        }
+    }
+}
+
+impl PartialEq for Problem {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Message(l0), Self::Message(r0)) => l0 == r0,
+            (Self::Error(l0), Self::Error(r0)) => l0.to_string() == r0.to_string(),
+            _ => false,
         }
     }
 }

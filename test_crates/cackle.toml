@@ -73,6 +73,9 @@ allow_apis = [
     "env",
     "fs",
 ]
+allow_build_instructions = [
+    "cargo:rustc-link-*"
+]
 
 [pkg.crab3]
 # We can't currently identify this usage

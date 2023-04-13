@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod build_script_checker;
 mod checker;
 mod colour;
 mod config;
@@ -137,6 +138,7 @@ fn run(args: Args) -> Result<()> {
 }
 
 struct Cackle {
+    config: Config,
     checker: Checker,
     target_dir: PathBuf,
     crate_index: CrateIndex,
@@ -159,6 +161,7 @@ impl Cackle {
             checker.report_proc_macro(crate_id);
         }
         Ok(Self {
+            config,
             checker,
             target_dir: root_path.join("target"),
             crate_index,
@@ -177,6 +180,9 @@ impl Cackle {
             }
             proxy::rpc::Request::LinkerInvoked(link_info) => {
                 self.check_linker_invocation(&link_info).into()
+            }
+            proxy::rpc::Request::BuildScriptComplete(output) => {
+                self.check_build_script_output(output)
             }
         }
     }
@@ -203,5 +209,9 @@ impl Cackle {
         }
         problems.merge(graph.validate());
         Ok(problems)
+    }
+
+    fn check_build_script_output(&self, output: proxy::rpc::BuildScriptOutput) -> Problems {
+        build_script_checker::check(&output, &self.config)
     }
 }

@@ -63,6 +63,9 @@ pub(crate) struct PackageConfig {
     allow_unsafe: bool,
 
     #[serde(default)]
+    pub(crate) allow_build_instructions: Vec<String>,
+
+    #[serde(default)]
     pub(crate) allow_apis: Vec<PermissionName>,
 
     #[serde(default)]
@@ -72,6 +75,14 @@ pub(crate) struct PackageConfig {
     /// which it's flattened out.
     build: Option<Box<PackageConfig>>,
 }
+
+pub(crate) static DEFAULT_PACKAGE_CONFIG: PackageConfig = PackageConfig {
+    allow_unsafe: false,
+    allow_build_instructions: vec![],
+    allow_apis: vec![],
+    allow_proc_macro: false,
+    build: None,
+};
 
 pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
     let cackle: String = std::fs::read_to_string(cackle_path)
