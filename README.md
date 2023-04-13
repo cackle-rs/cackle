@@ -16,12 +16,20 @@ result, but is actually using network APIs.
   crate using the macro to be flagged as using unsafe. This can be used to circumvent all other
   protections.
 * A proc macro might detect that it's being run under Cackle and emit different code.
+* Even without proc macros, a crate may only use problematic APIs only in certain configurations
+  that don't match the configuration used when you run Cackle.
 * Analyzing a crate could well end up executing arbitrary code provided by that crate. If this is a
   concern, then running in a sandbox is recommended.
 * This tool is intended to supplement and aid manual review of 3rd party code, not replace it.
+* Your configuration might miss defining an API provided by a crate as falling into a certain
+  category that you care about.
 * There are undoubtedly countless ways that a determined person could circumvent detection that
   they're using some APIs. With time we may try to prevent such circumventions, but you shouldn't
   assume that this is in any way unable to be circumvented.
+
+With all these limitations, what's the point? The goal really is to just raise the bar for what's
+required to sneak problematic code unnoticed into some package. Use of Cackle should not replace any
+manual code reviews of your dependencies that you would otherwise have done.
 
 ## License
 
