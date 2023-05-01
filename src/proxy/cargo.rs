@@ -20,6 +20,9 @@ pub(crate) fn command(base_command: &str, dir: &Path, colour: Colour) -> Command
     command
         .arg("--config")
         .arg(format!("profile.{PROFILE_NAME}.debug=1"));
+    command
+        .arg("--config")
+        .arg(format!("profile.{PROFILE_NAME}.build-override.debug=1"));
     // Optimisation would likely make it harder to figure out where code came from.
     command
         .arg("--config")
