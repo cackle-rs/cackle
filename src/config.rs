@@ -115,6 +115,12 @@ impl Display for PermissionName {
     }
 }
 
+impl From<&'static str> for PermissionName {
+    fn from(name: &'static str) -> Self {
+        PermissionName { name: name.into() }
+    }
+}
+
 impl Config {
     pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &str) -> bool {
         self.packages

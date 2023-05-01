@@ -1,9 +1,12 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
+use crate::checker::Usage;
+use crate::config::PermissionName;
 use crate::proxy::rpc::CanContinueResponse;
 use anyhow::Error;
 use anyhow::Result;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 #[derive(Default, Debug, PartialEq)]
@@ -16,6 +19,15 @@ pub(crate) struct Problems {
 pub(crate) enum Problem {
     Message(String),
     Error(Error),
+    UsesBuildScript(String),
+    IsProcMacro(String),
+    DisallowedApiUsage(DisallowedApiUsage),
+}
+
+#[derive(Debug)]
+pub(crate) struct DisallowedApiUsage {
+    pub(crate) pkg_name: String,
+    pub(crate) usages: HashMap<PermissionName, Vec<Usage>>,
 }
 
 impl Problems {
@@ -40,13 +52,13 @@ impl Problems {
     }
 }
 
-impl IntoIterator for Problems {
-    type Item = Problem;
+impl<'a> IntoIterator for &'a Problems {
+    type Item = &'a Problem;
 
-    type IntoIter = std::vec::IntoIter<Problem>;
+    type IntoIter = std::slice::Iter<'a, Problem>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.problems.into_iter()
+        self.problems.iter()
     }
 }
 
@@ -77,6 +89,20 @@ impl Display for Problem {
         match self {
             Problem::Message(message) => write!(f, "{message}"),
             Problem::Error(error) => write!(f, "{error:?}"),
+            Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]"),
+            Problem::IsProcMacro(pkg_name) =>  write!(f,
+                "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
+            ),
+            Problem::DisallowedApiUsage(info) => {
+                write!(f, "Crate '{}' uses disallowed APIs:\n", info.pkg_name)?;
+                for (perm_name, usages) in &info.usages {
+                    write!(f, "  {perm_name}:")?;
+                    for usage in usages {
+                        writeln!(f, "    {usage}")?;
+                    }
+                }
+                Ok(())
+            },
         }
     }
 }

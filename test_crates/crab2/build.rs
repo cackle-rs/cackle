@@ -5,7 +5,7 @@ fn main() {
     let base_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let object_file = out_dir.join("nothing.o");
-    run(Command::new("clang")
+    run(Command::new("cc")
         .arg("-c")
         .arg(base_dir.join("nothing.c"))
         .arg("-o")

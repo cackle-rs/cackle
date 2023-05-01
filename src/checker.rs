@@ -1,15 +1,13 @@
 use crate::config::PermissionName;
+use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
 use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
-use crate::Args;
-use anyhow::bail;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::fmt::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -137,50 +135,42 @@ impl Checker {
         checker
     }
 
-    pub(crate) fn problems(&self, args: &Args) -> Problems {
+    pub(crate) fn problems(&self) -> Problems {
         let mut problems = Problems::default();
         for crate_info in &self.crate_infos {
             if crate_info.is_proc_macro && !crate_info.allow_proc_macro {
                 if let Some(crate_name) = &crate_info.name {
-                    problems.push(Problem::new(format!(
-                        "Crate `{crate_name}` is a proc macro but doesn't set allow_proc_macro"
-                    )));
+                    problems.push(Problem::IsProcMacro(crate_name.clone()));
                 }
             }
             if crate_info.disallowed_usage.is_empty() {
                 continue;
             }
-            let mut problem = if let Some(crate_name) = &crate_info.name {
-                format!("Crate '{crate_name}' uses disallowed APIs:\n")
-            } else {
-                "APIs were used by code where we couldn't identify the crate responsible:\n"
-                    .to_owned()
+            let Some(crate_name) = &crate_info.name else {
+                problems.push(Problem::new("APIs were used by code where we couldn't identify the crate responsible"));
+                continue;
             };
-            for (perm_id, usages) in &crate_info.disallowed_usage {
-                let perm = self.permission_name(perm_id);
-                writeln!(&mut problem, "  {perm}:").unwrap();
-                let cap = if args.usage_report_cap < 0 {
-                    usages.len()
-                } else {
-                    args.usage_report_cap as usize
-                };
-                for usage in usages.iter().take(cap) {
-                    writeln!(&mut problem, "    {usage}").unwrap();
-                }
-            }
-            problems.push(Problem::new(problem));
+            let usages_by_perm_name = crate_info
+                .disallowed_usage
+                .iter()
+                .map(|(perm_id, usages)| (self.permission_name(perm_id).clone(), usages.clone()))
+                .collect();
+            problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
+                pkg_name: crate_name.clone(),
+                usages: usages_by_perm_name,
+            }));
         }
         problems
     }
 
-    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Result<()> {
+    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Problems {
         let pkg_id = self.crate_id_from_name(&format!("{package_name}.build"));
         let crate_info = &mut self.crate_infos[pkg_id.0];
         if !crate_info.has_config {
-            bail!("Package {package_name} has a build script, but config file doesn't have [pkg.{package_name}.build]");
+            return Problem::UsesBuildScript(package_name.to_owned()).into();
         }
         crate_info.used = true;
-        Ok(())
+        Problems::default()
     }
 
     fn perm_id(&mut self, permission: &PermissionName) -> PermId {

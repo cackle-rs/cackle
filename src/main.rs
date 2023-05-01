@@ -7,6 +7,7 @@ mod build_script_checker;
 mod checker;
 mod colour;
 mod config;
+mod config_editor;
 mod config_validation;
 mod crate_index;
 pub(crate) mod link_info;
@@ -32,6 +33,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
 
+use crate::config_editor::ConfigEditor;
+
 #[derive(Parser, Debug)]
 #[clap(version, about)]
 struct Args {
@@ -44,6 +47,10 @@ struct Args {
     /// the crate to be analyzed.
     #[clap(short, long)]
     cackle_path: Option<PathBuf>,
+
+    /// If problems are found, don't prompt whether to adjust the configuration.
+    #[clap(long)]
+    non_interactive: bool,
 
     /// Print all references (may be large). Useful for debugging why something is passing when you
     /// think it shouldn't be.
@@ -94,9 +101,7 @@ fn run(args: Args) -> Result<()> {
         .clone()
         .unwrap_or_else(|| root_path.join("cackle.toml"));
 
-    let config = config::parse_file(&config_path).context("Invalid config file")?;
-
-    let mut cackle = Cackle::new(config, &root_path, args)?;
+    let mut cackle = Cackle::new(config_path, &root_path, args)?;
 
     if !cackle.args.object_paths.is_empty() {
         let paths: Vec<_> = cackle.args.object_paths.clone();
@@ -104,11 +109,12 @@ fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    let mut problems = cackle.checker.problems(&cackle.args);
+    let mut problems = cackle.checker.problems();
+    let config_path = cackle.config_path.clone();
     let build_result = if problems.is_empty() {
         proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
-            problems.merge(cackle.check_acls(request));
-            problems.can_continue()
+            problems.merge(cackle.check_and_maybe_change_acls(request)?);
+            Ok(problems.can_continue())
         })
     } else {
         // We've already detected problems before running cargo, don't run cargo.
@@ -116,7 +122,7 @@ fn run(args: Args) -> Result<()> {
     };
 
     if !problems.is_empty() {
-        for problem in problems {
+        for problem in &problems {
             println!("{} {problem}", "ERROR:".red());
         }
         std::process::exit(-1);
@@ -138,6 +144,7 @@ fn run(args: Args) -> Result<()> {
 }
 
 struct Cackle {
+    config_path: PathBuf,
     config: Config,
     checker: Checker,
     target_dir: PathBuf,
@@ -146,7 +153,8 @@ struct Cackle {
 }
 
 impl Cackle {
-    fn new(config: Config, root_path: &Path, args: Args) -> Result<Self> {
+    fn new(config_path: PathBuf, root_path: &Path, args: Args) -> Result<Self> {
+        let config = config::parse_file(&config_path).context("Invalid config file")?;
         let mut checker = Checker::from_config(&config);
         let crate_index = CrateIndex::new(root_path)?;
         if args.print_path_to_crate_map {
@@ -161,12 +169,36 @@ impl Cackle {
             checker.report_proc_macro(crate_id);
         }
         Ok(Self {
+            config_path,
             config,
             checker,
             target_dir: root_path.join("target"),
             crate_index,
             args,
         })
+    }
+
+    fn check_and_maybe_change_acls(&mut self, request: proxy::rpc::Request) -> Result<Problems> {
+        let problems = self.check_acls(request);
+        if !self.args.non_interactive && !problems.is_empty() {
+            let mut editor = ConfigEditor::from_file(&self.config_path)?;
+            editor.fix_problems(&problems)?;
+            if editor.has_unsupported {
+                return Ok(problems);
+            }
+            println!("============================================");
+            for problem in &problems {
+                println!("{problem}");
+            }
+            println!("Permit the above and continue build? [y/N]");
+            let mut response = String::new();
+            std::io::stdin().read_line(&mut response)?;
+            if response.trim().to_lowercase() == "y" {
+                editor.write(&self.config_path)?;
+                return Ok(Problems::default());
+            }
+        }
+        Ok(problems)
     }
 
     fn check_acls(&mut self, request: proxy::rpc::Request) -> Problems {
@@ -188,11 +220,15 @@ impl Cackle {
     }
 
     fn check_linker_invocation(&mut self, info: &LinkInfo) -> Result<Problems> {
+        let mut problems = Problems::default();
         if info.is_build_script {
-            self.checker
-                .verify_build_script_permitted(&info.package_name)?;
+            problems.merge(
+                self.checker
+                    .verify_build_script_permitted(&info.package_name),
+            );
         }
-        self.check_object_paths(&info.object_paths_under(&self.target_dir))
+        problems.merge(self.check_object_paths(&info.object_paths_under(&self.target_dir))?);
+        Ok(problems)
     }
 
     fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<Problems> {
@@ -203,7 +239,7 @@ impl Cackle {
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
         graph.apply_to_checker(&mut self.checker, &self.crate_index)?;
-        let mut problems = self.checker.problems(&self.args);
+        let mut problems = self.checker.problems();
         if self.args.print_all_references {
             println!("{graph}");
         }

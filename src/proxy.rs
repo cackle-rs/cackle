@@ -51,12 +51,11 @@ pub(crate) fn invoke_cargo_build(
     dir: &Path,
     config_path: &Path,
     colour: Colour,
-    mut callback: impl FnMut(rpc::Request) -> rpc::CanContinueResponse,
+    mut callback: impl FnMut(rpc::Request) -> Result<rpc::CanContinueResponse>,
 ) -> Result<Option<CargoBuildFailure>> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
         panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
     }
-    let _ = std::fs::remove_file("/tmp/cackle.log");
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
     // to carefully track changes to things we care about, like cackle.toml.
     run_command(&mut cargo::command("clean", dir, colour))?;
@@ -107,7 +106,9 @@ pub(crate) fn invoke_cargo_build(
             let request: rpc::Request = rpc::read_from_stream(&mut connection)
                 .context("Malformed request from subprocess")?;
             let response = (callback)(request);
-            rpc::write_to_stream(&response, &mut connection)?;
+            let can_continue = response.as_ref().unwrap_or(&rpc::CanContinueResponse::Deny);
+            rpc::write_to_stream(&can_continue, &mut connection)?;
+            response?;
         } else {
             // Avoid using too much CPU with our polling.
             std::thread::sleep(Duration::from_millis(10));
