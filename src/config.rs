@@ -89,6 +89,7 @@ pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
         .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
 
     parse(&cackle, cackle_path)
+        .with_context(|| format!("Failed to parse {}", cackle_path.display()))
 }
 
 pub(crate) fn parse(cackle: &str, cackle_path: &Path) -> Result<Config> {

@@ -66,6 +66,10 @@ impl ConfigEditor {
                 }
                 allow_apis.set_trailing("\n");
             }
+            Problem::IsProcMacro(pkg_name) => {
+                let table = self.pkg_table(pkg_name)?;
+                table["allow_proc_macro"] = toml_edit::value(true);
+            }
             _ => self.has_unsupported = true,
         }
         Ok(())
@@ -160,6 +164,19 @@ mod tests {
                     "net",
                 ]
             "#},
+        );
+    }
+
+    #[test]
+    fn fix_allow_proc_macro() {
+        check(
+            "",
+            &[Problem::IsProcMacro("crab1".to_owned())],
+            indoc! {r#"
+                [pkg.crab1]
+                allow_proc_macro = true
+            "#,
+            },
         );
     }
 }

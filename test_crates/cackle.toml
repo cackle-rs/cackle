@@ -93,10 +93,10 @@ allow_apis = [
 ]
 
 [pkg.pmacro1]
-allow_proc_macro = true
 allow_apis = [
     "env"
 ]
+allow_proc_macro = true
 
 [pkg.crab-bin]
 allow_apis = [

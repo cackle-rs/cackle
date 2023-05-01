@@ -105,15 +105,16 @@ fn run(args: Args) -> Result<()> {
 
     if !cackle.args.object_paths.is_empty() {
         let paths: Vec<_> = cackle.args.object_paths.clone();
-        cackle.check_object_paths(&paths)?;
+        report_problems_and_maybe_exit(&cackle.check_object_paths(&paths)?);
         return Ok(());
     }
 
-    let mut problems = cackle.checker.problems();
+    let mut problems = cackle.maybe_fix_problems(cackle.checker.problems())?;
     let config_path = cackle.config_path.clone();
     let build_result = if problems.is_empty() {
         proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
-            problems.merge(cackle.check_and_maybe_change_acls(request)?);
+            let acl_problems = cackle.check_acls(request);
+            problems.merge(cackle.maybe_fix_problems(acl_problems)?);
             Ok(problems.can_continue())
         })
     } else {
@@ -121,12 +122,7 @@ fn run(args: Args) -> Result<()> {
         Ok(None)
     };
 
-    if !problems.is_empty() {
-        for problem in &problems {
-            println!("{} {problem}", "ERROR:".red());
-        }
-        std::process::exit(-1);
-    }
+    report_problems_and_maybe_exit(&problems);
 
     // We only check if the build failed if there were no ACL check errors.
     if let Some(build_failure) = build_result? {
@@ -143,6 +139,15 @@ fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
+fn report_problems_and_maybe_exit(problems: &Problems) {
+    if !problems.is_empty() {
+        for problem in problems {
+            println!("{} {problem}", "ERROR:".red());
+        }
+        std::process::exit(-1);
+    }
+}
+
 struct Cackle {
     config_path: PathBuf,
     config: Config,
@@ -154,7 +159,7 @@ struct Cackle {
 
 impl Cackle {
     fn new(config_path: PathBuf, root_path: &Path, args: Args) -> Result<Self> {
-        let config = config::parse_file(&config_path).context("Invalid config file")?;
+        let config = config::parse_file(&config_path)?;
         let mut checker = Checker::from_config(&config);
         let crate_index = CrateIndex::new(root_path)?;
         if args.print_path_to_crate_map {
@@ -178,8 +183,7 @@ impl Cackle {
         })
     }
 
-    fn check_and_maybe_change_acls(&mut self, request: proxy::rpc::Request) -> Result<Problems> {
-        let problems = self.check_acls(request);
+    fn maybe_fix_problems(&mut self, problems: Problems) -> Result<Problems> {
         if !self.args.non_interactive && !problems.is_empty() {
             let mut editor = ConfigEditor::from_file(&self.config_path)?;
             editor.fix_problems(&problems)?;
@@ -195,6 +199,7 @@ impl Cackle {
             std::io::stdin().read_line(&mut response)?;
             if response.trim().to_lowercase() == "y" {
                 editor.write(&self.config_path)?;
+                self.config = config::parse_file(&self.config_path)?;
                 return Ok(Problems::default());
             }
         }
