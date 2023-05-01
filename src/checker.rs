@@ -15,8 +15,8 @@ use std::path::PathBuf;
 pub(crate) struct Checker {
     permission_names: Vec<PermissionName>,
     permission_name_to_id: HashMap<PermissionName, PermId>,
-    inclusions: HashMap<String, Vec<PermId>>,
-    exclusions: HashMap<String, Vec<PermId>>,
+    inclusions: HashMap<String, HashSet<PermId>>,
+    exclusions: HashMap<String, HashSet<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
 }
@@ -100,39 +100,41 @@ impl Checker {
 
         // Allocate UNKNOWN_CRATE_ID as the first crate.
         checker.crate_infos.push(CrateInfo::default());
+        checker.load_config(config);
+        checker
+    }
 
+    /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
+    pub(crate) fn load_config(&mut self, config: &crate::config::Config) {
         for (perm_name, api) in &config.apis {
-            let id = checker.perm_id(perm_name);
+            let id = self.perm_id(perm_name);
             for prefix in &api.include {
-                checker
-                    .inclusions
+                self.inclusions
                     .entry(prefix.to_owned())
                     .or_default()
-                    .push(id);
+                    .insert(id);
             }
             for prefix in &api.exclude {
-                checker
-                    .exclusions
+                self.exclusions
                     .entry(prefix.to_owned())
                     .or_default()
-                    .push(id);
+                    .insert(id);
             }
         }
         for (crate_name, crate_config) in &config.packages {
-            let crate_id = checker.crate_id_from_name(crate_name);
-            let crate_info = &mut checker.crate_infos[crate_id.0];
+            let crate_id = self.crate_id_from_name(crate_name);
+            let crate_info = &mut self.crate_infos[crate_id.0];
             crate_info.has_config = true;
             crate_info.allow_proc_macro = crate_config.allow_proc_macro;
             for perm in &crate_config.allow_apis {
-                let perm_id = checker.perm_id(perm);
+                let perm_id = self.perm_id(perm);
                 // Find `crate_info` again. Need to do this here because the `perm_id` above needs
                 // to borrow `checker`.
-                let crate_info = &mut checker.crate_infos[crate_id.0];
+                let crate_info = &mut self.crate_infos[crate_id.0];
                 crate_info.allowed_perms.insert(perm_id);
                 crate_info.unused_allowed_perms.insert(perm_id);
             }
         }
-        checker
     }
 
     pub(crate) fn problems(&self) -> Problems {
@@ -233,20 +235,11 @@ impl Checker {
                 name.push_str("::");
             }
             name.push_str(name_part);
-            for perm_id in self
-                .inclusions
-                .get(&name)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[])
-            {
+            let empty_hash_set = HashSet::new();
+            for perm_id in self.inclusions.get(&name).unwrap_or(&empty_hash_set) {
                 matched.insert(*perm_id);
             }
-            for perm_id in self
-                .exclusions
-                .get(&name)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[])
-            {
+            for perm_id in self.exclusions.get(&name).unwrap_or(&empty_hash_set) {
                 matched.remove(perm_id);
             }
         }

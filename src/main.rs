@@ -200,6 +200,7 @@ impl Cackle {
             if response.trim().to_lowercase() == "y" {
                 editor.write(&self.config_path)?;
                 self.config = config::parse_file(&self.config_path)?;
+                self.checker.load_config(&self.config);
                 return Ok(Problems::default());
             }
         }
