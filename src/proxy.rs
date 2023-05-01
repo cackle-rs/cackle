@@ -64,6 +64,7 @@ pub(crate) fn invoke_cargo_build(
     std::fs::create_dir_all(&target_dir)
         .with_context(|| format!("Failed to create directory `{}`", target_dir.display()))?;
     let ipc_path = target_dir.join("cackle.socket");
+    let _ = std::fs::remove_file(&ipc_path);
     let listener = UnixListener::bind(&ipc_path)
         .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
 
