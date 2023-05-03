@@ -1,7 +1,7 @@
 # Cackle
 
 **This is a work in progress and isn't ready for use yet. It's published just so that others can see
-what's being worked on. It hasn't even been tested on a non-trivial crate yet.**
+what's being worked on.
 
 Cackle is a tool to analyse the transitive dependencies of your crate to see what kinds of APIs each
 crate uses.
