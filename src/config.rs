@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     pub(crate) version: u32,
@@ -22,9 +22,12 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) ignore_unused: bool,
+
+    #[serde(default)]
+    pub(crate) explicit_build_scripts: bool,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SandboxConfig {
     #[serde(default)]
@@ -37,7 +40,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) extra_args: Vec<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
     pub(crate) include: Vec<String>,
@@ -52,14 +55,14 @@ pub(crate) struct PermissionName {
     pub(crate) name: Cow<'static, str>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Debug, Default, Clone)]
 pub(crate) enum SandboxKind {
     Disabled,
     #[default]
     Bubblewrap,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackageConfig {
     #[serde(default)]

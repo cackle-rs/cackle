@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::config::PermissionName;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::MultipleSymbolsInSection;
@@ -22,6 +23,7 @@ pub(crate) struct Checker {
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
     multiple_symbols_in_section: Vec<MultipleSymbolsInSection>,
+    config: Config,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -105,6 +107,7 @@ impl Checker {
 
     /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
     pub(crate) fn load_config(&mut self, config: &crate::config::Config) {
+        self.config = config.clone();
         for (perm_name, api) in &config.apis {
             let id = self.perm_id(perm_name);
             for prefix in &api.include {
@@ -184,7 +187,7 @@ impl Checker {
     pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Problems {
         let pkg_id = self.crate_id_from_name(&format!("{package_name}.build"));
         let crate_info = &mut self.crate_infos[pkg_id.0];
-        if !crate_info.has_config {
+        if !crate_info.has_config && self.config.explicit_build_scripts {
             return Problem::UsesBuildScript(package_name.to_owned()).into();
         }
         crate_info.used = true;
