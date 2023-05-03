@@ -123,8 +123,11 @@ impl SymGraph {
                 continue;
                 //bail!("Couldn't determine source filename for section `{}` in `{}`", section.name, section.defined_in.display());
             };
-            // Ignore sources from the rust standard library.
-            if source_filename.starts_with("/rustc/") {
+            // Ignore sources from the rust standard library and precompiled crates that are bundled
+            // with the standard library (e.g. hashbrown).
+            if source_filename.starts_with("/rustc/")
+                || source_filename.starts_with("/cargo/registry")
+            {
                 continue;
             }
             let crate_name = mapping
