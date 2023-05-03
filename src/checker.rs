@@ -1,5 +1,6 @@
 use crate::config::PermissionName;
 use crate::problem::DisallowedApiUsage;
+use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
 use crate::problem::Problems;
 use crate::section_name::SectionName;
@@ -20,6 +21,7 @@ pub(crate) struct Checker {
     exclusions: HashMap<String, HashSet<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
+    multiple_symbols_in_section: Vec<MultipleSymbolsInSection>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -159,7 +161,24 @@ impl Checker {
                 usages: usages_by_perm_name,
             }));
         }
+        for m in &self.multiple_symbols_in_section {
+            problems.push(Problem::MultipleSymbolsInSection(m.clone()));
+        }
         problems
+    }
+
+    pub(crate) fn record_multiple_symbols_in_section(
+        &mut self,
+        defined_in: &Path,
+        symbols: &[Symbol],
+        section_name: &SectionName,
+    ) {
+        self.multiple_symbols_in_section
+            .push(MultipleSymbolsInSection {
+                section_name: section_name.clone(),
+                symbols: symbols.to_owned(),
+                defined_in: defined_in.to_owned(),
+            })
     }
 
     pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Problems {

@@ -130,6 +130,13 @@ impl SymGraph {
             {
                 continue;
             }
+            if section.definitions.len() > 1 {
+                checker.record_multiple_symbols_in_section(
+                    &section.defined_in,
+                    &section.definitions,
+                    &section.name,
+                );
+            }
             let crate_name = mapping
                 .crate_name_for_path(source_filename)
                 .ok_or_else(|| {
@@ -165,20 +172,7 @@ impl SymGraph {
     }
 
     pub(crate) fn validate(&self) -> Problems {
-        let mut multiple_defs = 0;
-        let mut sample_section_name = None;
         let mut problems = Problems::default();
-        for section in &self.sections {
-            if section.definitions.len() > 1 {
-                multiple_defs += 1;
-                sample_section_name = Some(&section.name);
-            }
-        }
-        if let Some(name) = sample_section_name {
-            problems.push(format!(
-                "Multiple definitions for {multiple_defs} sections, e.g. {name}"
-            ));
-        }
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
             problems.push(format!(
                 "Multiple definitions for {} symbols, e.g. {}",

@@ -4,10 +4,13 @@
 use crate::checker::Usage;
 use crate::config::PermissionName;
 use crate::proxy::rpc::CanContinueResponse;
+use crate::section_name::SectionName;
+use crate::symbol::Symbol;
 use anyhow::Error;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::path::PathBuf;
 
 #[derive(Default, Debug, PartialEq)]
 pub(crate) struct Problems {
@@ -22,12 +25,20 @@ pub(crate) enum Problem {
     UsesBuildScript(String),
     IsProcMacro(String),
     DisallowedApiUsage(DisallowedApiUsage),
+    MultipleSymbolsInSection(MultipleSymbolsInSection),
 }
 
 #[derive(Debug)]
 pub(crate) struct DisallowedApiUsage {
     pub(crate) pkg_name: String,
     pub(crate) usages: HashMap<PermissionName, Vec<Usage>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MultipleSymbolsInSection {
+    pub(crate) section_name: SectionName,
+    pub(crate) symbols: Vec<Symbol>,
+    pub(crate) defined_in: PathBuf,
 }
 
 impl Problems {
@@ -87,12 +98,12 @@ impl From<Error> for Problem {
 impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Problem::Message(message) => write!(f, "{message}"),
-            Problem::Error(error) => write!(f, "{error:?}"),
-            Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]"),
+            Problem::Message(message) => write!(f, "{message}")?,
+            Problem::Error(error) => write!(f, "{error:?}")?,
+            Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]")?,
             Problem::IsProcMacro(pkg_name) =>  write!(f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
-            ),
+            )?,
             Problem::DisallowedApiUsage(info) => {
                 write!(f, "Crate '{}' uses disallowed APIs:\n", info.pkg_name)?;
                 for (perm_name, usages) in &info.usages {
@@ -101,9 +112,16 @@ impl Display for Problem {
                         writeln!(f, "    {usage}")?;
                     }
                 }
-                Ok(())
+            },
+            Problem::MultipleSymbolsInSection(info) => {
+                writeln!(f, "The section `{}` in `{}` defines multiple symbols:",
+                    info.section_name, info.defined_in.display())?;
+                for sym in &info.symbols {
+                    writeln!(f, "  {sym}")?;
+                }
             },
         }
+        Ok(())
     }
 }
 
