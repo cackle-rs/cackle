@@ -73,6 +73,10 @@ struct Args {
     /// Whether to use coloured output.
     #[clap(long, alias = "color", default_value = "auto")]
     colour: colour::Colour,
+
+    /// Don't print anything on success.
+    #[clap(long)]
+    quiet: bool,
 }
 
 fn main() -> Result<()> {
@@ -136,7 +140,9 @@ fn run(args: Args) -> Result<()> {
         }
     }
 
-    println!("Cackle succcess");
+    if !cackle.args.quiet {
+        println!("Cackle succcess");
+    }
 
     Ok(())
 }
