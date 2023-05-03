@@ -14,6 +14,10 @@ impl SectionName {
             bytes: bytes.into(),
         }
     }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
 }
 
 impl Display for SectionName {

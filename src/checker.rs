@@ -27,8 +27,6 @@ pub(crate) struct PermId(usize);
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CrateId(pub(crate) usize);
 
-pub(crate) const UNKNOWN_CRATE_ID: CrateId = CrateId(0);
-
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
     pub(crate) name: Option<String>,
@@ -98,8 +96,6 @@ impl Checker {
     pub(crate) fn from_config(config: &crate::config::Config) -> Self {
         let mut checker = Checker::default();
 
-        // Allocate UNKNOWN_CRATE_ID as the first crate.
-        checker.crate_infos.push(CrateInfo::default());
         checker.load_config(config);
         checker
     }

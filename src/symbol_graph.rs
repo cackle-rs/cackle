@@ -11,11 +11,11 @@ use crate::checker::SourceLocation;
 use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
-use crate::checker::UNKNOWN_CRATE_ID;
 use crate::crate_index::CrateIndex;
 use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -114,15 +114,29 @@ impl SymGraph {
         mapping: &CrateIndex,
     ) -> Result<()> {
         for section in &self.sections {
-            let source_filename = section.source_filename.as_ref();
-            // Ignore sources from the rust standard library.
-            if source_filename.map_or(false, |s| s.starts_with("/rustc/")) {
+            if section.name.is_empty() {
+                // TODO: Determine if it's OK to just ignore this.
                 continue;
             }
-            let crate_id = source_filename
-                .and_then(|source_filename| mapping.crate_name_for_path(source_filename))
-                .map(|crate_name| checker.crate_id_from_name(crate_name))
-                .unwrap_or(UNKNOWN_CRATE_ID);
+            let Some(source_filename) = section.source_filename.as_ref() else {
+                // TODO: Determine if it's OK to just ignore this.
+                continue;
+                //bail!("Couldn't determine source filename for section `{}` in `{}`", section.name, section.defined_in.display());
+            };
+            // Ignore sources from the rust standard library.
+            if source_filename.starts_with("/rustc/") {
+                continue;
+            }
+            let crate_name = mapping
+                .crate_name_for_path(source_filename)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Couldn't find crate name for {} referenced from {}",
+                        source_filename.display(),
+                        section.defined_in.display(),
+                    )
+                })?;
+            let crate_id = checker.crate_id_from_name(crate_name);
             for reference in &section.references {
                 if let Some(ref_name) = self.referenced_symbol(reference) {
                     for name_parts in ref_name.parts()? {
