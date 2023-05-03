@@ -19,6 +19,9 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
+
+    #[serde(default)]
+    pub(crate) ignore_unused: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]

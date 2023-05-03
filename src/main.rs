@@ -130,8 +130,10 @@ fn run(args: Args) -> Result<()> {
         std::process::exit(-1);
     }
 
-    if let Err(unused) = cackle.checker.check_unused() {
-        println!("{} {}", "WARNING: ".yellow(), unused);
+    if !cackle.config.ignore_unused {
+        if let Err(unused) = cackle.checker.check_unused() {
+            println!("{}", unused);
+        }
     }
 
     println!("Cackle succcess");

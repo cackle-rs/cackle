@@ -5,6 +5,7 @@ use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use anyhow::Result;
+use colored::Colorize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -301,7 +302,8 @@ impl Display for UnusedConfig {
         if !self.unknown_crates.is_empty() {
             writeln!(
                 f,
-                "Warning: Config supplied for packages not in dependency tree:"
+                "{} Config supplied for packages not in dependency tree:",
+                "WARNING:".yellow(),
             )?;
             for crate_name in &self.unknown_crates {
                 writeln!(f, "    {crate_name}")?;
@@ -310,7 +312,8 @@ impl Display for UnusedConfig {
         for (pkg_name, used_apis) in &self.unused_allow_apis {
             writeln!(
                 f,
-                "Warning: The config for package '{pkg_name}' allows the following APIs that aren't used:"
+                "{} The config for package '{pkg_name}' allows the following APIs that aren't used:",
+                "WARNING:".yellow()
             )?;
             for api in used_apis {
                 writeln!(f, "    {api}")?;
