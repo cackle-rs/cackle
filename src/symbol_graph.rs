@@ -456,9 +456,10 @@ fn load_var_int(offset: usize, size: usize, data: &[u8]) -> Result<i64, gimli::E
     let bytes = &data[offset..offset + size];
 
     Ok(match size {
+        0 => 0,
         4 => i32::from_le_bytes(bytes.try_into().unwrap()) as i64,
         8 => i64::from_le_bytes(bytes.try_into().unwrap()),
-        _ => return Err(gimli::Error::UnsupportedFieldSize((offset * 8) as u8)),
+        _ => panic!("Unimplemented data size {size}"),
     })
 }
 
