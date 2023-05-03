@@ -26,7 +26,7 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
 
 /// Cargo instructions that should be harmless, so would just add noise if we were required to
 /// explicitly allow them.
-const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning"];
+const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:rustc-cfg="];
 
 fn check_directive(instruction: &str, pkg_name: &str, config: &PackageConfig) -> Problems {
     if ALWAYS_PERMITTED
