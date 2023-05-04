@@ -150,6 +150,15 @@ impl SymGraph {
             for reference in &section.references {
                 if let Some(ref_name) = self.referenced_symbol(reference) {
                     for name_parts in ref_name.parts()? {
+                        // If a package references another symbol within the same package, ignore
+                        // it.
+                        if name_parts
+                            .first()
+                            .map(|name_start| crate_name == name_start)
+                            .unwrap_or(false)
+                        {
+                            continue;
+                        }
                         checker.path_used(crate_id, &name_parts, || {
                             let location = if let Some(filename) = section.source_filename.clone() {
                                 UsageLocation::Source(SourceLocation { filename })

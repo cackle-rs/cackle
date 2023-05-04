@@ -21,6 +21,8 @@ include = [
     # std::env provides quite a few functions that return paths, which can in
     # turn allow filesystem access.
     "std::env",
+
+    "crab1::read_file",
 ]
 exclude = [
     "std::io::stdio",
