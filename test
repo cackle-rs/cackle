@@ -1,4 +1,0 @@
-#!/bin/bash
-set -e
-cargo test
-cargo run -- --path $(realpath $(dirname $BASH_SOURCE))/test_crates
