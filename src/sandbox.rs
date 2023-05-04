@@ -95,9 +95,11 @@ impl SandboxCommand {
     pub(crate) fn pass_cargo_env(&mut self) {
         self.pass_env("OUT_DIR");
         for (var, value) in std::env::vars_os() {
-            self.arg("--setenv");
-            self.arg(var);
-            self.arg(value);
+            if var.to_str().map(is_cargo_env).unwrap_or(false) {
+                self.arg("--setenv");
+                self.arg(var);
+                self.arg(value);
+            }
         }
     }
 
@@ -105,4 +107,11 @@ impl SandboxCommand {
         self.arg(binary);
         self.command
     }
+}
+
+fn is_cargo_env(var: &str) -> bool {
+    if var == "RUSTC_WRAPPER" {
+        return false;
+    }
+    var.starts_with("CARGO") || var.starts_with("RUSTC") || var == "TARGET"
 }

@@ -1,7 +1,16 @@
+use std::path::Path;
 use std::path::PathBuf;
 
 fn main() {
     write_output_files();
+
+    // Generally RUSTC_WRAPPER shouldn't be set when we run our build script, but if it is, the path
+    // it points to should exist.
+    if let Ok(rustc_wrapper) = std::env::var("RUSTC_WRAPPER") {
+        if !Path::new(&rustc_wrapper).exists() {
+            panic!("RUSTC_WRAPPER is set to {rustc_wrapper}, but that doesn't exist");
+        }
+    }
 }
 
 fn write_output_files() {
