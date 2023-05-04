@@ -50,6 +50,10 @@ With all these limitations, what's the point? The goal really is to just raise t
 required to sneak problematic code unnoticed into some package. Use of Cackle should not replace any
 manual code reviews of your dependencies that you would otherwise have done.
 
+## Configuration file format
+
+See [CONFIG.md](CONFIG.md).
+
 ## How it works
 
 See [HOW_IT_WORKS.md](HOW_IT_WORKS.md).

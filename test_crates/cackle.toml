@@ -2,9 +2,6 @@ version = 1
 
 [sandbox]
 kind = "Bubblewrap"
-allow_read = [
-    "/usr"
-]
 
 [api.fs]
 include = [
