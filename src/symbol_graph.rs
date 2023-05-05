@@ -108,11 +108,15 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn apply_to_checker(
-        &self,
-        checker: &mut Checker,
-        mapping: &CrateIndex,
-    ) -> Result<()> {
+    pub(crate) fn problems(&self, checker: &mut Checker, mapping: &CrateIndex) -> Result<Problems> {
+        let mut problems = Problems::default();
+        if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
+            problems.push(format!(
+                "Multiple definitions for {} symbols, e.g. {}",
+                self.duplicate_symbol_section_indexes.len(),
+                dup
+            ));
+        }
         for section in &self.sections {
             if section.name.is_empty() {
                 // TODO: Determine if it's OK to just ignore this.
@@ -131,10 +135,11 @@ impl SymGraph {
                 continue;
             }
             if section.definitions.len() > 1 {
-                checker.record_multiple_symbols_in_section(
+                checker.multiple_symbols_in_section(
                     &section.defined_in,
                     &section.definitions,
                     &section.name,
+                    &mut problems,
                 );
             }
             let crate_name = mapping
@@ -159,7 +164,7 @@ impl SymGraph {
                         {
                             continue;
                         }
-                        checker.path_used(crate_id, &name_parts, || {
+                        checker.path_used(crate_id, &name_parts, &mut problems, || {
                             let location = if let Some(filename) = section.source_filename.clone() {
                                 UsageLocation::Source(SourceLocation { filename })
                             } else {
@@ -177,19 +182,7 @@ impl SymGraph {
                 }
             }
         }
-        Ok(())
-    }
-
-    pub(crate) fn validate(&self) -> Problems {
-        let mut problems = Problems::default();
-        if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
-            problems.push(format!(
-                "Multiple definitions for {} symbols, e.g. {}",
-                self.duplicate_symbol_section_indexes.len(),
-                dup
-            ));
-        }
-        problems
+        Ok(problems)
     }
 
     fn referenced_symbol<'a>(&'a self, reference: &'a Reference) -> Option<&'a Symbol> {

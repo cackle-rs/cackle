@@ -22,7 +22,6 @@ pub(crate) struct Checker {
     exclusions: HashMap<String, HashSet<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
-    multiple_symbols_in_section: Vec<MultipleSymbolsInSection>,
     config: Config,
 }
 
@@ -50,10 +49,6 @@ pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermId>,
-
-    /// Permissions that are not permitted for use by this crate but where found to be used (keys)
-    /// and the locations of those usages.
-    pub(crate) disallowed_usage: HashMap<PermId, Vec<Usage>>,
 
     /// Whether this crate is a proc macro according to cargo metadata.
     is_proc_macro: bool,
@@ -147,41 +142,24 @@ impl Checker {
                     problems.push(Problem::IsProcMacro(crate_name.clone()));
                 }
             }
-            if crate_info.disallowed_usage.is_empty() {
-                continue;
-            }
-            let Some(crate_name) = &crate_info.name else {
-                problems.push(Problem::new("APIs were used by code where we couldn't identify the crate responsible"));
-                continue;
-            };
-            let usages_by_perm_name = crate_info
-                .disallowed_usage
-                .iter()
-                .map(|(perm_id, usages)| (self.permission_name(perm_id).clone(), usages.clone()))
-                .collect();
-            problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
-                pkg_name: crate_name.clone(),
-                usages: usages_by_perm_name,
-            }));
-        }
-        for m in &self.multiple_symbols_in_section {
-            problems.push(Problem::MultipleSymbolsInSection(m.clone()));
         }
         problems
     }
 
-    pub(crate) fn record_multiple_symbols_in_section(
+    pub(crate) fn multiple_symbols_in_section(
         &mut self,
         defined_in: &Path,
         symbols: &[Symbol],
         section_name: &SectionName,
+        problems: &mut Problems,
     ) {
-        self.multiple_symbols_in_section
-            .push(MultipleSymbolsInSection {
+        problems.push(Problem::MultipleSymbolsInSection(
+            MultipleSymbolsInSection {
                 section_name: section_name.clone(),
                 symbols: symbols.to_owned(),
                 defined_in: defined_in.to_owned(),
-            })
+            },
+        ));
     }
 
     pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Problems {
@@ -237,12 +215,13 @@ impl Checker {
         &mut self,
         crate_id: CrateId,
         name_parts: &[String],
+        problems: &mut Problems,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         // TODO: If compute_usage_fn is not expensive, then just pass it in instead of using a
         // closure.
         for perm_id in self.apis_for_path(name_parts) {
-            self.permission_id_used(crate_id, perm_id, &mut compute_usage_fn);
+            self.permission_id_used(crate_id, perm_id, problems, &mut compute_usage_fn);
         }
     }
 
@@ -269,16 +248,24 @@ impl Checker {
         &mut self,
         crate_id: CrateId,
         perm_id: PermId,
+        problems: &mut Problems,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         let crate_info = &mut self.crate_infos[crate_id.0];
         crate_info.unused_allowed_perms.remove(&perm_id);
         if !crate_info.allowed_perms.contains(&perm_id) {
-            crate_info
-                .disallowed_usage
-                .entry(perm_id)
-                .or_default()
-                .push((compute_usage_fn)());
+            let Some(pkg_name) = &crate_info.name else {
+                    problems.push(Problem::new("APIs were used by code where we couldn't identify the crate responsible"));
+                    return;
+                };
+            let pkg_name = pkg_name.clone();
+            let permission_name = self.permission_name(&perm_id).clone();
+            let mut usages = HashMap::new();
+            usages.insert(permission_name, vec![compute_usage_fn()]);
+            problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
+                pkg_name,
+                usages,
+            }));
         }
     }
 

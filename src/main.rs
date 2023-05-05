@@ -252,12 +252,10 @@ impl Cackle {
                 .process_file(path)
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
-        graph.apply_to_checker(&mut self.checker, &self.crate_index)?;
-        let mut problems = self.checker.problems();
+        let problems = graph.problems(&mut self.checker, &self.crate_index)?;
         if self.args.print_all_references {
             println!("{graph}");
         }
-        problems.merge(graph.validate());
         Ok(problems)
     }
 
