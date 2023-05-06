@@ -6,8 +6,8 @@ use crate::config::PermissionName;
 use crate::proxy::rpc::CanContinueResponse;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
-use anyhow::Error;
-use anyhow::Result;
+use std::collections::hash_map::Entry;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
@@ -18,20 +18,19 @@ pub(crate) struct Problems {
 }
 
 #[must_use]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Problem {
     Message(String),
-    Error(Error),
     UsesBuildScript(String),
     IsProcMacro(String),
     DisallowedApiUsage(DisallowedApiUsage),
     MultipleSymbolsInSection(MultipleSymbolsInSection),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct DisallowedApiUsage {
     pub(crate) pkg_name: String,
-    pub(crate) usages: HashMap<PermissionName, Vec<Usage>>,
+    pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +60,36 @@ impl Problems {
     pub(crate) fn is_empty(&self) -> bool {
         self.problems.is_empty()
     }
+
+    /// Combines problems together where possible. e.g all disallowed API usages for a package will
+    /// be combined.
+    pub(crate) fn condense(&mut self) {
+        let mut merged = Problems::default();
+        let mut disallowed_by_crate_name: HashMap<String, usize> = HashMap::new();
+        for problem in self.problems.drain(..) {
+            match problem {
+                Problem::DisallowedApiUsage(usage) => {
+                    match disallowed_by_crate_name.entry(usage.pkg_name.clone()) {
+                        Entry::Occupied(entry) => {
+                            let Problem::DisallowedApiUsage(existing) = &mut merged.problems[*entry.get()] else {
+                                panic!("Problems::condense internal error");
+                            };
+                            for (k, mut v) in usage.usages {
+                                existing.usages.entry(k).or_default().append(&mut v);
+                            }
+                        }
+                        Entry::Vacant(entry) => {
+                            let index = merged.problems.len();
+                            merged.push(Problem::DisallowedApiUsage(usage));
+                            entry.insert(index);
+                        }
+                    }
+                }
+                other => merged.push(other),
+            }
+        }
+        *self = merged;
+    }
 }
 
 impl<'a> IntoIterator for &'a Problems {
@@ -77,10 +106,6 @@ impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
     }
-
-    pub(crate) fn from_error<E: Into<Error>>(error: E) -> Self {
-        Self::Error(error.into())
-    }
 }
 
 impl From<String> for Problem {
@@ -89,17 +114,10 @@ impl From<String> for Problem {
     }
 }
 
-impl From<Error> for Problem {
-    fn from(value: Error) -> Self {
-        Problem::Error(value)
-    }
-}
-
 impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
-            Problem::Error(error) => write!(f, "{error:?}")?,
             Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]")?,
             Problem::IsProcMacro(pkg_name) =>  write!(f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
@@ -107,7 +125,7 @@ impl Display for Problem {
             Problem::DisallowedApiUsage(info) => {
                 write!(f, "Crate '{}' uses disallowed APIs:\n", info.pkg_name)?;
                 for (perm_name, usages) in &info.usages {
-                    write!(f, "  {perm_name}:")?;
+                    writeln!(f, "  {perm_name}:")?;
                     for usage in usages {
                         writeln!(f, "    {usage}")?;
                     }
@@ -133,21 +151,81 @@ impl From<Problem> for Problems {
     }
 }
 
-impl From<Result<Problems>> for Problems {
-    fn from(value: Result<Problems>) -> Self {
-        match value {
-            Ok(problems) => problems,
-            Err(error) => Problem::from_error(error).into(),
-        }
-    }
-}
-
 impl PartialEq for Problem {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Message(l0), Self::Message(r0)) => l0 == r0,
-            (Self::Error(l0), Self::Error(r0)) => l0.to_string() == r0.to_string(),
             _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Problem;
+    use super::Problems;
+    use crate::checker::SourceLocation;
+    use crate::checker::Usage;
+    use crate::config::PermissionName;
+    use crate::symbol::Symbol;
+    use std::borrow::Cow;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_condense() {
+        let mut problems = Problems::default();
+        problems.push(create_problem(
+            "foo2",
+            &[("net", &[create_usage("bbb", "net_stuff")])],
+        ));
+        problems.push(create_problem(
+            "foo1",
+            &[("net", &[create_usage("aaa", "net_stuff")])],
+        ));
+        problems.push(create_problem(
+            "foo1",
+            &[("net", &[create_usage("bbb", "net_stuff")])],
+        ));
+        problems.push(create_problem(
+            "foo1",
+            &[("fs", &[create_usage("aaa", "fs_stuff")])],
+        ));
+
+        problems.condense();
+
+        let mut package_names = Vec::new();
+        for p in &problems.problems {
+            if let Problem::DisallowedApiUsage(u) = p {
+                package_names.push(u.pkg_name.as_str());
+            }
+        }
+        package_names.sort();
+        assert_eq!(package_names, vec!["foo1", "foo2"]);
+    }
+
+    fn create_problem(package: &str, permissions_and_usage: &[(&str, &[Usage])]) -> Problem {
+        let mut usages = BTreeMap::new();
+        for (perm_name, usage) in permissions_and_usage {
+            usages.insert(
+                PermissionName {
+                    name: Cow::Owned(perm_name.to_string()),
+                },
+                usage.to_vec(),
+            );
+        }
+        Problem::DisallowedApiUsage(super::DisallowedApiUsage {
+            pkg_name: package.to_owned(),
+            usages,
+        })
+    }
+
+    fn create_usage(from: &str, to: &str) -> Usage {
+        Usage {
+            location: crate::checker::UsageLocation::Source(SourceLocation {
+                filename: "lib.rs".into(),
+            }),
+            from: crate::checker::Referee::Symbol(Symbol::new(from)),
+            to: Symbol::new(to),
         }
     }
 }

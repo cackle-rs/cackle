@@ -17,6 +17,7 @@ mod sandbox;
 pub(crate) mod section_name;
 pub(crate) mod symbol;
 mod symbol_graph;
+mod ui;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -27,13 +28,10 @@ use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
 use link_info::LinkInfo;
-use problem::Problem;
 use problem::Problems;
 use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
-
-use crate::config_editor::ConfigEditor;
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
@@ -113,12 +111,11 @@ fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    let mut problems = cackle.maybe_fix_problems(cackle.checker.problems())?;
+    let mut problems = cackle.unfixed_problems(None)?;
     let config_path = cackle.config_path.clone();
     let build_result = if problems.is_empty() {
         proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
-            let acl_problems = cackle.check_acls(request);
-            problems.merge(cackle.maybe_fix_problems(acl_problems)?);
+            problems.merge(cackle.unfixed_problems(Some(request))?);
             Ok(problems.can_continue())
         })
     } else {
@@ -163,6 +160,7 @@ struct Cackle {
     target_dir: PathBuf,
     crate_index: CrateIndex,
     args: Args,
+    ui: Box<dyn ui::Ui>,
 }
 
 impl Cackle {
@@ -181,6 +179,11 @@ impl Cackle {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_proc_macro(crate_id);
         }
+        let ui: Box<dyn ui::Ui> = if args.non_interactive {
+            Box::new(ui::NullUi)
+        } else {
+            Box::new(ui::BasicTermUi::new(config_path.clone()))
+        };
         Ok(Self {
             config_path,
             config,
@@ -188,47 +191,42 @@ impl Cackle {
             target_dir: root_path.join("target"),
             crate_index,
             args,
+            ui,
         })
     }
 
-    fn maybe_fix_problems(&mut self, problems: Problems) -> Result<Problems> {
-        if !self.args.non_interactive && !problems.is_empty() {
-            let mut editor = ConfigEditor::from_file(&self.config_path)?;
-            editor.fix_problems(&problems)?;
-            if editor.has_unsupported {
+    fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<Problems> {
+        loop {
+            let mut problems = self.problems(&request)?;
+            problems.condense();
+            if problems.is_empty() {
                 return Ok(problems);
             }
-            println!("============================================");
-            for problem in &problems {
-                println!("{problem}");
-            }
-            println!("Permit the above and continue build? [y/N]");
-            let mut response = String::new();
-            std::io::stdin().read_line(&mut response)?;
-            if response.trim().to_lowercase() == "y" {
-                editor.write(&self.config_path)?;
-                self.config = config::parse_file(&self.config_path)?;
-                self.checker.load_config(&self.config);
-                return Ok(Problems::default());
+            match self.ui.maybe_fix_problems(&problems)? {
+                ui::FixOutcome::Retry => {
+                    self.config = config::parse_file(&self.config_path)?;
+                    self.checker.load_config(&self.config);
+                }
+                ui::FixOutcome::GiveUp => {
+                    return Ok(problems);
+                }
             }
         }
-        Ok(problems)
     }
 
-    fn check_acls(&mut self, request: proxy::rpc::Request) -> Problems {
+    fn problems(&mut self, request: &Option<proxy::rpc::Request>) -> Result<Problems> {
+        let Some(request) = request else {
+            return Ok(self.checker.problems());
+        };
         match request {
             proxy::rpc::Request::CrateUsesUnsafe(usage) => {
-                return Problem::new(format!(
-                    "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-                    usage.crate_name, usage.error_info.file_name, usage.error_info.start_line
-                ))
-                .into();
+                return Ok(self.checker.crate_uses_unsafe(usage));
             }
             proxy::rpc::Request::LinkerInvoked(link_info) => {
-                self.check_linker_invocation(&link_info).into()
+                self.check_linker_invocation(&link_info)
             }
             proxy::rpc::Request::BuildScriptComplete(output) => {
-                self.check_build_script_output(output)
+                Ok(self.check_build_script_output(output))
             }
         }
     }
@@ -259,7 +257,7 @@ impl Cackle {
         Ok(problems)
     }
 
-    fn check_build_script_output(&self, output: proxy::rpc::BuildScriptOutput) -> Problems {
-        build_script_checker::check(&output, &self.config)
+    fn check_build_script_output(&self, output: &proxy::rpc::BuildScriptOutput) -> Problems {
+        build_script_checker::check(output, &self.config)
     }
 }

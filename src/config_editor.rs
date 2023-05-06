@@ -13,8 +13,6 @@ use toml_edit::Value;
 
 pub(crate) struct ConfigEditor {
     document: Document,
-    /// Whether we've been asked to fix any problems that we don't support automatically fixing.
-    pub(crate) has_unsupported: bool,
 }
 
 impl ConfigEditor {
@@ -25,10 +23,7 @@ impl ConfigEditor {
 
     fn from_toml_string(toml: &str) -> Result<Self> {
         let document = toml.parse()?;
-        Ok(Self {
-            document,
-            has_unsupported: false,
-        })
+        Ok(Self { document })
     }
 
     pub(crate) fn write(&self, filename: &Path) -> Result<()> {
@@ -36,18 +31,23 @@ impl ConfigEditor {
         Ok(())
     }
 
-    fn to_toml(&self) -> String {
+    pub(crate) fn to_toml(&self) -> String {
         self.document.to_string()
     }
 
-    pub(crate) fn fix_problems(&mut self, problems: &Problems) -> Result<()> {
+    /// Attempts to fix `problems`, returning a copy of those that could be fixed.
+    pub(crate) fn fix_problems<'a>(&mut self, problems: &'a Problems) -> Result<Vec<&'a Problem>> {
+        let mut fixable_problems = Vec::new();
         for problem in problems {
-            self.fix_problem(problem)?;
+            if self.fix_problem(problem)? {
+                fixable_problems.push(problem);
+            }
         }
-        Ok(())
+        Ok(fixable_problems)
     }
 
-    fn fix_problem(&mut self, problem: &Problem) -> Result<()> {
+    /// Attempts to fix `problem`, returning whether support fixing it.
+    fn fix_problem(&mut self, problem: &Problem) -> Result<bool> {
         match problem {
             Problem::DisallowedApiUsage(usage) => {
                 let table = self.pkg_table(&usage.pkg_name)?;
@@ -70,9 +70,9 @@ impl ConfigEditor {
                 let table = self.pkg_table(pkg_name)?;
                 table["allow_proc_macro"] = toml_edit::value(true);
             }
-            _ => self.has_unsupported = true,
+            _ => return Ok(false),
         }
-        Ok(())
+        Ok(true)
     }
 
     fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {

@@ -4,10 +4,12 @@ use crate::problem::DisallowedApiUsage;
 use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
 use crate::problem::Problems;
+use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -146,6 +148,14 @@ impl Checker {
         problems
     }
 
+    pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> Problems {
+        Problem::new(format!(
+            "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
+            usage.crate_name, usage.error_info.file_name, usage.error_info.start_line
+        ))
+        .into()
+    }
+
     pub(crate) fn multiple_symbols_in_section(
         &mut self,
         defined_in: &Path,
@@ -260,7 +270,7 @@ impl Checker {
                 };
             let pkg_name = pkg_name.clone();
             let permission_name = self.permission_name(&perm_id).clone();
-            let mut usages = HashMap::new();
+            let mut usages = BTreeMap::new();
             usages.insert(permission_name, vec![compute_usage_fn()]);
             problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
                 pkg_name,
