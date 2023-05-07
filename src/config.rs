@@ -100,8 +100,8 @@ pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
 
 pub(crate) fn parse(cackle: &str, cackle_path: &Path) -> Result<Config> {
     let mut config = toml::from_str(cackle)?;
-    crate::config_validation::validate(&config, cackle_path)?;
     flatten(&mut config);
+    crate::config_validation::validate(&config, cackle_path)?;
     Ok(config)
 }
 
@@ -195,8 +195,15 @@ mod tests {
     fn unknown_api() {
         let result = parse(
             r#"
-            [[pkg]]
-            name = "foo"
+            [pkg.foo]
+            allow_apis = ["typo"]
+        "#,
+        );
+        assert!(result.is_err());
+
+        let result = parse(
+            r#"
+            [pkg.foo.build]
             allow_apis = ["typo"]
         "#,
         );
