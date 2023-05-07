@@ -40,7 +40,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Filetype {
-    Rlib,
+    Archive,
     Other,
 }
 
@@ -91,7 +91,7 @@ impl SymGraph {
     pub(crate) fn process_file(&mut self, filename: &Path) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
-            Filetype::Rlib => {
+            Filetype::Archive => {
                 let mut archive = Archive::new(File::open(filename)?);
                 while let Some(entry_result) = archive.next_entry() {
                     let Ok(mut entry) = entry_result else { continue; };
@@ -486,8 +486,8 @@ impl Filetype {
         .extension() else {
             return Filetype::Other;
         };
-        if extension == "rlib" {
-            Filetype::Rlib
+        if extension == "rlib" || extension == ".a" {
+            Filetype::Archive
         } else {
             Filetype::Other
         }
