@@ -101,3 +101,11 @@ allow_proc_macro = true
 allow_apis = [
     "fs",
 ]
+
+[pkg.crab-bin.build]
+allow_apis = [
+    "fs",
+]
+
+[pkg.crab-bin.build.sandbox]
+kind = "Disabled"

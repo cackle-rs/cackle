@@ -14,6 +14,7 @@ pub(crate) struct InvalidConfig {
 #[derive(Debug)]
 enum Problem {
     UnknownPermission(PermissionName),
+    DisallowedSandboxConfig(String),
     UnsupportedVersion(u32),
 }
 
@@ -23,11 +24,14 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
         problems.push(Problem::UnsupportedVersion(config.version));
     }
     let permission_names: HashSet<_> = config.apis.keys().collect();
-    for crate_config in config.packages.values() {
+    for (name, crate_config) in &config.packages {
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
                 problems.push(Problem::UnknownPermission(permission_name.clone()));
             }
+        }
+        if crate_config.sandbox.is_some() && !name.ends_with(".build") {
+            problems.push(Problem::DisallowedSandboxConfig(name.clone()))
         }
     }
     if problems.is_empty() {
@@ -49,6 +53,10 @@ impl Display for InvalidConfig {
                 Problem::UnsupportedVersion(version) => {
                     write!(f, "  Unsupported version '{version}'")?
                 }
+                Problem::DisallowedSandboxConfig(pkg_name) => write!(
+                    f,
+                    "  Sandbox config for regular package `{pkg_name}` isn't permitted"
+                )?,
             }
         }
         Ok(())

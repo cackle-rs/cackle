@@ -15,7 +15,7 @@ impl SandboxCommand {
         let mut sandbox;
         match &config.kind {
             SandboxKind::Disabled => return Ok(None),
-            SandboxKind::Bubblewrap => {
+            SandboxKind::Bubblewrap | SandboxKind::Inherit => {
                 let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
                 sandbox = SandboxCommand {
                     command: Command::new("bwrap"),

@@ -51,3 +51,11 @@ kind = "Bubblewrap"
 Here we declare that we'd like to use `Bubblewrap` (installed as `bwrap`) as our sandbox. Bubblewrap
 is currently the only supported kind of sandbox. The sandbox will be used for running build scripts
 (build.rs).
+
+If for some reason you don't want to sandbox a particular build script, you can disable the sandbox
+just for that build script.
+
+```toml
+[pkg.foo.build.sandbox]
+kind = "Disabled"
+```

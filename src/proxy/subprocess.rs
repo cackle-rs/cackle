@@ -103,7 +103,8 @@ fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
 fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitStatus> {
     let config = get_config_from_env()?;
     let package_name = get_env("CARGO_PKG_NAME")?;
-    if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&config.sandbox)? {
+    let sandbox_config = config.sandbox_config_for_build_script(&package_name);
+    if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&sandbox_config)? {
         // Allow read access to the crate's root source directory.
         sandbox_cmd.ro_bind(get_env("CARGO_MANIFEST_DIR")?);
         sandbox_cmd.ro_bind(target_subdir(&orig_build_script)?);

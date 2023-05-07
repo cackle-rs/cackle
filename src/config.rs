@@ -55,10 +55,11 @@ pub(crate) struct PermissionName {
     pub(crate) name: Cow<'static, str>,
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum SandboxKind {
-    Disabled,
     #[default]
+    Inherit,
+    Disabled,
     Bubblewrap,
 }
 
@@ -80,6 +81,9 @@ pub(crate) struct PackageConfig {
     /// Configuration for this crate's build.rs. Only used during parsing, after
     /// which it's flattened out.
     build: Option<Box<PackageConfig>>,
+
+    #[serde()]
+    pub(crate) sandbox: Option<SandboxConfig>,
 }
 
 pub(crate) static DEFAULT_PACKAGE_CONFIG: PackageConfig = PackageConfig {
@@ -88,6 +92,7 @@ pub(crate) static DEFAULT_PACKAGE_CONFIG: PackageConfig = PackageConfig {
     allow_apis: vec![],
     allow_proc_macro: false,
     build: None,
+    sandbox: None,
 };
 
 pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
@@ -135,6 +140,29 @@ impl Config {
             .map(|crate_config| crate_config.allow_unsafe)
             .unwrap_or(false)
     }
+
+    pub(crate) fn sandbox_config_for_build_script(&self, package_name: &str) -> SandboxConfig {
+        self.sandbox_config_for_package(&format!("{package_name}.build"))
+    }
+
+    /// Returns the configuration for `package_name`, inheriting options from the default sandbox
+    /// configuration as appropriate.
+    pub(crate) fn sandbox_config_for_package(&self, package_name: &str) -> SandboxConfig {
+        let mut config = self.sandbox.clone();
+        let Some(pkg_sandbox_config) = self.packages.get(package_name).and_then(|c| c.sandbox.as_ref()) else {
+            return config;
+        };
+        if pkg_sandbox_config.kind != SandboxKind::Inherit {
+            config.kind = pkg_sandbox_config.kind;
+        }
+        config
+            .extra_args
+            .extend(pkg_sandbox_config.extra_args.iter().cloned());
+        config
+            .allow_read
+            .extend(pkg_sandbox_config.allow_read.iter().cloned());
+        config
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +179,8 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::SandboxKind;
+
     use super::testing::parse;
 
     #[test]
@@ -219,5 +249,55 @@ mod tests {
         )
         .unwrap();
         assert!(config.packages.contains_key("foo.build"));
+    }
+
+    #[test]
+    fn sandbox_config_inheritance() {
+        let config = parse(
+            r#"
+                [sandbox]
+                kind = "Bubblewrap"
+                allow_read = [
+                    "/foo",
+                    "/bar",
+                ]
+                extra_args = [
+                    "--extra1",
+                ]
+
+                [pkg.a.build.sandbox]
+                allow_read = [
+                    "/baz",
+                ]
+                extra_args = [
+                    "--extra2",
+                ]
+
+                [pkg.b.build.sandbox]
+                kind = "Disabled"
+            "#,
+        )
+        .unwrap();
+
+        let sandbox_a = config.sandbox_config_for_package("a.build");
+        assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
+        assert_eq!(sandbox_a.allow_read, vec!["/foo", "/bar", "/baz"]);
+        assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
+
+        let sandbox_b = config.sandbox_config_for_package("b.build");
+        assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
+    }
+
+    #[test]
+    fn disallowed_sandbox_override() {
+        // A sandbox configuration for a regular package isn't allowed, since we don't run regular
+        // packages.
+        let result = parse(
+            r#"
+                [pkg.a.sandbox]
+                kind = "Disabled"
+            "#,
+        );
+        assert!(result.is_err());
     }
 }
