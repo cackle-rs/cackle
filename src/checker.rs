@@ -150,11 +150,7 @@ impl Checker {
     }
 
     pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> Problems {
-        Problem::new(format!(
-            "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-            usage.crate_name, usage.error_info.file_name, usage.error_info.start_line
-        ))
-        .into()
+        Problem::DisallowedUnsafe(usage.clone()).into()
     }
 
     pub(crate) fn multiple_symbols_in_section(

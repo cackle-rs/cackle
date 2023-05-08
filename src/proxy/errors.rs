@@ -9,7 +9,7 @@ pub(crate) enum ErrorKind {
     Unsafe(UnsafeUsage),
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub(crate) struct UnsafeUsage {
     pub(crate) file_name: String,
     pub(crate) start_line: u32,

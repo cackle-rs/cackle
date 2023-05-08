@@ -93,7 +93,7 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) package_name: String,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub(crate) struct UnsafeUsage {
     pub(crate) crate_name: String,
     pub(crate) error_info: errors::UnsafeUsage,

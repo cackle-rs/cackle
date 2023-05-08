@@ -42,8 +42,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
         exit_status = proxy_build_script(orig_build_script, &rpc_client)?;
     } else if args.peek().map(|arg| arg == "rustc").unwrap_or(false) {
         // We're wrapping rustc.
-        args.next();
-        exit_status = proxy_rustc(&mut args, &rpc_client)?;
+        exit_status = proxy_rustc(&rpc_client)?;
     } else if let Ok(link_info) = LinkInfo::from_env() {
         // We're wrapping the linker.
         exit_status = proxy_linker(link_info, rpc_client, args)?;
@@ -157,80 +156,77 @@ fn target_subdir(build_script_path: &Path) -> Result<&Path> {
     }
 }
 
-fn proxy_rustc(
-    args: &mut std::iter::Peekable<std::env::Args>,
-    rpc_client: &RpcClient,
-) -> Result<ExitStatus, anyhow::Error> {
-    let config = get_config_from_env()?;
-    let crate_name = get_crate_name_from_rustc_args();
+fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
+    loop {
+        let mut args = std::env::args().skip(2).peekable();
+        let config = get_config_from_env()?;
+        let crate_name = get_crate_name_from_rustc_args();
 
-    let mut command = Command::new("rustc");
-    let mut linker_arg = OsString::new();
-    let mut orig_linker_arg = None;
-    while let Some(arg) = args.next() {
-        // Look for `-C linker=...`. If we find it, note the value for later use and drop the
-        // argument.
-        if arg == "-C" {
-            if let Some(linker) = args
-                .peek()
-                .and_then(|arg| arg.strip_prefix("linker="))
-                .map(ToOwned::to_owned)
-            {
-                orig_linker_arg = Some(linker);
-                args.next();
+        let mut command = Command::new("rustc");
+        let mut linker_arg = OsString::new();
+        let mut orig_linker_arg = None;
+        while let Some(arg) = args.next() {
+            // Look for `-C linker=...`. If we find it, note the value for later use and drop the
+            // argument.
+            if arg == "-C" {
+                if let Some(linker) = args
+                    .peek()
+                    .and_then(|arg| arg.strip_prefix("linker="))
+                    .map(ToOwned::to_owned)
+                {
+                    orig_linker_arg = Some(linker);
+                    args.next();
+                    continue;
+                }
+            }
+            if arg.starts_with("--error-format") {
                 continue;
             }
+            // For all other arguments, pass them through.
+            command.arg(arg);
         }
-        if arg.starts_with("--error-format") {
-            continue;
+        if let Some(orig_linker) = orig_linker_arg {
+            command.env(super::ORIG_LINKER_ENV, orig_linker);
         }
-        // For all other arguments, pass them through.
-        command.arg(arg);
-    }
-    if let Some(orig_linker) = orig_linker_arg {
-        command.env(super::ORIG_LINKER_ENV, orig_linker);
-    }
-    linker_arg.push("linker=");
-    linker_arg.push(cackle_exe()?);
-    command.arg("--error-format=json");
-    command.arg("-C").arg(linker_arg);
-    // If something goes wrong, it can be handy to have object files left around to examine.
-    command.arg("-C").arg("save-temps");
-    command.arg("-Ccodegen-units=1");
-    if let Some(crate_name) = &crate_name {
-        if !config.unsafe_permitted_for_crate(crate_name) {
-            command.arg("-Funsafe-code");
+        linker_arg.push("linker=");
+        linker_arg.push(cackle_exe()?);
+        command.arg("--error-format=json");
+        command.arg("-C").arg(linker_arg);
+        // If something goes wrong, it can be handy to have object files left around to examine.
+        command.arg("-C").arg("save-temps");
+        command.arg("-Ccodegen-units=1");
+        if let Some(crate_name) = &crate_name {
+            if !config.unsafe_permitted_for_crate(crate_name) {
+                command.arg("-Funsafe-code");
+            }
         }
-    }
-    let output = command.output()?;
-    if output.status.code() == Some(0) {
-        std::io::stdout().lock().write_all(&output.stdout)?;
-        std::io::stderr().lock().write_all(&output.stderr)?;
-    } else {
-        handle_rustc_errors(rpc_client, &crate_name, &output)?;
-    }
-    Ok(output.status)
-}
-
-fn handle_rustc_errors(
-    rpc_client: &RpcClient,
-    crate_name: &Option<String>,
-    output: &std::process::Output,
-) -> Result<()> {
-    let stderr = std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
-    match super::errors::get_error(stderr) {
-        Some(ErrorKind::Unsafe(usage)) => {
-            // TODO: Check if the response was to allow the unsafe - in that case rerun with the
-            // config altered.
-            let _response = rpc_client
-                .crate_uses_unsafe(crate_name.as_ref().map(|s| s.as_str()).unwrap_or(""), usage)?;
-        }
-        _ => {
+        let output = command.output()?;
+        if output.status.code() == Some(0) {
             std::io::stdout().lock().write_all(&output.stdout)?;
             std::io::stderr().lock().write_all(&output.stderr)?;
+        } else {
+            let crate_name = &crate_name;
+            let output = &output;
+            let stderr =
+                std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
+            match super::errors::get_error(stderr) {
+                Some(ErrorKind::Unsafe(usage)) => {
+                    let response = rpc_client.crate_uses_unsafe(
+                        crate_name.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                        usage,
+                    )?;
+                    if response == CanContinueResponse::Proceed {
+                        continue;
+                    }
+                }
+                _ => {
+                    std::io::stdout().lock().write_all(&output.stdout)?;
+                    std::io::stderr().lock().write_all(&output.stderr)?;
+                }
+            }
         }
+        return Ok(output.status);
     }
-    Ok(())
 }
 
 /// Advises our parent process that the linker has been invoked, then once it is done checking the

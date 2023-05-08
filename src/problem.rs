@@ -5,6 +5,7 @@ use crate::checker::Usage;
 use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::CanContinueResponse;
+use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use std::collections::hash_map::Entry;
@@ -23,6 +24,7 @@ pub(crate) struct Problems {
 pub(crate) enum Problem {
     Message(String),
     UsesBuildScript(String),
+    DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(String),
     DisallowedApiUsage(DisallowedApiUsage),
     MultipleSymbolsInSection(MultipleSymbolsInSection),
@@ -119,6 +121,7 @@ impl Problem {
     fn should_send_retry_to_subprocess(&self) -> bool {
         match self {
             &Problem::BuildScriptFailed(..) => true,
+            &Problem::DisallowedUnsafe(..) => true,
             _ => false,
         }
     }
@@ -134,6 +137,10 @@ impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
+            Problem::DisallowedUnsafe(usage) => write!(
+                f,
+                "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
+                usage.crate_name, usage.error_info.file_name, usage.error_info.start_line)?,
             Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]")?,
             Problem::IsProcMacro(pkg_name) =>  write!(f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
