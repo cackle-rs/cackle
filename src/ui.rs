@@ -7,7 +7,14 @@ use anyhow::Result;
 use colored::Colorize;
 use indoc::indoc;
 use std::collections::VecDeque;
+use std::io::BufRead;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum FixOutcome {
@@ -30,12 +37,34 @@ impl Ui for NullUi {
 
 pub(crate) struct BasicTermUi {
     config_path: PathBuf,
+    stdin_recv: Receiver<String>,
+    config_last_modified: Option<SystemTime>,
 }
 
 impl BasicTermUi {
     pub(crate) fn new(config_path: PathBuf) -> Self {
-        Self { config_path }
+        Self {
+            config_last_modified: config_modification_time(&config_path),
+            config_path,
+            stdin_recv: start_stdin_channel(),
+        }
     }
+}
+
+fn start_stdin_channel() -> Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin().lock();
+        for line in stdin.lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    rx
 }
 
 impl Ui for BasicTermUi {
@@ -54,13 +83,34 @@ impl Ui for BasicTermUi {
         }
         loop {
             if fixable.is_empty() {
-                println!("Retry or skip? [?/r/s]");
+                print!("Retry or skip? [?/r/s]: ");
             } else {
-                println!("Retry, skip, fix or diff? [?/r/s/f/d]");
+                print!("Retry, skip, fix or diff? [?/r/s/f/d]: ");
+            }
+            std::io::stdout().lock().flush()?;
+
+            // Wait until either the user enters a response line, or the config file gets changed.
+            // We poll for config file changes because inotify is relatively heavyweight and we
+            // don't need an instant response to a file change.
+            let response;
+            loop {
+                match self.stdin_recv.recv_timeout(Duration::from_millis(250)) {
+                    Ok(line) => {
+                        response = line;
+                        break;
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        let modified = config_modification_time(&self.config_path);
+                        if self.config_last_modified != modified {
+                            self.config_last_modified = modified;
+                            println!("\nConfig file modified, retrying...");
+                            return Ok(FixOutcome::Retry);
+                        }
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(FixOutcome::GiveUp),
+                }
             }
 
-            let mut response = String::new();
-            std::io::stdin().read_line(&mut response)?;
             match response.trim().to_lowercase().as_str() {
                 "f" => {
                     // We always recompute the edits in case the user manually edited the file.
@@ -85,6 +135,10 @@ impl Ui for BasicTermUi {
             }
         }
     }
+}
+
+fn config_modification_time(config_path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(config_path).ok()?.modified().ok()
 }
 
 fn show_diff(original: &str, updated: &str) {
