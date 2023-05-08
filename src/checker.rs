@@ -130,8 +130,9 @@ impl Checker {
                 // Find `crate_info` again. Need to do this here because the `perm_id` above needs
                 // to borrow `checker`.
                 let crate_info = &mut self.crate_infos[crate_id.0];
-                crate_info.allowed_perms.insert(perm_id);
-                crate_info.unused_allowed_perms.insert(perm_id);
+                if crate_info.allowed_perms.insert(perm_id) {
+                    crate_info.unused_allowed_perms.insert(perm_id);
+                }
             }
         }
     }
@@ -376,8 +377,19 @@ impl Display for Referee {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Debug;
+
     use super::*;
     use crate::config::testing::parse;
+
+    // Wraps a type T and makes it implement Debug by deferring to the Display implementation of T.
+    struct DebugAsDisplay<T: Display>(T);
+
+    impl<T: Display> Debug for DebugAsDisplay<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
 
     #[track_caller]
     fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
@@ -412,5 +424,50 @@ mod tests {
                 "#;
         assert_perms(config, &["std", "env", "var"], &["env", "env2"]);
         assert_perms(config, &["std", "env", "exe"], &["env", "env2", "fs"]);
+    }
+
+    #[test]
+    fn reload_config() {
+        let config = parse(
+            r#"
+            [api.fs]
+            include = [
+                "std::fs",
+            ]
+            [pkg.foo]
+            allow_apis = [
+                "fs",
+            ]
+        "#,
+        )
+        .unwrap();
+        let mut checker = Checker::from_config(&config);
+        let crate_id = checker.crate_id_from_name("foo");
+        let mut problems = Problems::default();
+
+        checker.report_crate_used(crate_id);
+        checker.path_used(
+            crate_id,
+            &[
+                "std".to_owned(),
+                "fs".to_owned(),
+                "read_to_string".to_owned(),
+            ],
+            &mut problems,
+            || Usage {
+                location: crate::checker::UsageLocation::Source(SourceLocation {
+                    filename: "lib.rs".into(),
+                }),
+                from: crate::checker::Referee::Symbol(Symbol::new(vec![])),
+                to: Symbol::new(vec![]),
+            },
+        );
+
+        assert!(problems.is_empty());
+        checker.check_unused().map_err(DebugAsDisplay).unwrap();
+
+        // Now reload the config and make that we still don't report any unused configuration.
+        checker.load_config(&config);
+        checker.check_unused().map_err(DebugAsDisplay).unwrap();
     }
 }
