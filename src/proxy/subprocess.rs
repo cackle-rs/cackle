@@ -101,10 +101,14 @@ fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
 }
 
 fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitStatus> {
-    let config = get_config_from_env()?;
-    let package_name = get_env("CARGO_PKG_NAME")?;
-    let sandbox_config = config.sandbox_config_for_build_script(&package_name);
-    if let Some(mut sandbox_cmd) = SandboxCommand::from_config(&sandbox_config)? {
+    loop {
+        let config = get_config_from_env()?;
+        let package_name = get_env("CARGO_PKG_NAME")?;
+        let sandbox_config = config.sandbox_config_for_build_script(&package_name);
+        let Some(mut sandbox_cmd) = SandboxCommand::from_config(&sandbox_config)? else {
+            // Config says to run without a sandbox.
+            return Ok(Command::new(orig_build_script).status()?);
+        };
         // Allow read access to the crate's root source directory.
         sandbox_cmd.ro_bind(get_env("CARGO_MANIFEST_DIR")?);
         sandbox_cmd.ro_bind(target_subdir(&orig_build_script)?);
@@ -113,16 +117,23 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         sandbox_cmd.pass_cargo_env();
 
         let output = sandbox_cmd.command_to_run(&orig_build_script).output()?;
-        if output.status.code() == Some(0) {
-            rpc_client
-                .buid_script_complete(BuildScriptOutput::new(&output, package_name))?
-                .maybe_exit();
+        let rpc_response = rpc_client.buid_script_complete(BuildScriptOutput::new(
+            &output,
+            package_name,
+            &output.status,
+        ))?;
+        match rpc_response {
+            CanContinueResponse::Proceed => {
+                if output.status.code() == Some(0) {
+                    std::io::stderr().lock().write(&output.stderr)?;
+                    std::io::stdout().lock().write(&output.stdout)?;
+                    return Ok(output.status);
+                }
+                // If the build script failed and we were asked to proceed, then fall through and
+                // retry the build script with a hopefully changed config.
+            }
+            CanContinueResponse::Deny => std::process::exit(-1),
         }
-        std::io::stderr().lock().write(&output.stderr)?;
-        std::io::stdout().lock().write(&output.stdout)?;
-        Ok(output.status)
-    } else {
-        Ok(Command::new(orig_build_script).status()?)
     }
 }
 

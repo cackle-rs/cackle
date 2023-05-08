@@ -206,6 +206,13 @@ impl Cackle {
                 ui::FixOutcome::Retry => {
                     self.config = config::parse_file(&self.config_path)?;
                     self.checker.load_config(&self.config);
+                    if problems.should_send_retry_to_subprocess() {
+                        // If the only problem is that something in a subprocess failed, we return
+                        // an empty error set. This signals the subprocess that it should proceed,
+                        // which since something failed means that it should reload the config and
+                        // retry whatever failed.
+                        return Ok(Problems::default());
+                    }
                 }
                 ui::FixOutcome::GiveUp => {
                     return Ok(problems);

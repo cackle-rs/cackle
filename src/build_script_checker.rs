@@ -6,6 +6,9 @@ use crate::problem::Problems;
 use crate::proxy::rpc::BuildScriptOutput;
 
 pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
+    if outputs.exit_code != 0 {
+        return Problem::BuildScriptFailed(outputs.clone()).into();
+    }
     let pkg_name = &outputs.package_name;
     let crate_name = format!("{}.build", outputs.package_name);
     let pkg_config = config
@@ -67,6 +70,7 @@ mod tests {
     fn check(stdout: &str, config_str: &str) -> Problems {
         let config = config::testing::parse(config_str).unwrap();
         let outputs = BuildScriptOutput {
+            exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
             package_name: "my_pkg".to_owned(),

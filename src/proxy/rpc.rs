@@ -16,6 +16,10 @@ use super::errors;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub(crate) enum CanContinueResponse {
+    /// Used by the controller to indicate that the build process should continue. In the case that
+    /// something failed, proceed means that whatever failed should be retried. In the case that
+    /// nothing failed, proceed means we can move onto whatever is next. Conceptually, we could
+    /// model retry as separate from proceed, however this just adds complexity to the code.
     Proceed,
     Deny,
 }
@@ -73,15 +77,6 @@ impl RpcClient {
     }
 }
 
-impl CanContinueResponse {
-    /// Exit if we can't continue.
-    pub(crate) fn maybe_exit(&self) {
-        if *self == CanContinueResponse::Deny {
-            std::process::exit(-1)
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub(crate) enum Request {
     /// Advises that the specified crate failed to compile because it uses unsafe.
@@ -90,8 +85,9 @@ pub(crate) enum Request {
     BuildScriptComplete(BuildScriptOutput),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub(crate) struct BuildScriptOutput {
+    pub(crate) exit_code: i32,
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
     pub(crate) package_name: String,
@@ -124,8 +120,13 @@ pub(crate) fn read_from_stream<T: DeserializeOwned>(stream: &mut impl Read) -> R
 }
 
 impl BuildScriptOutput {
-    pub(crate) fn new(value: &std::process::Output, package_name: String) -> Self {
+    pub(crate) fn new(
+        value: &std::process::Output,
+        package_name: String,
+        exit_status: &std::process::ExitStatus,
+    ) -> Self {
         Self {
+            exit_code: exit_status.code().unwrap_or(-1),
             stdout: value.stdout.clone(),
             stderr: value.stderr.clone(),
             package_name,

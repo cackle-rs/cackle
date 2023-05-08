@@ -3,6 +3,7 @@
 
 use crate::checker::Usage;
 use crate::config::PermissionName;
+use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::CanContinueResponse;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
@@ -25,6 +26,7 @@ pub(crate) enum Problem {
     IsProcMacro(String),
     DisallowedApiUsage(DisallowedApiUsage),
     MultipleSymbolsInSection(MultipleSymbolsInSection),
+    BuildScriptFailed(BuildScriptOutput),
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,12 @@ impl Problems {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.problems.is_empty()
+    }
+
+    pub(crate) fn should_send_retry_to_subprocess(&self) -> bool {
+        self.problems
+            .iter()
+            .all(Problem::should_send_retry_to_subprocess)
     }
 
     /// Combines problems together where possible. e.g all disallowed API usages for a package will
@@ -106,6 +114,14 @@ impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
     }
+
+    /// Returns whether a retry on this problem needs to be sent to a subprocess.
+    fn should_send_retry_to_subprocess(&self) -> bool {
+        match self {
+            &Problem::BuildScriptFailed(..) => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<String> for Problem {
@@ -138,6 +154,12 @@ impl Display for Problem {
                     writeln!(f, "  {sym}")?;
                 }
             },
+            Problem::BuildScriptFailed(outputs) => {
+                writeln!(f, "Build script for package `{}` failed\n{}{}",
+                    outputs.package_name,
+                    String::from_utf8_lossy(&outputs.stderr),
+                    String::from_utf8_lossy(&outputs.stdout))?;
+            }
         }
         Ok(())
     }
