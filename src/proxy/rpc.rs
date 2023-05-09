@@ -143,7 +143,7 @@ mod tests {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: "foo".to_owned(),
             error_info: errors::UnsafeUsage {
-                file_name: "src/main.rs".to_owned(),
+                file_name: PathBuf::from("src/main.rs"),
                 start_line: 42,
             },
         });

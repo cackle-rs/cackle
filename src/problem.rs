@@ -140,7 +140,7 @@ impl Display for Problem {
             Problem::DisallowedUnsafe(usage) => write!(
                 f,
                 "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-                usage.crate_name, usage.error_info.file_name, usage.error_info.start_line)?,
+                usage.crate_name, usage.error_info.file_name.display(), usage.error_info.start_line)?,
             Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]")?,
             Problem::IsProcMacro(pkg_name) =>  write!(f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"

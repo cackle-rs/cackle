@@ -33,7 +33,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 mod cargo;
-mod errors;
+pub(crate) mod errors;
 pub(crate) mod rpc;
 pub(crate) mod subprocess;
 

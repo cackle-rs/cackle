@@ -1,7 +1,7 @@
 //! Analyses rust crates and their dependent crates to see what categories of APIs and language
 //! features are used.
 
-#![forbid(unsafe_code)]
+//#![forbid(unsafe_code)]
 
 mod build_script_checker;
 mod checker;
@@ -10,6 +10,7 @@ mod config;
 mod config_editor;
 mod config_validation;
 mod crate_index;
+mod deps;
 pub(crate) mod link_info;
 pub(crate) mod problem;
 mod proxy;
@@ -18,6 +19,7 @@ pub(crate) mod section_name;
 pub(crate) mod symbol;
 mod symbol_graph;
 mod ui;
+mod unsafe_checker;
 
 use anyhow::anyhow;
 use anyhow::Context;

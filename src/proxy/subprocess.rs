@@ -6,6 +6,7 @@ use crate::link_info::LinkInfo;
 use crate::proxy::errors::ErrorKind;
 use crate::proxy::rpc::RpcClient;
 use crate::sandbox::SandboxCommand;
+use crate::unsafe_checker;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -201,13 +202,23 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
         // If something goes wrong, it can be handy to have object files left around to examine.
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
-        if let Some(crate_name) = &crate_name {
-            if !config.unsafe_permitted_for_crate(crate_name) {
-                command.arg("-Funsafe-code");
-            }
+        let crate_name = crate_name.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let unsafe_permitted = config.unsafe_permitted_for_crate(crate_name);
+        if !unsafe_permitted {
+            command.arg("-Funsafe-code");
         }
         let output = command.output()?;
         if output.status.code() == Some(0) {
+            if !unsafe_permitted {
+                for file in crate::deps::source_files_from_rustc_args(std::env::args())? {
+                    if let Some(unsafe_usage) = unsafe_checker::scan_path(&file)? {
+                        let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_usage)?;
+                        if response == CanContinueResponse::Proceed {
+                            continue;
+                        }
+                    }
+                }
+            }
             std::io::stdout().lock().write_all(&output.stdout)?;
             std::io::stderr().lock().write_all(&output.stderr)?;
         } else {
@@ -217,10 +228,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
                 std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
             match super::errors::get_error(stderr) {
                 Some(ErrorKind::Unsafe(usage)) => {
-                    let response = rpc_client.crate_uses_unsafe(
-                        crate_name.as_ref().map(|s| s.as_str()).unwrap_or(""),
-                        usage,
-                    )?;
+                    let response = rpc_client.crate_uses_unsafe(crate_name, usage)?;
                     if response == CanContinueResponse::Proceed {
                         continue;
                     }

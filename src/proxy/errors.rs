@@ -1,5 +1,7 @@
 //! Handles parsing of errors from rustc.
 
+use std::path::PathBuf;
+
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -11,7 +13,7 @@ pub(crate) enum ErrorKind {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub(crate) struct UnsafeUsage {
-    pub(crate) file_name: String,
+    pub(crate) file_name: PathBuf,
     pub(crate) start_line: u32,
 }
 
@@ -23,7 +25,7 @@ pub(crate) fn get_error(output: &str) -> Option<ErrorKind> {
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
                 return Some(ErrorKind::Unsafe(UnsafeUsage {
-                    file_name: first_span.file_name.clone(),
+                    file_name: PathBuf::from(&first_span.file_name),
                     start_line: first_span.line_start,
                 }));
             }
@@ -76,7 +78,7 @@ mod tests {
         assert_eq!(
             get_error(&json),
             Some(ErrorKind::Unsafe(UnsafeUsage {
-                file_name: "src/main.rs".to_owned(),
+                file_name: PathBuf::from("src/main.rs"),
                 start_line: 10
             }))
         );
