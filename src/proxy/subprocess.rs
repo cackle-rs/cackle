@@ -115,7 +115,13 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         sandbox_cmd.writable_bind(get_env("OUT_DIR")?);
         sandbox_cmd.pass_cargo_env();
 
-        let output = sandbox_cmd.command_to_run(&orig_build_script).output()?;
+        let mut command = sandbox_cmd.command_to_run(&orig_build_script);
+        let output = command.output().with_context(|| {
+            format!(
+                "Failed to run sandbox command: {}",
+                Path::new(command.get_program()).display()
+            )
+        })?;
         let rpc_response = rpc_client.buid_script_complete(BuildScriptOutput::new(
             &output,
             package_name,
