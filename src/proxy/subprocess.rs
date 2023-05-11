@@ -5,7 +5,6 @@ use crate::config::Config;
 use crate::link_info::LinkInfo;
 use crate::proxy::errors::ErrorKind;
 use crate::proxy::rpc::RpcClient;
-use crate::sandbox::SandboxCommand;
 use crate::unsafe_checker;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -105,24 +104,18 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         let config = get_config_from_env()?;
         let package_name = get_env("CARGO_PKG_NAME")?;
         let sandbox_config = config.sandbox_config_for_build_script(&package_name);
-        let Some(mut sandbox_cmd) = SandboxCommand::from_config(&sandbox_config)? else {
+        let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
             // Config says to run without a sandbox.
             return Ok(Command::new(orig_build_script).status()?);
         };
         // Allow read access to the crate's root source directory.
-        sandbox_cmd.ro_bind(get_env("CARGO_MANIFEST_DIR")?);
-        sandbox_cmd.ro_bind(target_subdir(&orig_build_script)?);
+        sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
+        sandbox.ro_bind(target_subdir(&orig_build_script)?);
         // Allow write access to OUT_DIR.
-        sandbox_cmd.writable_bind(get_env("OUT_DIR")?);
-        sandbox_cmd.pass_cargo_env();
+        sandbox.writable_bind(Path::new(&get_env("OUT_DIR")?));
+        sandbox.pass_cargo_env();
 
-        let mut command = sandbox_cmd.command_to_run(&orig_build_script);
-        let output = command.output().with_context(|| {
-            format!(
-                "Failed to run sandbox command: {}",
-                Path::new(command.get_program()).display()
-            )
-        })?;
+        let output = sandbox.run(&orig_build_script)?;
         let rpc_response = rpc_client.buid_script_complete(BuildScriptOutput::new(
             &output,
             package_name,

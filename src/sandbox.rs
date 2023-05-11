@@ -4,109 +4,79 @@ use anyhow::Context;
 use anyhow::Result;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
 
-pub(crate) struct SandboxCommand {
-    pub(crate) command: Command,
-}
+mod bubblewrap;
 
-impl SandboxCommand {
-    pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Self>> {
-        let mut sandbox;
-        match &config.kind {
-            SandboxKind::Disabled => return Ok(None),
-            SandboxKind::Bubblewrap | SandboxKind::Inherit => {
-                let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
-                sandbox = SandboxCommand {
-                    command: Command::new("bwrap"),
-                };
-                for dir in &config.allow_read {
-                    sandbox.ro_bind(dir);
-                }
-                // TODO: Reasses if we want to list these here or just have the user list them in
-                // their allow_read config.
-                sandbox.ro_bind("/usr");
-                sandbox.ro_bind("/lib");
-                sandbox.ro_bind("/lib64");
-                sandbox.ro_bind("/bin");
-                sandbox.ro_bind("/etc/alternatives");
-                // Note, we don't bind all of ~/.cargo because it might contain
-                // crates.io credentials, which we'd like to avoid exposing.
-                sandbox.ro_bind(&format!("{home}/.cargo/bin"));
-                sandbox.ro_bind(&format!("{home}/.cargo/git"));
-                sandbox.ro_bind(&format!("{home}/.cargo/registry"));
-                sandbox.ro_bind(&format!("{home}/.rustup"));
-                sandbox.tmpfs("/var");
-                sandbox.tmpfs("/tmp");
-                sandbox.tmpfs("/run");
-                sandbox.tmpfs("/usr/share");
-                sandbox.args(&["--dev", "/dev"]);
-                sandbox.args(&["--proc", "/proc"]);
-                sandbox.args(&["--unshare-all"]);
-                sandbox.args(&["--uid", "1000"]);
-                sandbox.args(&["--gid", "1000"]);
-                sandbox.args(&["--hostname", "none"]);
-                sandbox.args(&["--new-session"]);
-                sandbox.args(&["--clearenv"]);
-                sandbox.args(&["--setenv", "USER", "user"]);
-                sandbox.pass_env("PATH");
-                sandbox.pass_env("HOME");
-                for arg in &config.extra_args {
-                    sandbox.args(&[arg]);
-                }
-            }
-        }
-        Ok(Some(sandbox))
-    }
+pub(crate) trait Sandbox {
+    /// Runs `binary` inside the sandbox.
+    fn run(&self, binary: &Path) -> Result<std::process::Output>;
 
-    pub(crate) fn arg<S: AsRef<OsStr>>(&mut self, arg: S) {
-        self.command.arg(arg);
-    }
+    /// Bind a tmpfs at `dir`.
+    fn tmpfs(&mut self, dir: &Path);
 
-    pub(crate) fn args(&mut self, args: &[&str]) {
-        self.command.args(args);
-    }
+    /// Set the environment variable `var` to `value`.
+    fn set_env(&mut self, var: &OsStr, value: &OsStr);
 
-    pub(crate) fn tmpfs(&mut self, dir: &str) {
-        self.args(&["--tmpfs", dir])
-    }
+    /// Bind `dir` into the sandbox read-only.
+    fn ro_bind(&mut self, dir: &Path);
 
-    pub(crate) fn ro_bind<S: AsRef<OsStr>>(&mut self, dir: S) {
-        self.arg("--ro-bind");
-        let dir = dir.as_ref();
-        self.arg(dir);
-        self.arg(dir);
-    }
+    /// Bind `dir` into the sandbox writable.
+    fn writable_bind(&mut self, dir: &Path);
 
-    pub(crate) fn writable_bind<S: AsRef<OsStr>>(&mut self, dir: S) {
-        let dir = dir.as_ref();
-        self.arg("--bind-try");
-        self.arg(dir);
-        self.arg(dir);
-    }
+    /// Append a sandbox-specific argument.
+    fn arg(&mut self, arg: &OsStr);
 
-    pub(crate) fn pass_env(&mut self, env_var_name: &str) {
+    /// Pass through the value of `env_var_name`
+    fn pass_env(&mut self, env_var_name: &str) {
         if let Ok(value) = std::env::var(env_var_name) {
-            self.args(&["--setenv", env_var_name, &value]);
+            self.set_env(OsStr::new(env_var_name), OsStr::new(&value));
         }
     }
 
     /// Pass through all cargo environment variables.
-    pub(crate) fn pass_cargo_env(&mut self) {
+    fn pass_cargo_env(&mut self) {
         self.pass_env("OUT_DIR");
         for (var, value) in std::env::vars_os() {
             if var.to_str().map(is_cargo_env).unwrap_or(false) {
-                self.arg("--setenv");
-                self.arg(var);
-                self.arg(value);
+                self.set_env(OsStr::new(&var), OsStr::new(&value));
             }
         }
     }
+}
 
-    pub(crate) fn command_to_run(mut self, binary: &Path) -> Command {
-        self.arg(binary);
-        self.command
+pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandbox>>> {
+    let mut sandbox = match &config.kind {
+        SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
+        SandboxKind::Bubblewrap => Box::new(bubblewrap::Bubblewrap::default()),
+    };
+    for dir in &config.allow_read {
+        sandbox.ro_bind(Path::new(dir));
     }
+    let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
+    // TODO: Reasses if we want to list these here or just have the user list them in
+    // their allow_read config.
+    sandbox.ro_bind(Path::new("/usr"));
+    sandbox.ro_bind(Path::new("/lib"));
+    sandbox.ro_bind(Path::new("/lib64"));
+    sandbox.ro_bind(Path::new("/bin"));
+    sandbox.ro_bind(Path::new("/etc/alternatives"));
+    // Note, we don't bind all of ~/.cargo because it might contain
+    // crates.io credentials, which we'd like to avoid exposing.
+    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/bin")));
+    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/git")));
+    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/registry")));
+    sandbox.ro_bind(Path::new(&format!("{home}/.rustup")));
+    sandbox.tmpfs(Path::new("/var"));
+    sandbox.tmpfs(Path::new("/tmp"));
+    sandbox.tmpfs(Path::new("/run"));
+    sandbox.tmpfs(Path::new("/usr/share"));
+    sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
+    sandbox.pass_env("PATH");
+    sandbox.pass_env("HOME");
+    for arg in &config.extra_args {
+        sandbox.arg(OsStr::new(arg));
+    }
+    Ok(Some(sandbox))
 }
 
 fn is_cargo_env(var: &str) -> bool {
