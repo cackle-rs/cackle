@@ -1,4 +1,4 @@
-pmacro1::crate_write_to_file!();
+pmacro1::create_write_to_file!();
 
 fn main() {
     let value = crab1::crab1(42);
