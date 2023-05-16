@@ -1,6 +1,4 @@
 use crate::config::Config;
-use crate::config::PackageConfig;
-use crate::config::DEFAULT_PACKAGE_CONFIG;
 use crate::problem::Problem;
 use crate::problem::Problems;
 use crate::proxy::rpc::BuildScriptOutput;
@@ -11,17 +9,18 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
     }
     let pkg_name = &outputs.package_name;
     let crate_name = format!("{}.build", outputs.package_name);
-    let pkg_config = config
+    let allow_build_instructions = config
         .packages
         .get(&crate_name)
-        .unwrap_or(&DEFAULT_PACKAGE_CONFIG);
+        .map(|cfg| cfg.allow_build_instructions.as_slice())
+        .unwrap_or(&[]);
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
         return Problem::new(format!("The package `{pkg_name}`'s build script emitted invalid UTF-8")).into();
     };
     let mut problems = Problems::default();
     for line in stdout.lines() {
         if line.starts_with("cargo:") {
-            problems.merge(check_directive(line, &pkg_name, &pkg_config));
+            problems.merge(check_directive(line, &pkg_name, &allow_build_instructions));
         }
     }
     problems
@@ -31,15 +30,18 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
 /// explicitly allow them.
 const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:rustc-cfg="];
 
-fn check_directive(instruction: &str, pkg_name: &str, config: &PackageConfig) -> Problems {
+fn check_directive(
+    instruction: &str,
+    pkg_name: &str,
+    allow_build_instructions: &[String],
+) -> Problems {
     if ALWAYS_PERMITTED
         .iter()
         .any(|prefix| instruction.starts_with(prefix))
     {
         return Problems::default();
     }
-    if config
-        .allow_build_instructions
+    if allow_build_instructions
         .iter()
         .any(|i| matches(instruction, i))
     {

@@ -86,15 +86,6 @@ pub(crate) struct PackageConfig {
     pub(crate) sandbox: Option<SandboxConfig>,
 }
 
-pub(crate) static DEFAULT_PACKAGE_CONFIG: PackageConfig = PackageConfig {
-    allow_unsafe: false,
-    allow_build_instructions: vec![],
-    allow_apis: vec![],
-    allow_proc_macro: false,
-    build: None,
-    sandbox: None,
-};
-
 pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
     let cackle: String = std::fs::read_to_string(cackle_path)
         .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
