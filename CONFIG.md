@@ -59,3 +59,28 @@ just for that build script.
 [pkg.foo.build.sandbox]
 kind = "Disabled"
 ```
+
+## Importing API definitions from an external crate
+
+If you depend on a crate that publishes `cackle/export.toml`, you can import API definitions from
+this as follows:
+
+```toml
+[pkg.some-dependency]
+import = [
+    "fs",
+]
+```
+
+API definitions imported like this will be namespaced by prefixing them with the crate that exported
+them. For example:
+
+```toml
+[pkg.my-bin]
+allow_apis = [
+    "some-dependency::fs",
+]
+```
+
+If you're the owner of a crate that provides APIs that you'd like classified, you can create
+`cackle/export.toml` in your crate.

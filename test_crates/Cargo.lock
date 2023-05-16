@@ -25,6 +25,9 @@ dependencies = [
 [[package]]
 name = "crab3"
 version = "0.1.0"
+dependencies = [
+ "crab1",
+]
 
 [[package]]
 name = "pmacro1"

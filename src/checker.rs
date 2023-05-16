@@ -95,13 +95,6 @@ pub(crate) struct UnusedConfig {
 }
 
 impl Checker {
-    pub(crate) fn from_config(config: &crate::config::Config) -> Self {
-        let mut checker = Checker::default();
-
-        checker.load_config(config);
-        checker
-    }
-
     /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
     pub(crate) fn load_config(&mut self, config: &crate::config::Config) {
         self.config = config.clone();
@@ -389,7 +382,8 @@ mod tests {
 
     #[track_caller]
     fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
-        let mut checker = Checker::from_config(&parse(config).unwrap());
+        let mut checker = Checker::default();
+        checker.load_config(&parse(config).unwrap());
 
         let path: Vec<String> = path.iter().map(|s| s.to_string()).collect();
         let apis = checker.apis_for_path(&path);
@@ -437,7 +431,8 @@ mod tests {
         "#,
         )
         .unwrap();
-        let mut checker = Checker::from_config(&config);
+        let mut checker = Checker::default();
+        checker.load_config(&config);
         let crate_id = checker.crate_id_from_name("foo");
         let mut problems = Problems::default();
 

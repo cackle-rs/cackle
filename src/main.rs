@@ -100,12 +100,15 @@ fn run(args: Args) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
+    proxy::clean(&root_path, args.colour)?;
+
     let config_path = args
         .cackle_path
         .clone()
         .unwrap_or_else(|| root_path.join("cackle.toml"));
 
     let mut cackle = Cackle::new(config_path, &root_path, args)?;
+    cackle.load_config()?;
 
     if !cackle.args.object_paths.is_empty() {
         let paths: Vec<_> = cackle.args.object_paths.clone();
@@ -114,7 +117,7 @@ fn run(args: Args) -> Result<()> {
     }
 
     let mut problems = cackle.unfixed_problems(None)?;
-    let config_path = cackle.config_path.clone();
+    let config_path = cackle.flattened_config_path();
     let build_result = if problems.is_empty() {
         proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
             problems.merge(cackle.unfixed_problems(Some(request))?);
@@ -167,9 +170,8 @@ struct Cackle {
 
 impl Cackle {
     fn new(config_path: PathBuf, root_path: &Path, args: Args) -> Result<Self> {
-        let config = config::parse_file(&config_path)?;
-        let mut checker = Checker::from_config(&config);
         let crate_index = CrateIndex::new(root_path)?;
+        let mut checker = Checker::default();
         if args.print_path_to_crate_map {
             println!("{crate_index}");
         }
@@ -188,13 +190,30 @@ impl Cackle {
         };
         Ok(Self {
             config_path,
-            config,
+            config: Config::default(),
             checker,
             target_dir: root_path.join("target"),
             crate_index,
             args,
             ui,
         })
+    }
+
+    fn load_config(&mut self) -> Result<()> {
+        let config = config::parse_file(&self.config_path, &self.crate_index)?;
+        self.checker.load_config(&config);
+        // Every time we reload our configuration, we rewrite the flattened configuration. The
+        // flattened configuration is used by subprocesses rather than using the original
+        // configuration since using the original would require each subprocess to run `cargo
+        // metadata`.
+        let flattened_path = self.flattened_config_path();
+        if let Some(dir) = flattened_path.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
+        }
+        std::fs::write(&flattened_path, config.flattened_toml()?)?;
+        self.config = config;
+        Ok(())
     }
 
     fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<Problems> {
@@ -206,8 +225,7 @@ impl Cackle {
             }
             match self.ui.maybe_fix_problems(&problems)? {
                 ui::FixOutcome::Retry => {
-                    self.config = config::parse_file(&self.config_path)?;
-                    self.checker.load_config(&self.config);
+                    self.load_config()?;
                     if problems.should_send_retry_to_subprocess() {
                         // If the only problem is that something in a subprocess failed, we return
                         // an empty error set. This signals the subprocess that it should proceed,
@@ -268,5 +286,11 @@ impl Cackle {
 
     fn check_build_script_output(&self, output: &proxy::rpc::BuildScriptOutput) -> Problems {
         build_script_checker::check(output, &self.config)
+    }
+
+    fn flattened_config_path(&self) -> PathBuf {
+        self.target_dir
+            .join(proxy::cargo::PROFILE_NAME)
+            .join("flattened_cackle.toml")
     }
 }

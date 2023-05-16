@@ -20,5 +20,6 @@ macro_rules! macro_that_uses_unsafe {
 pub fn do_stuff() {
     let path = include!(concat!(env!("OUT_DIR"), "/extra_code.rs"));
     println!("{path:?}");
+    crab1::read_file("");
     foo!();
 }

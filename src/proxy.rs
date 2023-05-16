@@ -32,7 +32,7 @@ use std::process::Command;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-mod cargo;
+pub(crate) mod cargo;
 pub(crate) mod errors;
 pub(crate) mod rpc;
 pub(crate) mod subprocess;
@@ -43,6 +43,13 @@ const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 
 pub(crate) struct CargoBuildFailure {
     output: std::process::Output,
+}
+
+pub(crate) fn clean(dir: &Path, colour: Colour) -> Result<()> {
+    // For now, we always clean before we build. It might be possible to not do this, but we'd need
+    // to carefully track changes to things we care about, like cackle.toml.
+    run_command(&mut cargo::command("clean", dir, colour))?;
+    Ok(())
 }
 
 /// Invokes `cargo build` in the specified directory with us acting as proxy versions of rustc and
@@ -56,9 +63,6 @@ pub(crate) fn invoke_cargo_build(
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
         panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
     }
-    // For now, we always clean before we build. It might be possible to not do this, but we'd need
-    // to carefully track changes to things we care about, like cackle.toml.
-    run_command(&mut cargo::command("clean", dir, colour))?;
 
     let target_dir = dir.join("target");
     std::fs::create_dir_all(&target_dir)

@@ -2,6 +2,7 @@
 //! rustc, the linker or a build script. See comment on parent module for more details.
 
 use crate::config::Config;
+use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
 use crate::proxy::errors::ErrorKind;
 use crate::proxy::rpc::RpcClient;
@@ -281,7 +282,11 @@ fn get_config_from_env() -> Result<Config> {
     let Ok(config_path) = std::env::var(CONFIG_PATH_ENV) else {
         bail!("Internal env var `{}` not set", CONFIG_PATH_ENV);
     };
-    crate::config::parse_file(Path::new(&config_path))
+    // We pass an empty crate index here. That means that the config file we load cannot load config
+    // from any other crates. It won't need to though, because the config file we pass will be one
+    // that the parent process wrote after it loaded any required crate-specific config files and
+    // then flattened them into a single file.
+    crate::config::parse_file(Path::new(&config_path), &CrateIndex::default())
 }
 
 /// Looks for `--crate-name` in the arguments and if found, returns the subsequent argument.

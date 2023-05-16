@@ -2,6 +2,7 @@
 //! to which crates, which are proc macros etc.
 
 use anyhow::Result;
+use cargo_metadata::camino::Utf8PathBuf;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -12,6 +13,7 @@ use std::path::PathBuf;
 pub(crate) struct CrateIndex {
     path_to_crate_name: HashMap<PathBuf, String>,
     pub(crate) proc_macros: HashSet<String>,
+    name_to_dir: HashMap<String, Utf8PathBuf>,
 }
 
 impl CrateIndex {
@@ -39,6 +41,9 @@ impl CrateIndex {
                     mapping.proc_macros.insert(package.name.clone());
                 }
             }
+            if let Some(dir) = package.manifest_path.parent() {
+                mapping.name_to_dir.insert(package.name, dir.to_path_buf());
+            }
         }
         Ok(mapping)
     }
@@ -54,6 +59,10 @@ impl CrateIndex {
                 return None;
             }
         }
+    }
+
+    pub(crate) fn pkg_dir(&self, pkg_name: &str) -> Option<&Utf8PathBuf> {
+        self.name_to_dir.get(pkg_name)
     }
 
     pub(crate) fn crate_names(&self) -> HashSet<&str> {

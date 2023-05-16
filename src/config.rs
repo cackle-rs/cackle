@@ -1,21 +1,25 @@
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
+use serde::Serialize;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
 
-#[derive(Deserialize, Debug, Default, Clone)]
+use crate::crate_index::CrateIndex;
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     pub(crate) version: u32,
 
     #[serde(default, rename = "api")]
-    pub(crate) apis: HashMap<PermissionName, PermConfig>,
+    pub(crate) apis: BTreeMap<PermissionName, PermConfig>,
 
     #[serde(default, rename = "pkg")]
-    pub(crate) packages: HashMap<String, PackageConfig>,
+    pub(crate) packages: BTreeMap<String, PackageConfig>,
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
@@ -27,7 +31,7 @@ pub(crate) struct Config {
     pub(crate) explicit_build_scripts: bool,
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SandboxConfig {
     #[serde(default)]
@@ -40,7 +44,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) extra_args: Vec<String>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
     pub(crate) include: Vec<String>,
@@ -49,13 +53,13 @@ pub(crate) struct PermConfig {
     pub(crate) exclude: Vec<String>,
 }
 
-#[derive(Deserialize, Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Deserialize, Serialize, Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(transparent)]
 pub(crate) struct PermissionName {
     pub(crate) name: Cow<'static, str>,
 }
 
-#[derive(Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum SandboxKind {
     #[default]
     Inherit,
@@ -63,7 +67,7 @@ pub(crate) enum SandboxKind {
     Bubblewrap,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackageConfig {
     #[serde(default)]
@@ -84,30 +88,82 @@ pub(crate) struct PackageConfig {
 
     #[serde()]
     pub(crate) sandbox: Option<SandboxConfig>,
+
+    #[serde(default)]
+    pub(crate) import: Vec<String>,
 }
 
-pub(crate) fn parse_file(cackle_path: &Path) -> Result<Config> {
+pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Config> {
     let cackle: String = std::fs::read_to_string(cackle_path)
         .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
 
-    parse(&cackle, cackle_path)
-        .with_context(|| format!("Failed to parse {}", cackle_path.display()))
-}
-
-pub(crate) fn parse(cackle: &str, cackle_path: &Path) -> Result<Config> {
-    let mut config = toml::from_str(cackle)?;
-    flatten(&mut config);
+    let mut config =
+        parse(&cackle).with_context(|| format!("Failed to parse {}", cackle_path.display()))?;
+    config.load_imports(crate_index)?;
     crate::config_validation::validate(&config, cackle_path)?;
     Ok(config)
 }
 
+fn parse(cackle: &str) -> Result<Config> {
+    let mut config = toml::from_str(cackle)?;
+    flatten(&mut config);
+    Ok(config)
+}
+
+impl Config {
+    fn load_imports(&mut self, crate_index: &CrateIndex) -> Result<()> {
+        for (pkg_name, pkg_config) in &self.packages {
+            if pkg_config.import.is_empty() {
+                continue;
+            }
+            let Some(pkg_dir) = crate_index.pkg_dir(pkg_name) else {
+                continue;
+            };
+            let pkg_exports = parse_file(
+                pkg_dir.join("cackle").join("export.toml").as_std_path(),
+                crate_index,
+            )?;
+            for (api_name, api_def) in pkg_exports.apis {
+                if !pkg_config
+                    .import
+                    .iter()
+                    .any(|imp| imp == api_name.name.as_ref())
+                {
+                    // The user didn't request importing this API, so skip it.
+                    continue;
+                }
+                let qualified_api_name = PermissionName {
+                    name: format!("{}::{}", pkg_name, api_name).into(),
+                };
+                if self
+                    .apis
+                    .insert(qualified_api_name.clone(), api_def)
+                    .is_some()
+                {
+                    bail!(
+                        "[pkg.{}.api.{}] is defined multiple times",
+                        pkg_name,
+                        api_name
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn flattened_toml(&self) -> Result<String> {
+        Ok(toml::to_string(self)?)
+    }
+}
+
 fn flatten(config: &mut Config) {
-    let mut crates_by_name = HashMap::new();
-    for (name, mut crate_config) in config.packages.drain() {
+    let mut crates_by_name = BTreeMap::new();
+    for (name, crate_config) in &config.packages {
+        let mut crate_config = crate_config.clone();
         if let Some(build_config) = crate_config.build.take() {
             crates_by_name.insert(format!("{name}.build"), *build_config);
         }
-        crates_by_name.insert(name, crate_config);
+        crates_by_name.insert(name.clone(), crate_config);
     }
     config.packages = crates_by_name;
 }
@@ -158,21 +214,26 @@ impl Config {
 
 #[cfg(test)]
 pub(crate) mod testing {
+    use crate::config_validation::validate;
+
     pub(crate) fn parse(cackle: &str) -> anyhow::Result<super::Config> {
         let cackle_with_header = format!(
             "version = 1\n\
             {cackle}
         "
         );
-        super::parse(&cackle_with_header, std::path::Path::new("/dev/null"))
+        let config = super::parse(&cackle_with_header)?;
+        validate(&config, std::path::Path::new("/dev/null"))?;
+        Ok(config)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::SandboxKind;
-
     use super::testing::parse;
+    use crate::config::SandboxKind;
+    use crate::crate_index::CrateIndex;
+    use std::path::PathBuf;
 
     #[test]
     fn empty() {
@@ -290,5 +351,16 @@ mod tests {
             "#,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn flattened_config_roundtrips() {
+        let crate_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+        let test_crates_dir = crate_root.join("test_crates");
+        let crate_index = CrateIndex::new(&test_crates_dir).unwrap();
+        let config = super::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
+
+        let roundtripped_config = super::parse(&config.flattened_toml().unwrap()).unwrap();
+        assert_eq!(config, roundtripped_config);
     }
 }
