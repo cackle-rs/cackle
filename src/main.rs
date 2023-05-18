@@ -61,6 +61,11 @@ struct Args {
     #[clap(long)]
     print_path_to_crate_map: bool,
 
+    /// If set, warnings (e.g. due to unused permissions) will cause termination with a non-zero
+    /// exit value.
+    #[clap(long)]
+    fail_on_warnings: bool,
+
     /// Maximum number of source locations that use an API that should be
     /// reported.
     #[clap(long, default_value = "2")]
@@ -139,6 +144,13 @@ fn run(args: Args) -> Result<()> {
     if !cackle.config.ignore_unused {
         if let Err(unused) = cackle.checker.check_unused() {
             println!("{}", unused);
+            if cackle.args.fail_on_warnings {
+                println!(
+                    "{}: Warnings promoted to errors by --fail-on-warnings",
+                    "ERROR".red()
+                );
+                std::process::exit(-1);
+            }
         }
     }
 

@@ -94,7 +94,7 @@ allow_apis = [
 
 [pkg.pmacro1]
 allow_apis = [
-    "env"
+    "env",
 ]
 allow_proc_macro = true
 

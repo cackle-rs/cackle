@@ -9,6 +9,7 @@ fn integration_test() -> Result<()> {
     let cackle_exe = target_dir().join("cackle");
     let status = Command::new(&cackle_exe)
         .arg("--non-interactive")
+        .arg("--fail-on-warnings")
         .arg("--path")
         .arg(crate_root.join("test_crates"))
         .status()
