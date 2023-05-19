@@ -20,7 +20,7 @@
 //! * We can run them inside a sandbox if the config says to do so.
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
-use crate::colour::Colour;
+use crate::Args;
 use anyhow::Context;
 use anyhow::Result;
 use std::fmt::Display;
@@ -45,10 +45,10 @@ pub(crate) struct CargoBuildFailure {
     output: std::process::Output,
 }
 
-pub(crate) fn clean(dir: &Path, colour: Colour) -> Result<()> {
+pub(crate) fn clean(dir: &Path, args: &Args) -> Result<()> {
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
     // to carefully track changes to things we care about, like cackle.toml.
-    run_command(&mut cargo::command("clean", dir, colour))?;
+    run_command(&mut cargo::command("clean", dir, args))?;
     Ok(())
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn clean(dir: &Path, colour: Colour) -> Result<()> {
 pub(crate) fn invoke_cargo_build(
     dir: &Path,
     config_path: &Path,
-    colour: Colour,
+    args: &Args,
     mut callback: impl FnMut(rpc::Request) -> Result<rpc::CanContinueResponse>,
 ) -> Result<Option<CargoBuildFailure>> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
@@ -72,7 +72,10 @@ pub(crate) fn invoke_cargo_build(
     let listener = UnixListener::bind(&ipc_path)
         .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
 
-    let mut command = cargo::command("build", dir, colour);
+    let mut command = cargo::command("build", dir, args);
+    if let Some(target) = &args.target {
+        command.arg("--target").arg(target);
+    }
     command
         .env(SOCKET_ENV, &ipc_path)
         .env(CONFIG_PATH_ENV, config_path)

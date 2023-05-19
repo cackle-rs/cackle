@@ -1,0 +1,7 @@
+# For instructions on how to set up cross compiling for Mac from Linux, see
+# https://wapl.es/rust/2019/02/17/rust-cross-compile-linux-to-macos.html
+
+[target.x86_64-apple-darwin]
+linker = "x86_64-apple-darwin14-clang"
+ar = "x86_64-apple-darwin14-ar"
+

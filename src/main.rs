@@ -35,7 +35,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[clap(version, about)]
 struct Args {
     /// Directory containing crate to analyze. Defaults to current working
@@ -82,6 +82,12 @@ struct Args {
     /// Don't print anything on success.
     #[clap(long)]
     quiet: bool,
+
+    /// Override the target used when compiling. e.g. specify "x86_64-apple-darwin" to compile for
+    /// x86 Mac. Note that build scripts and procedural macros will still be compiled for the host
+    /// target.
+    #[clap(long)]
+    target: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -105,14 +111,14 @@ fn run(args: Args) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-    proxy::clean(&root_path, args.colour)?;
+    proxy::clean(&root_path, &args)?;
 
     let config_path = args
         .cackle_path
         .clone()
         .unwrap_or_else(|| root_path.join("cackle.toml"));
 
-    let mut cackle = Cackle::new(config_path, &root_path, args)?;
+    let mut cackle = Cackle::new(config_path, &root_path, args.clone())?;
     cackle.load_config()?;
 
     if !cackle.args.object_paths.is_empty() {
@@ -124,7 +130,7 @@ fn run(args: Args) -> Result<()> {
     let mut problems = cackle.unfixed_problems(None)?;
     let config_path = cackle.flattened_config_path();
     let build_result = if problems.is_empty() {
-        proxy::invoke_cargo_build(&root_path, &config_path, cackle.args.colour, |request| {
+        proxy::invoke_cargo_build(&root_path, &config_path, &args, |request| {
             problems.merge(cackle.unfixed_problems(Some(request))?);
             Ok(problems.can_continue())
         })

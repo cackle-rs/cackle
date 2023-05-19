@@ -1,14 +1,14 @@
-use crate::colour::Colour;
+use crate::Args;
 use std::path::Path;
 use std::process::Command;
 
 /// The name of the cargo profile that we use.
 pub(crate) const PROFILE_NAME: &str = "cackle";
 
-pub(crate) fn command(base_command: &str, dir: &Path, colour: Colour) -> Command {
+pub(crate) fn command(base_command: &str, dir: &Path, args: &Args) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(dir);
-    if colour.should_use_colour() {
+    if args.colour.should_use_colour() {
         command.arg("--color=always");
     }
     command.arg(base_command);
