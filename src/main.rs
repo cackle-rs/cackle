@@ -111,7 +111,9 @@ fn run(args: Args) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-    proxy::clean(&root_path, &args)?;
+    if args.object_paths.is_empty() {
+        proxy::clean(&root_path, &args)?;
+    }
 
     let config_path = args
         .cackle_path
