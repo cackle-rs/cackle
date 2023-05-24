@@ -25,7 +25,7 @@ pub(crate) struct Config {
     pub(crate) sandbox: SandboxConfig,
 
     #[serde(default)]
-    pub(crate) ignore_unused: bool,
+    pub(crate) ignore_unreachable: bool,
 
     #[serde(default)]
     pub(crate) explicit_build_scripts: bool,
@@ -91,6 +91,9 @@ pub(crate) struct PackageConfig {
 
     #[serde(default)]
     pub(crate) import: Vec<String>,
+
+    #[serde(default)]
+    pub(crate) ignore_unreachable: bool,
 }
 
 pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Config> {
@@ -209,6 +212,11 @@ impl Config {
             .allow_read
             .extend(pkg_sandbox_config.allow_read.iter().cloned());
         config
+    }
+
+    /// Returns whether reachability information is needed.
+    pub(crate) fn needs_reachability(&self) -> bool {
+        self.packages.values().any(|pkg| pkg.ignore_unreachable)
     }
 }
 

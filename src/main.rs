@@ -149,7 +149,7 @@ fn run(args: Args) -> Result<()> {
         std::process::exit(-1);
     }
 
-    if !cackle.config.ignore_unused {
+    if !cackle.config.ignore_unreachable {
         if let Err(unused) = cackle.checker.check_unused() {
             println!("{}", unused);
             if cackle.args.fail_on_warnings {
@@ -296,6 +296,9 @@ impl Cackle {
             graph
                 .process_file(path)
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
+        }
+        if self.config.needs_reachability() {
+            graph.compute_reachability()?;
         }
         let problems = graph.problems(&mut self.checker, &self.crate_index)?;
         if self.args.print_all_references {

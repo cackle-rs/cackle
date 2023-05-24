@@ -66,6 +66,9 @@ struct SectionInfo {
     /// Symbols that this section defines. Generally there should be exactly one, at least with the
     /// compilation settings that we should be using.
     definitions: Vec<Symbol>,
+
+    /// Whether this section is reachable by following references from a root (e.g. `main`).
+    reachable: bool,
 }
 
 #[derive(Default)]
@@ -82,6 +85,9 @@ pub(crate) struct SymGraph {
     /// For each symbol that has two or more definitions, stores the indices of the sections that
     /// defined that symbol.
     duplicate_symbol_section_indexes: HashMap<Symbol, Vec<SectionIndex>>,
+
+    /// Whether `compute_reachability` has been called and it has suceeded.
+    reachabilty_computed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -105,6 +111,46 @@ impl SymGraph {
                 self.process_file_bytes(filename, &file_bytes)?;
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn compute_reachability(&mut self) -> Result<()> {
+        let mut queue = Vec::with_capacity(100);
+        const ROOT_PREFIXES: &[&str] = &[".text.main", ".data.rel.ro.__rustc_proc_macro_decls"];
+        queue.extend(
+            self.sections
+                .iter()
+                .enumerate()
+                .filter_map(|(index, section)| {
+                    if ROOT_PREFIXES
+                        .iter()
+                        .any(|prefix| section.name.raw_bytes().starts_with(prefix.as_bytes()))
+                    {
+                        Some(SectionIndex(index))
+                    } else {
+                        None
+                    }
+                }),
+        );
+        if queue.is_empty() {
+            bail!("No roots found when computing reachability");
+        }
+        while let Some(section_index) = queue.pop() {
+            if self.sections[section_index.0].reachable {
+                // We've already visited this node in the graph.
+                continue;
+            }
+            self.sections[section_index.0].reachable = true;
+            let section = &self.sections[section_index.0];
+            for reference in &section.references {
+                let next_section_index = match reference {
+                    Reference::Section(section_index) => Some(*section_index),
+                    Reference::Name(symbol) => self.symbol_to_section.get(&symbol).cloned(),
+                };
+                queue.extend(next_section_index.into_iter());
+            }
+        }
+        self.reachabilty_computed = true;
         Ok(())
     }
 
@@ -152,6 +198,14 @@ impl SymGraph {
                     )
                 })?;
             let crate_id = checker.crate_id_from_name(crate_name);
+            if checker.ignore_unreachable(crate_id) && !section.reachable {
+                // The only way we could get here without reachability having been computed would be
+                // if there was an inconsistency between `Checker::ignore_unreachable` and
+                // `Config::needs_reachability`. i.e. a bug, but a bad enough bug that it's better
+                // to crash than continue.
+                assert!(self.reachabilty_computed);
+                continue;
+            }
             for reference in &section.references {
                 if let Some(ref_name) = self.referenced_symbol(reference) {
                     for name_parts in ref_name.parts()? {
@@ -217,7 +271,6 @@ impl SymGraph {
             s.insert(".note.GNU-stack");
             s.insert(".strtab");
             s.insert(".symtab");
-            s.insert(".data.rel.ro");
             s.insert(".debug_info");
             s.insert(".debug_aranges");
             s.insert(".debug_ranges");

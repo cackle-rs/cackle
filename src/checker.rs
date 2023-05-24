@@ -57,6 +57,9 @@ pub(crate) struct CrateInfo {
 
     /// Whether this crate is allowed to be a proc macro according to our config.
     allow_proc_macro: bool,
+
+    /// Whether to ignore references from dead code in this crate.
+    ignore_unreachable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +121,7 @@ impl Checker {
             let crate_info = &mut self.crate_infos[crate_id.0];
             crate_info.has_config = true;
             crate_info.allow_proc_macro = crate_config.allow_proc_macro;
+            crate_info.ignore_unreachable = crate_config.ignore_unreachable;
             for perm in &crate_config.allow_apis {
                 let perm_id = self.perm_id(perm);
                 // Find `crate_info` again. Need to do this here because the `perm_id` above needs
@@ -199,6 +203,10 @@ impl Checker {
             ..CrateInfo::default()
         });
         crate_id
+    }
+
+    pub(crate) fn ignore_unreachable(&self, crate_id: CrateId) -> bool {
+        self.crate_infos[crate_id.0].ignore_unreachable
     }
 
     pub(crate) fn report_crate_used(&mut self, crate_id: CrateId) {

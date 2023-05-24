@@ -1,7 +1,7 @@
 use rustc_demangle::demangle;
 use std::fmt::Display;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SectionName {
     bytes: Vec<u8>,
 }
@@ -17,6 +17,10 @@ impl SectionName {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.bytes.is_empty()
+    }
+
+    pub(crate) fn raw_bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
     }
 }
 
