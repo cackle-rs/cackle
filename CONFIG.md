@@ -106,3 +106,5 @@ main).
 This option currently won't work if you're compiling a shared object (other than a proc macro),
 since we haven't yet implemented a way to find the roots of a shared object for the purposes of
 computing reachability.
+
+Reachability only ever applies to API usage. Reachability doesn't affect checking for unsafe code.

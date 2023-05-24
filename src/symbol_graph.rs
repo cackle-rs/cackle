@@ -133,7 +133,7 @@ impl SymGraph {
                 }),
         );
         if queue.is_empty() {
-            bail!("No roots found when computing reachability");
+            bail!("No roots found when computing reachability, but ignore_unreachable is set");
         }
         while let Some(section_index) = queue.pop() {
             if self.sections[section_index.0].reachable {
