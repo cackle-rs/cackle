@@ -286,7 +286,6 @@ impl SymGraph {
         for section in obj.sections() {
             if let Ok(name) = section.name() {
                 if name.starts_with(".rela")
-                    || name.starts_with(".data.rel")
                     // TODO: Definitely look into if we can not ignore .rodata.
                     || name.starts_with(".rodata")
                     || ignored_sections.contains(name)
