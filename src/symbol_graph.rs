@@ -25,10 +25,8 @@ use gimli::Dwarf;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
-use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::fs::File;
@@ -268,37 +266,9 @@ impl SymGraph {
     }
 
     fn process_object_relocations(&mut self, obj: &object::File, filename: &Path) -> Result<()> {
-        // TODO: Does ignoring all these sections allow hiding stuff? If we assign all references in
-        // these sections to "current" crate, can we not ignore them?
-        static IGNORED_SECTIONS: OnceCell<HashSet<&str>> = OnceCell::new();
-        let ignored_sections = IGNORED_SECTIONS.get_or_init(|| {
-            let mut s = HashSet::new();
-            s.insert(".eh_frame");
-            s.insert(".group");
-            s.insert(".note.GNU-stack");
-            s.insert(".strtab");
-            s.insert(".symtab");
-            s.insert(".debug_info");
-            s.insert(".debug_aranges");
-            s.insert(".debug_ranges");
-            s.insert(".debug_line");
-
-            // If we don't ignore these, then we get duplicate symbol definitions.
-            s.insert(".data.DW.ref.rust_eh_personality");
-            s.insert(".debug_gdb_scripts");
-            s
-        });
-
         let mut section_name_to_index = HashMap::new();
         for section in obj.sections() {
             if let Ok(name) = section.name() {
-                if name.starts_with(".rela")
-                    // TODO: Definitely look into if we can not ignore .rodata.
-                    || name.starts_with(".rodata")
-                    || ignored_sections.contains(name)
-                {
-                    continue;
-                }
                 let index = SectionIndex(self.sections.len());
                 section_name_to_index.insert(name.to_owned(), index);
                 self.sections.push(SectionInfo::new(filename, name));
@@ -317,12 +287,14 @@ impl SymGraph {
                 self.sym_to_local_section.insert(Symbol::new(name), index);
             } else if let Some(old_index) = self.symbol_to_section.insert(Symbol::new(name), index)
             {
-                let dup_indexes = self
-                    .duplicate_symbol_section_indexes
-                    .entry(Symbol::new(name))
-                    .or_default();
-                dup_indexes.push(index);
-                dup_indexes.push(old_index);
+                if !(self.is_duplicate_symbol_ok(index, name)) {
+                    let dup_indexes = self
+                        .duplicate_symbol_section_indexes
+                        .entry(Symbol::new(name))
+                        .or_default();
+                    dup_indexes.push(index);
+                    dup_indexes.push(old_index);
+                }
             }
         }
         for section in obj.sections() {
@@ -357,6 +329,13 @@ impl SymGraph {
             }
         }
         Ok(())
+    }
+
+    /// Returns whether it's allowed that we encountered a duplicate symbol `name` in the specified
+    /// section.
+    fn is_duplicate_symbol_ok(&mut self, index: SectionIndex, name: &[u8]) -> bool {
+        &self.sections[index.0].name == ".data.DW.ref.rust_eh_personality"
+            && name == b"DW.ref.rust_eh_personality"
     }
 
     fn process_debug_info(&mut self, obj: &object::File) -> Result<(), anyhow::Error> {

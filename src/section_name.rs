@@ -43,3 +43,9 @@ impl Display for SectionName {
         Ok(())
     }
 }
+
+impl PartialEq<str> for SectionName {
+    fn eq(&self, other: &str) -> bool {
+        self.bytes == other.as_bytes()
+    }
+}
