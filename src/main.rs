@@ -88,6 +88,10 @@ struct Args {
     /// target.
     #[clap(long)]
     target: Option<String>,
+
+    /// Provide additional information on some kinds of errors.
+    #[clap(long)]
+    verbose_errors: bool,
 }
 
 fn main() -> Result<()> {
@@ -297,13 +301,20 @@ impl Cackle {
                 .process_file(path)
                 .with_context(|| format!("Failed to process `{}`", path.display()))?;
         }
-        if self.config.needs_reachability() {
-            graph.compute_reachability()?;
-        }
-        let problems = graph.problems(&mut self.checker, &self.crate_index)?;
         if self.args.print_all_references {
             println!("{graph}");
         }
+        if self.config.needs_reachability() {
+            let result = graph.compute_reachability(&self.args);
+            if result.is_err() && self.args.verbose_errors {
+                println!("Object paths:");
+                for p in paths {
+                    println!("  {}", p.display());
+                }
+            }
+            result?;
+        }
+        let problems = graph.problems(&mut self.checker, &self.crate_index)?;
         Ok(problems)
     }
 

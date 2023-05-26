@@ -15,6 +15,7 @@ use crate::crate_index::CrateIndex;
 use crate::problem::Problems;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
+use crate::Args;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -114,7 +115,7 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn compute_reachability(&mut self) -> Result<()> {
+    pub(crate) fn compute_reachability(&mut self, args: &Args) -> Result<()> {
         let mut queue = Vec::with_capacity(100);
         const ROOT_PREFIXES: &[&str] = &[".text.main", ".data.rel.ro.__rustc_proc_macro_decls"];
         queue.extend(
@@ -133,6 +134,12 @@ impl SymGraph {
                 }),
         );
         if queue.is_empty() {
+            if args.verbose_errors {
+                println!("Sections names:");
+                for section in &self.sections {
+                    println!("  {}", section.name);
+                }
+            }
             bail!("No roots found when computing reachability, but ignore_unreachable is set");
         }
         while let Some(section_index) = queue.pop() {
