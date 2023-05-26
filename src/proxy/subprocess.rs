@@ -58,7 +58,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
 /// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
 /// the build script.
 fn setup_build_script_wrapper(build_script_bin: &PathBuf) -> Result<()> {
-    std::fs::rename(build_script_bin, orig_build_rs_bin_path(&build_script_bin)).with_context(
+    std::fs::rename(build_script_bin, orig_build_rs_bin_path(build_script_bin)).with_context(
         || {
             format!(
                 "Failed to rename build.rs binary `{}`",
@@ -125,8 +125,8 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         match rpc_response {
             CanContinueResponse::Proceed => {
                 if output.status.code() == Some(0) {
-                    std::io::stderr().lock().write(&output.stderr)?;
-                    std::io::stdout().lock().write(&output.stdout)?;
+                    std::io::stderr().lock().write_all(&output.stderr)?;
+                    std::io::stdout().lock().write_all(&output.stdout)?;
                     return Ok(output.status);
                 }
                 // If the build script failed and we were asked to proceed, then fall through and
@@ -196,7 +196,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
         // If something goes wrong, it can be handy to have object files left around to examine.
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
-        let crate_name = crate_name.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let crate_name = crate_name.as_deref().unwrap_or("");
         let unsafe_permitted = config.unsafe_permitted_for_crate(crate_name);
         if !unsafe_permitted {
             command.arg("-Funsafe-code");

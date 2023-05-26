@@ -84,7 +84,7 @@ impl ConfigEditor {
             .as_table_mut()
             .ok_or_else(|| anyhow!("[pkg] should be a table"))?;
         pkg.entry(pkg_name)
-            .or_insert_with(|| toml_edit::table())
+            .or_insert_with(toml_edit::table)
             .as_table_mut()
             .ok_or_else(|| anyhow!("[pkg.{pkg_name}] should be a table"))
     }
@@ -114,7 +114,7 @@ mod tests {
         Problem::DisallowedApiUsage(DisallowedApiUsage {
             pkg_name: pkg_name.to_owned(),
             usages: apis
-                .into_iter()
+                .iter()
                 .map(|n| (PermissionName::from(*n), vec![]))
                 .collect(),
         })

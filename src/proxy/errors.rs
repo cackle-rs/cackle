@@ -74,7 +74,7 @@ mod tests {
             ],
             "rendered": "Stuff that we don't parse"
         }"#
-        .replace("\n", "");
+        .replace('\n', "");
         assert_eq!(
             get_error(&json),
             Some(ErrorKind::Unsafe(UnsafeUsage {

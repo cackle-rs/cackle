@@ -271,10 +271,10 @@ impl Cackle {
         };
         match request {
             proxy::rpc::Request::CrateUsesUnsafe(usage) => {
-                return Ok(self.checker.crate_uses_unsafe(usage));
+                Ok(self.checker.crate_uses_unsafe(usage))
             }
             proxy::rpc::Request::LinkerInvoked(link_info) => {
-                self.check_linker_invocation(&link_info)
+                self.check_linker_invocation(link_info)
             }
             proxy::rpc::Request::BuildScriptComplete(output) => {
                 Ok(self.check_build_script_output(output))

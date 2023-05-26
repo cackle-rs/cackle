@@ -20,7 +20,7 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
     let mut problems = Problems::default();
     for line in stdout.lines() {
         if line.starts_with("cargo:") {
-            problems.merge(check_directive(line, &pkg_name, &allow_build_instructions));
+            problems.merge(check_directive(line, pkg_name, allow_build_instructions));
         }
     }
     problems
@@ -54,7 +54,7 @@ fn check_directive(
 }
 
 fn matches(instruction: &str, rule: &str) -> bool {
-    if let Some(prefix) = rule.strip_suffix("*") {
+    if let Some(prefix) = rule.strip_suffix('*') {
         instruction.starts_with(prefix)
     } else {
         instruction == rule

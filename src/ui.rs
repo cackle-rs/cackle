@@ -70,7 +70,7 @@ fn start_stdin_channel() -> Receiver<String> {
 impl Ui for BasicTermUi {
     fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome> {
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
-        let fixable = editor.fix_problems(&problems)?;
+        let fixable = editor.fix_problems(problems)?;
         println!();
         if fixable.is_empty() {
             for problem in problems {
@@ -115,13 +115,13 @@ impl Ui for BasicTermUi {
                 "f" => {
                     // We always recompute the edits in case the user manually edited the file.
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    editor.fix_problems(&problems)?;
+                    editor.fix_problems(problems)?;
                     editor.write(&self.config_path)?;
                     return Ok(FixOutcome::Retry);
                 }
                 "d" => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    editor.fix_problems(&problems)?;
+                    editor.fix_problems(problems)?;
                     show_diff(
                         &std::fs::read_to_string(&self.config_path)?,
                         &editor.to_toml(),

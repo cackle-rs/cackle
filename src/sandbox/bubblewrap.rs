@@ -44,14 +44,14 @@ impl Sandbox for Bubblewrap {
     fn run(&self, binary: &Path) -> Result<std::process::Output> {
         let mut command = Command::new("bwrap");
         command
-            .args(&["--dev", "/dev"])
-            .args(&["--proc", "/proc"])
-            .args(&["--unshare-all"])
-            .args(&["--uid", "1000"])
-            .args(&["--gid", "1000"])
-            .args(&["--hostname", "none"])
-            .args(&["--new-session"])
-            .args(&["--clearenv"])
+            .args(["--dev", "/dev"])
+            .args(["--proc", "/proc"])
+            .args(["--unshare-all"])
+            .args(["--uid", "1000"])
+            .args(["--gid", "1000"])
+            .args(["--hostname", "none"])
+            .args(["--new-session"])
+            .args(["--clearenv"])
             .args(&self.args)
             .arg(binary);
         command.output().with_context(|| {

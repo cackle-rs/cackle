@@ -47,7 +47,7 @@ pub(crate) trait Sandbox {
 pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
         SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
-        SandboxKind::Bubblewrap => Box::new(bubblewrap::Bubblewrap::default()),
+        SandboxKind::Bubblewrap => Box::<bubblewrap::Bubblewrap>::default(),
     };
     for dir in &config.allow_read {
         sandbox.ro_bind(Path::new(dir));

@@ -150,7 +150,7 @@ impl SymGraph {
             for reference in &section.references {
                 let next_section_index = match reference {
                     Reference::Section(section_index) => Some(*section_index),
-                    Reference::Name(symbol) => self.symbol_to_section.get(&symbol).cloned(),
+                    Reference::Name(symbol) => self.symbol_to_section.get(symbol).cloned(),
                 };
                 queue.extend(next_section_index.into_iter());
             }

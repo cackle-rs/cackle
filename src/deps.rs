@@ -23,7 +23,7 @@ pub(crate) fn source_files_from_rustc_args(
 fn parse_deps(deps_text: &str) -> Result<Vec<PathBuf>> {
     let mut deps = Vec::new();
     for line in deps_text.lines() {
-        if let Some(filename) = line.strip_suffix(":") {
+        if let Some(filename) = line.strip_suffix(':') {
             deps.push(PathBuf::from(filename));
         }
     }
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(deps_path(&[]).unwrap(), None);
     }
 
-    fn path_strings(input: &Vec<PathBuf>) -> Vec<&str> {
+    fn path_strings(input: &[PathBuf]) -> Vec<&str> {
         input.iter().filter_map(|path| path.to_str()).collect()
     }
 

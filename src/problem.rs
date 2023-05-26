@@ -119,11 +119,10 @@ impl Problem {
 
     /// Returns whether a retry on this problem needs to be sent to a subprocess.
     fn should_send_retry_to_subprocess(&self) -> bool {
-        match self {
-            &Problem::BuildScriptFailed(..) => true,
-            &Problem::DisallowedUnsafe(..) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            &Problem::BuildScriptFailed(..) | &Problem::DisallowedUnsafe(..)
+        )
     }
 }
 
@@ -146,7 +145,7 @@ impl Display for Problem {
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
             )?,
             Problem::DisallowedApiUsage(info) => {
-                write!(f, "Crate '{}' uses disallowed APIs:\n", info.pkg_name)?;
+                writeln!(f, "Crate '{}' uses disallowed APIs:", info.pkg_name)?;
                 for (perm_name, usages) in &info.usages {
                     writeln!(f, "  {perm_name}:")?;
                     for usage in usages {
