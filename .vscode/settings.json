@@ -2,5 +2,8 @@
     "rust-analyzer.linkedProjects": [
         "Cargo.toml",
         "test_crates/Cargo.toml"
-    ]
+    ],
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.imports.granularity.group": "item",
+    "rust-analyzer.imports.granularity.enforce": true
 }
