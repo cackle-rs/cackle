@@ -12,7 +12,7 @@ pub mod stuff {
 
     pub fn do_stuff() {
         crab3::macro_that_uses_unsafe!({
-            crate::woozle("/tmp/foo.bar", &[42]).unwrap();
+            crate::woozle("/tmp/foo.bar", [42]).unwrap();
             true
         });
         crab3::do_stuff();
