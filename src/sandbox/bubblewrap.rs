@@ -41,6 +41,10 @@ impl Sandbox for Bubblewrap {
         self.arg(value);
     }
 
+    fn allow_network(&mut self) {
+        self.arg(OsStr::new("--share-net"));
+    }
+
     fn run(&self, binary: &Path) -> Result<std::process::Output> {
         let mut command = Command::new("bwrap");
         command

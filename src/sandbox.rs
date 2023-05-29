@@ -23,6 +23,9 @@ pub(crate) trait Sandbox {
     /// Bind `dir` into the sandbox writable.
     fn writable_bind(&mut self, dir: &Path);
 
+    /// Allow unrestricted network access.
+    fn allow_network(&mut self);
+
     /// Append a sandbox-specific argument.
     fn arg(&mut self, arg: &OsStr);
 
@@ -75,6 +78,14 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     sandbox.pass_env("HOME");
     for arg in &config.extra_args {
         sandbox.arg(OsStr::new(arg));
+    }
+    if config.allow_network.unwrap_or(false) {
+        sandbox.allow_network();
+    } else {
+        // Only allow access to the real /run when network access is permitted, otherwise mount a
+        // tmpfs there to prevent access to the real contents. Doing this when network access is
+        // permitted prevents DNS lookups on some systems.
+        sandbox.tmpfs(Path::new("/run"));
     }
     Ok(Some(sandbox))
 }

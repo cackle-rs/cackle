@@ -111,3 +111,6 @@ allow_apis = [
 
 [pkg.crab-bin.build.sandbox]
 kind = "Disabled"
+
+[pkg.crab1.build.sandbox]
+allow_network = true

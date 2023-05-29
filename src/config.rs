@@ -42,6 +42,8 @@ pub(crate) struct SandboxConfig {
 
     #[serde(default)]
     pub(crate) extra_args: Vec<String>,
+
+    pub(crate) allow_network: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
@@ -67,7 +69,7 @@ pub(crate) enum SandboxKind {
     Bubblewrap,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackageConfig {
     #[serde(default)]
@@ -211,6 +213,9 @@ impl Config {
         config
             .allow_read
             .extend(pkg_sandbox_config.allow_read.iter().cloned());
+        if let Some(allow_network) = pkg_sandbox_config.allow_network {
+            config.allow_network = Some(allow_network);
+        }
         config
     }
 
