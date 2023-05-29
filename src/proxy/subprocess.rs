@@ -275,7 +275,7 @@ fn invoke_real_linker(
 /// Returns our best guess as to the default linker.
 fn default_linker() -> String {
     // Ideally we'd have a way to ask rustc what linker it wants to use, for now we just guess.
-    "clang".to_owned()
+    "cc".to_owned()
 }
 
 fn get_config_from_env() -> Result<Config> {
