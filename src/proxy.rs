@@ -127,9 +127,12 @@ pub(crate) fn invoke_cargo_build(
 }
 
 fn run_command(command: &mut Command) -> Result<std::process::ExitStatus> {
-    command
-        .status()
-        .with_context(|| format!("Failed to run {command:?}"))
+    command.status().with_context(|| {
+        format!(
+            "Failed to run `{}`",
+            command.get_program().to_string_lossy()
+        )
+    })
 }
 
 fn cackle_exe() -> Result<PathBuf> {

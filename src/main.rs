@@ -1,7 +1,7 @@
 //! Analyses rust crates and their dependent crates to see what categories of APIs and language
 //! features are used.
 
-//#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 mod build_script_checker;
 mod checker;
