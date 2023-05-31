@@ -58,11 +58,7 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
     // TODO: Reasses if we want to list these here or just have the user list them in
     // their allow_read config.
-    sandbox.ro_bind(Path::new("/usr"));
-    sandbox.ro_bind(Path::new("/lib"));
-    sandbox.ro_bind(Path::new("/lib64"));
-    sandbox.ro_bind(Path::new("/bin"));
-    sandbox.ro_bind(Path::new("/etc/alternatives"));
+    sandbox.ro_bind(Path::new("/"));
     // Note, we don't bind all of ~/.cargo because it might contain
     // crates.io credentials, which we'd like to avoid exposing.
     sandbox.ro_bind(Path::new(&format!("{home}/.cargo/bin")));
@@ -71,7 +67,6 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     sandbox.ro_bind(Path::new(&format!("{home}/.rustup")));
     sandbox.tmpfs(Path::new("/var"));
     sandbox.tmpfs(Path::new("/tmp"));
-    sandbox.tmpfs(Path::new("/run"));
     sandbox.tmpfs(Path::new("/usr/share"));
     sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
     sandbox.pass_env("PATH");
