@@ -61,17 +61,27 @@ impl ConfigEditor {
     }
 
     fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
-        let pkg = self
+        let mut pkg = self
             .document
             .as_table_mut()
             .entry("pkg")
             .or_insert_with(create_implicit_table)
             .as_table_mut()
             .ok_or_else(|| anyhow!("[pkg] should be a table"))?;
-        pkg.entry(pkg_name)
-            .or_insert_with(toml_edit::table)
-            .as_table_mut()
-            .ok_or_else(|| anyhow!("[pkg.{pkg_name}] should be a table"))
+        let mut parts = pkg_name.split('.').peekable();
+        while let Some(part) = parts.next() {
+            let is_last = parts.peek().is_none();
+            pkg = pkg
+                .entry(part)
+                .or_insert_with(if is_last {
+                    toml_edit::table
+                } else {
+                    create_implicit_table
+                })
+                .as_table_mut()
+                .ok_or_else(|| anyhow!("[pkg.{pkg_name}] should be a table"))?;
+        }
+        Ok(pkg)
     }
 }
 
@@ -173,6 +183,22 @@ mod tests {
             &[disallowed_apis("crab1", &["fs", "net"])],
             indoc! {r#"
                 [pkg.crab1]
+                allow_apis = [
+                    "fs",
+                    "net",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn fix_missing_api_build_script() {
+        check(
+            "",
+            &[disallowed_apis("crab1.build", &["fs", "net"])],
+            indoc! {r#"
+                [pkg.crab1.build]
                 allow_apis = [
                     "fs",
                     "net",
