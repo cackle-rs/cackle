@@ -60,6 +60,13 @@ just for that build script.
 kind = "Disabled"
 ```
 
+If a build script needs network access, you can relax the sandbox to allow it as follows:
+
+```toml
+[pkg.foo.build.sandbox]
+allow_network = true
+```
+
 ## Importing API definitions from an external crate
 
 If you depend on a crate that publishes `cackle/export.toml`, you can import API definitions from
