@@ -12,9 +12,7 @@ result, but is actually using network APIs.
 
 ## Installation
 
-Currently Cackle only works on Linux. Support for OSX should be possible, but it's working yet.
-Windows will be more tricky, since we need debug info in order to work out where a bit of code came
-from. Right now, we only support DWARF debug info.
+Currently Cackle only works on Linux. See [PORTING.md](PORTING.md) for more details.
 
 ```sh
 cargo install cackle
