@@ -28,7 +28,12 @@ pub(crate) enum Problem {
     IsProcMacro(String),
     DisallowedApiUsage(DisallowedApiUsage),
     MultipleSymbolsInSection(MultipleSymbolsInSection),
-    BuildScriptFailed(BuildScriptOutput),
+    BuildScriptFailed(BuildScriptFailed),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BuildScriptFailed {
+    pub(crate) output: BuildScriptOutput,
 }
 
 #[derive(Debug, Clone)]
@@ -160,11 +165,14 @@ impl Display for Problem {
                     writeln!(f, "  {sym}")?;
                 }
             },
-            Problem::BuildScriptFailed(outputs) => {
+            Problem::BuildScriptFailed(info) => {
                 writeln!(f, "Build script for package `{}` failed\n{}{}",
-                    outputs.package_name,
-                    String::from_utf8_lossy(&outputs.stderr),
-                    String::from_utf8_lossy(&outputs.stdout))?;
+                    info.output.package_name,
+                    String::from_utf8_lossy(&info.output.stderr),
+                    String::from_utf8_lossy(&info.output.stdout))?;
+                if let Ok(Some(sandbox)) = crate::sandbox::from_config(&info.output.sandbox_config) {
+                    writeln!(f, "Sandbox config:\n{}", sandbox.display_to_run(&info.output.build_script))?;
+                }
             }
         }
         Ok(())

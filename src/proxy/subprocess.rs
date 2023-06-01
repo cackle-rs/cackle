@@ -107,7 +107,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         let sandbox_config = config.sandbox_config_for_build_script(&package_name);
         let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
             // Config says to run without a sandbox.
-            return Ok(Command::new(orig_build_script).status()?);
+            return Ok(Command::new(&orig_build_script).status()?);
         };
         // Allow read access to the crate's root source directory.
         sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
@@ -121,6 +121,8 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
             &output,
             package_name,
             &output.status,
+            sandbox_config,
+            orig_build_script.clone(),
         ))?;
         match rpc_response {
             CanContinueResponse::Proceed => {

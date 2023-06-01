@@ -10,6 +10,7 @@ use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
+use crate::config::SandboxConfig;
 use crate::link_info::LinkInfo;
 
 use super::errors;
@@ -91,6 +92,8 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
     pub(crate) package_name: String,
+    pub(crate) sandbox_config: SandboxConfig,
+    pub(crate) build_script: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -124,12 +127,16 @@ impl BuildScriptOutput {
         value: &std::process::Output,
         package_name: String,
         exit_status: &std::process::ExitStatus,
+        sandbox_config: SandboxConfig,
+        build_script: PathBuf,
     ) -> Self {
         Self {
             exit_code: exit_status.code().unwrap_or(-1),
             stdout: value.stdout.clone(),
             stderr: value.stderr.clone(),
             package_name,
+            sandbox_config,
+            build_script,
         }
     }
 }

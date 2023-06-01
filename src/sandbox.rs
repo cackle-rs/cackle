@@ -3,6 +3,7 @@ use crate::config::SandboxKind;
 use anyhow::Context;
 use anyhow::Result;
 use std::ffi::OsStr;
+use std::fmt::Display;
 use std::path::Path;
 
 mod bubblewrap;
@@ -27,7 +28,7 @@ pub(crate) trait Sandbox {
     fn allow_network(&mut self);
 
     /// Append a sandbox-specific argument.
-    fn arg(&mut self, arg: &OsStr);
+    fn raw_arg(&mut self, arg: &OsStr);
 
     /// Pass through the value of `env_var_name`
     fn pass_env(&mut self, env_var_name: &str) {
@@ -45,6 +46,10 @@ pub(crate) trait Sandbox {
             }
         }
     }
+
+    /// Returns an object that when displayed serves to tell the user what the sandbox would do.
+    /// e.g. the command that would be run with all flags.
+    fn display_to_run(&self, binary: &Path) -> Box<dyn Display>;
 }
 
 pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandbox>>> {
@@ -72,7 +77,7 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     sandbox.pass_env("PATH");
     sandbox.pass_env("HOME");
     for arg in &config.extra_args {
-        sandbox.arg(OsStr::new(arg));
+        sandbox.raw_arg(OsStr::new(arg));
     }
     if config.allow_network.unwrap_or(false) {
         sandbox.allow_network();

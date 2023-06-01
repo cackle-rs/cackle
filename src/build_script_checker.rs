@@ -5,7 +5,10 @@ use crate::proxy::rpc::BuildScriptOutput;
 
 pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
     if outputs.exit_code != 0 {
-        return Problem::BuildScriptFailed(outputs.clone()).into();
+        return Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
+            output: outputs.clone(),
+        })
+        .into();
     }
     let pkg_name = &outputs.package_name;
     let crate_name = format!("{}.build", outputs.package_name);
@@ -63,7 +66,10 @@ fn matches(instruction: &str, rule: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::config;
+    use crate::config::SandboxConfig;
     use crate::problem::Problem;
     use crate::problem::Problems;
     use crate::proxy::rpc::BuildScriptOutput;
@@ -76,6 +82,8 @@ mod tests {
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
             package_name: "my_pkg".to_owned(),
+            sandbox_config: SandboxConfig::default(),
+            build_script: PathBuf::new(),
         };
         super::check(&outputs, &config)
     }
