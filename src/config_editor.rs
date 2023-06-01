@@ -1,5 +1,6 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::config::SandboxKind;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
 use anyhow::anyhow;
@@ -25,19 +26,33 @@ pub(crate) trait Edit {
 
 /// Returns possible fixes for `problem`.
 pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
+    let mut edits: Vec<Box<dyn Edit>> = Vec::new();
     match problem {
         Problem::DisallowedApiUsage(usage) => {
-            vec![Box::new(AllowApiUsage {
+            edits.push(Box::new(AllowApiUsage {
                 usage: usage.clone(),
-            })]
+            }));
         }
         Problem::IsProcMacro(pkg_name) => {
-            vec![Box::new(AllowProcMacro {
+            edits.push(Box::new(AllowProcMacro {
                 pkg_name: pkg_name.clone(),
-            })]
+            }));
         }
-        _ => vec![],
+        Problem::BuildScriptFailed(failure) => {
+            if failure.output.sandbox_config.kind != SandboxKind::Disabled {
+                edits.push(Box::new(DisableSandbox {
+                    pkg_name: failure.output.package_name.clone(),
+                }));
+                if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
+                    edits.push(Box::new(SandboxAllowNetwork {
+                        pkg_name: failure.output.package_name.clone(),
+                    }));
+                }
+            }
+        }
+        _ => {}
     }
+    edits
 }
 
 impl ConfigEditor {
@@ -60,7 +75,7 @@ impl ConfigEditor {
         self.document.to_string()
     }
 
-    fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
+    fn table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
         let mut pkg = self
             .document
             .as_table_mut()
@@ -113,7 +128,7 @@ impl Edit for AllowApiUsage {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.usage.pkg_name)?;
+        let table = editor.table(&self.usage.pkg_name)?;
         let allow_apis = table
             .entry("allow_apis")
             .or_insert_with(create_array)
@@ -140,19 +155,55 @@ impl Edit for AllowProcMacro {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.pkg_name)?;
+        let table = editor.table(&self.pkg_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
+        Ok(())
+    }
+}
+
+struct DisableSandbox {
+    pkg_name: String,
+}
+
+impl Edit for DisableSandbox {
+    fn title(&self) -> String {
+        format!("Disable sandbox for `{}`", self.pkg_name)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(&format!("{}.sandbox", self.pkg_name))?;
+        table["kind"] = toml_edit::value("disabled");
+        Ok(())
+    }
+}
+
+struct SandboxAllowNetwork {
+    pkg_name: String,
+}
+
+impl Edit for SandboxAllowNetwork {
+    fn title(&self) -> String {
+        format!("Permit network from sandbox for `{}`", self.pkg_name)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(&format!("{}.sandbox", self.pkg_name))?;
+        table["allow_network"] = toml_edit::value(true);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::ConfigEditor;
     use crate::config::PermissionName;
+    use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
     use crate::problem::DisallowedApiUsage;
     use crate::problem::Problem;
+    use crate::proxy::rpc::BuildScriptOutput;
     use indoc::indoc;
 
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
@@ -166,12 +217,11 @@ mod tests {
     }
 
     #[track_caller]
-    fn check(initial_config: &str, problems: &[Problem], expected: &str) {
+    fn check(initial_config: &str, problems: &[(usize, Problem)], expected: &str) {
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
-        for problem in problems {
-            for edit in fixes_for_problem(problem) {
-                edit.apply(&mut editor).unwrap();
-            }
+        for (index, problem) in problems {
+            let edit = &fixes_for_problem(problem)[*index];
+            edit.apply(&mut editor).unwrap();
         }
         assert_eq!(editor.to_toml(), expected);
     }
@@ -180,7 +230,7 @@ mod tests {
     fn fix_missing_api_no_existing_config() {
         check(
             "",
-            &[disallowed_apis("crab1", &["fs", "net"])],
+            &[(0, disallowed_apis("crab1", &["fs", "net"]))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -196,7 +246,7 @@ mod tests {
     fn fix_missing_api_build_script() {
         check(
             "",
-            &[disallowed_apis("crab1.build", &["fs", "net"])],
+            &[(0, disallowed_apis("crab1.build", &["fs", "net"]))],
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_apis = [
@@ -218,7 +268,7 @@ mod tests {
                     "fs",
                 ]
             "#},
-            &[disallowed_apis("crab1", &["net"])],
+            &[(0, disallowed_apis("crab1", &["net"]))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -234,10 +284,47 @@ mod tests {
     fn fix_allow_proc_macro() {
         check(
             "",
-            &[Problem::IsProcMacro("crab1".to_owned())],
+            &[(0, Problem::IsProcMacro("crab1".to_owned()))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_proc_macro = true
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn build_script_failed() {
+        let failure = Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
+            output: BuildScriptOutput {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                package_name: "crab1.build".to_owned(),
+                sandbox_config: SandboxConfig {
+                    kind: crate::config::SandboxKind::Bubblewrap,
+                    allow_read: vec![],
+                    extra_args: vec![],
+                    allow_network: None,
+                },
+                build_script: PathBuf::new(),
+            },
+        });
+        check(
+            "",
+            &[(0, failure.clone())],
+            indoc! {r#"
+                [pkg.crab1.build.sandbox]
+                kind = "disabled"
+            "#,
+            },
+        );
+        check(
+            "",
+            &[(1, failure)],
+            indoc! {r#"
+                [pkg.crab1.build.sandbox]
+                allow_network = true
             "#,
             },
         );
