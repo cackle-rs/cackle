@@ -1,7 +1,7 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
-use crate::problem::Problems;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::path::Path;
@@ -13,6 +13,31 @@ use toml_edit::Value;
 
 pub(crate) struct ConfigEditor {
     document: Document,
+}
+
+pub(crate) trait Edit {
+    /// Returns a short name for this edit, suitable for display in a menu.
+    fn title(&self) -> String;
+
+    /// Applies the edit to the editor.
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()>;
+}
+
+/// Returns possible fixes for `problem`.
+pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
+    match problem {
+        Problem::DisallowedApiUsage(usage) => {
+            vec![Box::new(AllowApiUsage {
+                usage: usage.clone(),
+            })]
+        }
+        Problem::IsProcMacro(pkg_name) => {
+            vec![Box::new(AllowProcMacro {
+                pkg_name: pkg_name.clone(),
+            })]
+        }
+        _ => vec![],
+    }
 }
 
 impl ConfigEditor {
@@ -33,46 +58,6 @@ impl ConfigEditor {
 
     pub(crate) fn to_toml(&self) -> String {
         self.document.to_string()
-    }
-
-    /// Attempts to fix `problems`, returning a copy of those that could be fixed.
-    pub(crate) fn fix_problems<'a>(&mut self, problems: &'a Problems) -> Result<Vec<&'a Problem>> {
-        let mut fixable_problems = Vec::new();
-        for problem in problems {
-            if self.fix_problem(problem)? {
-                fixable_problems.push(problem);
-            }
-        }
-        Ok(fixable_problems)
-    }
-
-    /// Attempts to fix `problem`, returning whether support fixing it.
-    fn fix_problem(&mut self, problem: &Problem) -> Result<bool> {
-        match problem {
-            Problem::DisallowedApiUsage(usage) => {
-                let table = self.pkg_table(&usage.pkg_name)?;
-                let allow_apis = table
-                    .entry("allow_apis")
-                    .or_insert_with(create_array)
-                    .as_array_mut()
-                    .ok_or_else(|| {
-                        anyhow!("pkg.{}.allow_apis should be an array", usage.pkg_name)
-                    })?;
-                let mut sorted_keys: Vec<_> = usage.usages.keys().collect();
-                sorted_keys.sort();
-                for api in sorted_keys {
-                    let value = Value::String(Formatted::new(api.to_string()));
-                    allow_apis.push_formatted(value.decorated("\n    ", ""));
-                }
-                allow_apis.set_trailing("\n");
-            }
-            Problem::IsProcMacro(pkg_name) => {
-                let table = self.pkg_table(pkg_name)?;
-                table["allow_proc_macro"] = toml_edit::value(true);
-            }
-            _ => return Ok(false),
-        }
-        Ok(true)
     }
 
     fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
@@ -102,10 +87,60 @@ fn create_implicit_table() -> Item {
     Item::Table(table)
 }
 
+struct AllowApiUsage {
+    usage: DisallowedApiUsage,
+}
+
+impl Edit for AllowApiUsage {
+    fn title(&self) -> String {
+        let mut sorted_keys: Vec<_> = self.usage.usages.keys().map(|u| u.to_string()).collect();
+        sorted_keys.sort();
+        format!(
+            "Allow `{}` to use APIs: {}",
+            self.usage.pkg_name,
+            sorted_keys.join(", ")
+        )
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.pkg_table(&self.usage.pkg_name)?;
+        let allow_apis = table
+            .entry("allow_apis")
+            .or_insert_with(create_array)
+            .as_array_mut()
+            .ok_or_else(|| anyhow!("pkg.{}.allow_apis should be an array", self.usage.pkg_name))?;
+        let mut sorted_keys: Vec<_> = self.usage.usages.keys().collect();
+        sorted_keys.sort();
+        for api in sorted_keys {
+            let value = Value::String(Formatted::new(api.to_string()));
+            allow_apis.push_formatted(value.decorated("\n    ", ""));
+        }
+        allow_apis.set_trailing("\n");
+        Ok(())
+    }
+}
+
+struct AllowProcMacro {
+    pkg_name: String,
+}
+
+impl Edit for AllowProcMacro {
+    fn title(&self) -> String {
+        format!("Allow proc macro `{}`", self.pkg_name)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.pkg_table(&self.pkg_name)?;
+        table["allow_proc_macro"] = toml_edit::value(true);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ConfigEditor;
     use crate::config::PermissionName;
+    use crate::config_editor::fixes_for_problem;
     use crate::problem::DisallowedApiUsage;
     use crate::problem::Problem;
     use indoc::indoc;
@@ -124,7 +159,9 @@ mod tests {
     fn check(initial_config: &str, problems: &[Problem], expected: &str) {
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
         for problem in problems {
-            editor.fix_problem(problem).unwrap();
+            for edit in fixes_for_problem(problem) {
+                edit.apply(&mut editor).unwrap();
+            }
         }
         assert_eq!(editor.to_toml(), expected);
     }

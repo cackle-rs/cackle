@@ -1,11 +1,12 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::problem::Problems;
+use anyhow::bail;
 use anyhow::Result;
 use colored::Colorize;
-use indoc::indoc;
 use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::Write;
@@ -69,72 +70,90 @@ fn start_stdin_channel() -> Receiver<String> {
 
 impl Ui for BasicTermUi {
     fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome> {
-        let mut editor = ConfigEditor::from_file(&self.config_path)?;
-        let fixable = editor.fix_problems(problems)?;
-        println!();
-        if fixable.is_empty() {
-            for problem in problems {
-                println!("{problem}");
-            }
-        } else {
-            for problem in &fixable {
-                println!("{problem}");
-            }
+        // For now, we only fix the first problem, then retry.
+        let Some(problem) = problems.into_iter().next() else {
+            return Ok(FixOutcome::Retry);
+        };
+        println!("{problem}");
+        let fixes = config_editor::fixes_for_problem(problem);
+        for (index, fix) in fixes.iter().enumerate() {
+            println!("{})  {}", index + 1, fix.title());
+        }
+        if !fixes.is_empty() {
+            println!("dN) Diff for fix N. e.g 'd1'");
         }
         loop {
-            if fixable.is_empty() {
-                print!("Retry or skip? [?/r/s]: ");
-            } else {
-                print!("Retry, skip, fix or diff? [?/r/s/f/d]: ");
-            }
-            std::io::stdout().lock().flush()?;
-
-            // Wait until either the user enters a response line, or the config file gets changed.
-            // We poll for config file changes because inotify is relatively heavyweight and we
-            // don't need an instant response to a file change.
-            let response;
-            loop {
-                match self.stdin_recv.recv_timeout(Duration::from_millis(250)) {
-                    Ok(line) => {
-                        response = line;
-                        break;
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {
-                        let modified = config_modification_time(&self.config_path);
-                        if self.config_last_modified != modified {
-                            self.config_last_modified = modified;
-                            println!("\nConfig file modified, retrying...");
-                            return Ok(FixOutcome::Retry);
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(FixOutcome::GiveUp),
-                }
-            }
-
-            match response.trim().to_lowercase().as_str() {
-                "f" => {
-                    // We always recompute the edits in case the user manually edited the file.
+            match self.get_action(fixes.len()) {
+                Ok(Action::ApplyFix(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    editor.fix_problems(problems)?;
+                    fixes[n].apply(&mut editor)?;
                     editor.write(&self.config_path)?;
                     return Ok(FixOutcome::Retry);
                 }
-                "d" => {
+                Ok(Action::ShowDiff(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    editor.fix_problems(problems)?;
+                    fixes[n].apply(&mut editor)?;
                     show_diff(
                         &std::fs::read_to_string(&self.config_path)?,
                         &editor.to_toml(),
                     );
                 }
-                "r" => return Ok(FixOutcome::Retry),
-                "s" => return Ok(FixOutcome::GiveUp),
-                _ => {
-                    print_help(!fixable.is_empty());
+                Ok(Action::GiveUp) => return Ok(FixOutcome::GiveUp),
+                Ok(Action::Retry) => return Ok(FixOutcome::Retry),
+                Err(error) => {
+                    println!("{error}")
                 }
             }
         }
     }
+}
+
+impl BasicTermUi {
+    fn get_action(&mut self, num_fixes: usize) -> Result<Action> {
+        std::io::stdout().lock().flush()?;
+
+        // Wait until either the user enters a response line, or the config file gets changed.
+        // We poll for config file changes because inotify is relatively heavyweight and we
+        // don't need an instant response to a file change.
+        let response;
+        loop {
+            match self.stdin_recv.recv_timeout(Duration::from_millis(250)) {
+                Ok(line) => {
+                    response = line.to_lowercase();
+                    break;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let modified = config_modification_time(&self.config_path);
+                    if self.config_last_modified != modified {
+                        self.config_last_modified = modified;
+                        println!("\nConfig file modified, retrying...");
+                        return Ok(Action::Retry);
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(Action::GiveUp),
+            }
+        }
+        let response = response.trim();
+        if let Some(rest) = response.strip_prefix('d') {
+            return Ok(Action::ShowDiff(fix_index(rest, num_fixes)?));
+        }
+        Ok(Action::ApplyFix(fix_index(response, num_fixes)?))
+    }
+}
+
+fn fix_index(n_str: &str, num_fixes: usize) -> Result<usize> {
+    let n: usize = n_str.parse()?;
+    if n < 1 || n > num_fixes {
+        bail!("Invalid fix number");
+    }
+    Ok(n - 1)
+}
+
+enum Action {
+    Retry,
+    GiveUp,
+    ApplyFix(usize),
+    ShowDiff(usize),
 }
 
 fn config_modification_time(config_path: &Path) -> Option<SystemTime> {
@@ -176,18 +195,4 @@ fn show_diff(original: &str, updated: &str) {
             }
         }
     }
-}
-
-fn print_help(has_fixable: bool) {
-    println!(indoc! {r#"
-        r   Retry (e.g. if you've manually edited cackle.toml)
-        s   Skip
-    "#});
-    if !has_fixable {
-        return;
-    }
-    println!(indoc! {r#"
-        f   Fix problems by applying automatic edits to cackle.toml
-        d   Show diff of automatic edits that would be applied to cackle.toml
-    "#});
 }
