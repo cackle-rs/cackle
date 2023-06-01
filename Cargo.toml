@@ -28,3 +28,8 @@ rustc-ap-rustc_lexer = "727.0.0"
 
 [dev-dependencies]
 indoc = "2.0.1"
+
+[features]
+# Build even on an operating system that isn't yet supported. Enable this feature if you're working
+# on porting.
+unsupported-os = []

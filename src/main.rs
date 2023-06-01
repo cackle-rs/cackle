@@ -328,3 +328,10 @@ impl Cackle {
             .join("flattened_cackle.toml")
     }
 }
+
+const _CHECK_OS: () = if cfg!(all(
+    not(target_os = "linux"),
+    not(feature = "unsupported-os")
+)) {
+    panic!("Sorry, only Linux is currently supported. See PORTING.md");
+};

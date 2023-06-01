@@ -3,6 +3,12 @@
 Currently only Linux is supported. The following sections describe known issues that would need to
 be resolved in order to get it working on other operating systems.
 
+If you'd like to work on porting, you can build on other operating systems with:
+
+```bash
+cargo build --features unsupported-os
+```
+
 ### Mac
 
 Mac fortunately uses ELF for binaries and DWARF for debug info. Unfortunately it looks like it
