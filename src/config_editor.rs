@@ -171,7 +171,7 @@ impl Edit for DisableSandbox {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&format!("{}.sandbox", self.pkg_name))?;
+        let table = editor.table(&format!("{}.build.sandbox", self.pkg_name))?;
         table["kind"] = toml_edit::value("disabled");
         Ok(())
     }
@@ -187,7 +187,7 @@ impl Edit for SandboxAllowNetwork {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&format!("{}.sandbox", self.pkg_name))?;
+        let table = editor.table(&format!("{}.build.sandbox", self.pkg_name))?;
         table["allow_network"] = toml_edit::value(true);
         Ok(())
     }
@@ -300,7 +300,7 @@ mod tests {
                 exit_code: 1,
                 stdout: Vec::new(),
                 stderr: Vec::new(),
-                package_name: "crab1.build".to_owned(),
+                package_name: "crab1".to_owned(),
                 sandbox_config: SandboxConfig {
                     kind: crate::config::SandboxKind::Bubblewrap,
                     allow_read: vec![],
