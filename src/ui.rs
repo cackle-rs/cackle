@@ -92,7 +92,9 @@ impl Ui for BasicTermUi {
                 }
                 Ok(Action::ShowDiff(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    fixes[n].apply(&mut editor)?;
+                    let fix = &fixes[n];
+                    fix.apply(&mut editor)?;
+                    println!("Diff for {}:", fix.title());
                     show_diff(
                         &std::fs::read_to_string(&self.config_path)?,
                         &editor.to_toml(),
@@ -110,6 +112,7 @@ impl Ui for BasicTermUi {
 
 impl BasicTermUi {
     fn get_action(&mut self, num_fixes: usize) -> Result<Action> {
+        print!(">> ");
         std::io::stdout().lock().flush()?;
 
         // Wait until either the user enters a response line, or the config file gets changed.
