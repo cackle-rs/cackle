@@ -79,7 +79,9 @@ impl Ui for BasicTermUi {
         for (index, fix) in fixes.iter().enumerate() {
             println!("{})  {}", index + 1, fix.title());
         }
-        if !fixes.is_empty() {
+        if fixes.is_empty() {
+            println!("No automatic fixes available. Edit config manually to continue.");
+        } else {
             println!("dN) Diff for fix N. e.g 'd1'");
         }
         loop {
