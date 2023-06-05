@@ -90,6 +90,14 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     Ok(Some(sandbox))
 }
 
+pub(crate) fn available_kind() -> SandboxKind {
+    if bubblewrap::has_bwrap() {
+        SandboxKind::Bubblewrap
+    } else {
+        SandboxKind::Disabled
+    }
+}
+
 fn is_cargo_env(var: &str) -> bool {
     if var == "RUSTC_WRAPPER" {
         return false;

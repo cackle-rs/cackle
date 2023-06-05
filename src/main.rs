@@ -125,6 +125,7 @@ fn run(args: Args) -> Result<()> {
         .unwrap_or_else(|| root_path.join("cackle.toml"));
 
     let mut cackle = Cackle::new(config_path, &root_path, args.clone())?;
+    cackle.maybe_create_config()?;
     cackle.load_config()?;
 
     if !cackle.args.object_paths.is_empty() {
@@ -326,6 +327,13 @@ impl Cackle {
         self.target_dir
             .join(proxy::cargo::PROFILE_NAME)
             .join("flattened_cackle.toml")
+    }
+
+    fn maybe_create_config(&mut self) -> Result<()> {
+        if !self.config_path.exists() {
+            self.ui.create_initial_config()?;
+        }
+        Ok(())
     }
 }
 

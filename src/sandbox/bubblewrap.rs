@@ -83,6 +83,14 @@ impl Sandbox for Bubblewrap {
     }
 }
 
+pub(crate) fn has_bwrap() -> bool {
+    std::process::Command::new("bwrap")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
 struct CommandDisplay {
     command: Command,
 }

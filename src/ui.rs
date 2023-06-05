@@ -1,12 +1,17 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::config::SandboxKind;
+use crate::config::MAX_VERSION;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::problem::Problems;
+use crate::sandbox;
 use anyhow::bail;
+use anyhow::Context;
 use anyhow::Result;
 use colored::Colorize;
+use indoc::indoc;
 use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::Write;
@@ -26,6 +31,8 @@ pub(crate) enum FixOutcome {
 pub(crate) trait Ui {
     /// Prompt the user to fix the supplied problems.
     fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome>;
+
+    fn create_initial_config(&mut self) -> Result<()>;
 }
 
 pub(crate) struct NullUi;
@@ -33,6 +40,11 @@ pub(crate) struct NullUi;
 impl Ui for NullUi {
     fn maybe_fix_problems(&mut self, _problems: &Problems) -> Result<FixOutcome> {
         Ok(FixOutcome::GiveUp)
+    }
+
+    fn create_initial_config(&mut self) -> Result<()> {
+        // We'll error later when we try to read the configuration.
+        Ok(())
     }
 }
 
@@ -90,6 +102,7 @@ impl Ui for BasicTermUi {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
                     fixes[n].apply(&mut editor)?;
                     editor.write(&self.config_path)?;
+                    self.config_last_modified = config_modification_time(&self.config_path);
                     return Ok(FixOutcome::Retry);
                 }
                 Ok(Action::ShowDiff(n)) => {
@@ -109,6 +122,26 @@ impl Ui for BasicTermUi {
                 }
             }
         }
+    }
+
+    fn create_initial_config(&mut self) -> Result<()> {
+        println!("Creating initial cackle.toml");
+        let mut editor = config_editor::ConfigEditor::initial();
+        editor.set_version(MAX_VERSION);
+        let sandbox_kind = sandbox::available_kind();
+        if sandbox_kind == SandboxKind::Disabled {
+            println!(indoc! {r#"
+                bwrap (bubblewrap) doesn't seem to be installed, so sandboxing will be disabled.
+                If you'd like to sandbox execution of build scripts, press control-c, install
+                bubble wrap, then try again. On system with apt, you can run:
+                sudo apt install bubblewrap
+            "#});
+        }
+        editor.set_sandbox_kind(sandbox_kind)?;
+        std::fs::write(&self.config_path, editor.to_toml())
+            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
+        self.config_last_modified = config_modification_time(&self.config_path);
+        Ok(())
     }
 }
 

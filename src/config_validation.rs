@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::config::PermissionName;
+use crate::config::MAX_VERSION;
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::path::Path;
@@ -15,12 +16,12 @@ pub(crate) struct InvalidConfig {
 enum Problem {
     UnknownPermission(PermissionName),
     DisallowedSandboxConfig(String),
-    UnsupportedVersion(u32),
+    UnsupportedVersion(i64),
 }
 
 pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
     let mut problems = Vec::new();
-    if config.version != 1 {
+    if config.version < 1 || config.version > MAX_VERSION {
         problems.push(Problem::UnsupportedVersion(config.version));
     }
     let permission_names: HashSet<_> = config.apis.keys().collect();

@@ -25,8 +25,6 @@ colored = "2.0.0"
 toml_edit = "0.19.8"
 diff = "0.1.13"
 rustc-ap-rustc_lexer = "727.0.0"
-
-[dev-dependencies]
 indoc = "2.0.1"
 
 [features]

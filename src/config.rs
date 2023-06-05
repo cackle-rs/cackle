@@ -12,10 +12,12 @@ use std::path::Path;
 
 mod built_in;
 
+pub(crate) const MAX_VERSION: i64 = 1;
+
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
-    pub(crate) version: u32,
+    pub(crate) version: i64,
 
     #[serde(default, rename = "api")]
     pub(crate) apis: BTreeMap<PermissionName, PermConfig>,

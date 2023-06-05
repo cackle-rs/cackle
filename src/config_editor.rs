@@ -61,6 +61,10 @@ impl ConfigEditor {
         Self::from_toml_string(&toml)
     }
 
+    pub(crate) fn initial() -> Self {
+        Self::from_toml_string(r#""#).unwrap()
+    }
+
     fn from_toml_string(toml: &str) -> Result<Self> {
         let document = toml.parse()?;
         Ok(Self { document })
@@ -97,6 +101,30 @@ impl ConfigEditor {
                 .ok_or_else(|| anyhow!("[pkg.{pkg_name}] should be a table"))?;
         }
         Ok(pkg)
+    }
+
+    pub(crate) fn set_version(&mut self, version: i64) {
+        self.document
+            .as_table_mut()
+            .entry("version")
+            .or_insert_with(|| toml_edit::value(version));
+    }
+
+    pub(crate) fn set_sandbox_kind(&mut self, sandbox_kind: SandboxKind) -> Result<()> {
+        let sandbox_kind = match sandbox_kind {
+            SandboxKind::Inherit => "Inherit",
+            SandboxKind::Disabled => "Disabled",
+            SandboxKind::Bubblewrap => "Bubblewrap",
+        };
+        self.document
+            .as_table_mut()
+            .entry("sandbox")
+            .or_insert_with(toml_edit::table)
+            .as_table_mut()
+            .ok_or_else(|| anyhow!("sanbox isn't a table"))?
+            .entry("kind")
+            .or_insert_with(|| toml_edit::value(sandbox_kind));
+        Ok(())
     }
 }
 
@@ -172,7 +200,7 @@ impl Edit for DisableSandbox {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(&format!("{}.build.sandbox", self.pkg_name))?;
-        table["kind"] = toml_edit::value("disabled");
+        table["kind"] = toml_edit::value("Disabled");
         Ok(())
     }
 }
@@ -315,7 +343,7 @@ mod tests {
             &[(0, failure.clone())],
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
-                kind = "disabled"
+                kind = "Disabled"
             "#,
             },
         );
