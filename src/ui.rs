@@ -145,13 +145,16 @@ impl Ui for BasicTermUi {
         for name in built_ins.keys() {
             println!(" - {name}");
         }
-        println!(r#"Select std APIs you'd like to restrict .e.g "fs,net""#);
+        println!(r#"Select std APIs you'd like to restrict .e.g "fs,net,process""#);
         let mut done = false;
         while !done {
             done = true;
             print_prompt()?;
             for part in self.stdin_recv.recv()?.trim().split(',') {
                 let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
                 if built_ins.contains_key(&PermissionName::new(part)) {
                     editor.add_std_import(part)?;
                 } else {
@@ -160,7 +163,14 @@ impl Ui for BasicTermUi {
                 }
             }
         }
-        std::fs::write(&self.config_path, editor.to_toml())
+        let initial_toml = editor.to_toml();
+        println!("========= Initial configuration =========");
+        println!("{initial_toml}");
+        println!("=========================================");
+        println!("Press enter to write config, or control-c to abort");
+        print_prompt()?;
+        self.stdin_recv.recv()?;
+        std::fs::write(&self.config_path, initial_toml)
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         self.config_last_modified = config_modification_time(&self.config_path);
         Ok(())

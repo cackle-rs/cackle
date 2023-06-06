@@ -118,8 +118,11 @@ impl ConfigEditor {
             .or_insert_with(create_array)
             .as_array_mut()
             .ok_or_else(|| anyhow!("import_std must be an array"))?;
+        imports.set_trailing("\n");
         if !imports.iter().any(|item| item.as_str() == Some(api)) {
-            imports.push(api);
+            imports.push_formatted(
+                Value::String(Formatted::new(api.to_string())).decorated("\n    ", ""),
+            );
         }
         Ok(())
     }
