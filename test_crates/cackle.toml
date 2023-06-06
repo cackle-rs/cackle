@@ -1,60 +1,14 @@
 version = 1
+import_std = [
+    "fs",
+    "env",
+    "net",
+    "process",
+    "terminate",
+]
 
 [sandbox]
 kind = "Bubblewrap"
-
-[api.fs]
-include = [
-    "std::fs",
-    "std::path",
-    "std::io",
-    "std::os::linux::fs",
-    "std::os::unix::fs",
-    "std::os::unix::io",
-    "std::os::wasi::fs",
-    "std::os::wasi::io",
-    "std::os::windows::fs",
-    "std::os::windows::io",
-    # std::env provides quite a few functions that return paths, which can in
-    # turn allow filesystem access.
-    "std::env",
-]
-exclude = [
-    "std::io::stdio",
-    "std::env::var",
-    "std::env::var_os",
-    "std::env::vars",
-    "std::env::vars_os",
-    "std::env::args",
-]
-
-[api.env]
-include = ["std::env"]
-
-[api.net]
-include = [
-    "std::net",
-    "std::os::unix::net",
-    "std::os::wasi::net",
-    "std::os::windows::net",
-]
-
-[api.process]
-include = [
-    "std::process",
-    "std::unix::process",
-    "std::windows::process",
-]
-exclude = [
-    "std::process::abort",
-    "std::process::exit",
-]
-
-[api.terminate]
-include = [
-    "std::process::abort",
-    "std::process::exit",
-]
 
 [pkg.crab1]
 allow_unsafe = true

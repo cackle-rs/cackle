@@ -1,3 +1,5 @@
+use crate::crate_index::CrateIndex;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -8,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
 
-use crate::crate_index::CrateIndex;
+mod built_in;
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +31,9 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) explicit_build_scripts: bool,
+
+    #[serde(default)]
+    pub(crate) import_std: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -46,7 +51,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) allow_network: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
     pub(crate) include: Vec<String>,
@@ -111,8 +116,26 @@ pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result
 
 fn parse(cackle: &str) -> Result<Config> {
     let mut config = toml::from_str(cackle)?;
+    merge_built_ins(&mut config)?;
     flatten(&mut config);
     Ok(config)
+}
+
+fn merge_built_ins(config: &mut Config) -> Result<()> {
+    if config.import_std.is_empty() {
+        return Ok(());
+    }
+    let built_ins = built_in::get_built_ins();
+    for imp in config.import_std.drain(..) {
+        let perm = PermissionName::new(imp.as_str());
+        let built_in_api = built_ins
+            .get(&perm)
+            .ok_or_else(|| anyhow!("Unknown API `{imp}` in import_std"))?;
+        let api = config.apis.entry(perm).or_insert_with(Default::default);
+        api.include.extend(built_in_api.include.iter().cloned());
+        api.exclude.extend(built_in_api.exclude.iter().cloned());
+    }
+    Ok(())
 }
 
 impl Config {
@@ -182,6 +205,14 @@ impl Display for PermissionName {
 impl From<&'static str> for PermissionName {
     fn from(name: &'static str) -> Self {
         PermissionName { name: name.into() }
+    }
+}
+
+impl PermissionName {
+    pub(crate) fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned().into(),
+        }
     }
 }
 
