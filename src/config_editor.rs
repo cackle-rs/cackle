@@ -53,6 +53,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         Problem::DisallowedBuildInstruction(failure) => {
             edits.append(&mut edits_for_build_instruction(failure));
         }
+        Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
+            pkg_name: failure.crate_name.to_owned(),
+        })),
         _ => {}
     }
     edits
@@ -283,6 +286,22 @@ impl Edit for DisableSandbox {
     }
 }
 
+struct AllowUnsafe {
+    pkg_name: String,
+}
+
+impl Edit for AllowUnsafe {
+    fn title(&self) -> String {
+        format!("Allow package `{}` to use unsafe code", self.pkg_name)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(&self.pkg_name)?;
+        table["allow_unsafe"] = toml_edit::value(true);
+        Ok(())
+    }
+}
+
 struct SandboxAllowNetwork {
     pkg_name: String,
 }
@@ -310,6 +329,7 @@ mod tests {
     use crate::problem::DisallowedApiUsage;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
+    use crate::proxy::errors::UnsafeUsage;
     use crate::proxy::rpc::BuildScriptOutput;
     use indoc::indoc;
 
@@ -416,6 +436,28 @@ mod tests {
             indoc! {r#"
                 [pkg.crab1]
                 allow_proc_macro = true
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn fix_allow_unsafe() {
+        check(
+            "",
+            &[(
+                0,
+                Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
+                    crate_name: "crab1".to_owned(),
+                    error_info: UnsafeUsage {
+                        file_name: "main.rs".into(),
+                        start_line: 10,
+                    },
+                }),
+            )],
+            indoc! {r#"
+                [pkg.crab1]
+                allow_unsafe = true
             "#,
             },
         );
