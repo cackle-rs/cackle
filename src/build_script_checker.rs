@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
 use crate::problem::Problems;
 use crate::proxy::rpc::BuildScriptOutput;
@@ -50,9 +51,10 @@ fn check_directive(
     {
         return Problems::default();
     }
-    Problem::Message(format!(
-        "{pkg_name}'s build script emitted disallowed instruction `{instruction}`"
-    ))
+    Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+        pkg_name: pkg_name.to_owned(),
+        instruction: instruction.to_owned(),
+    })
     .into()
 }
 
@@ -70,6 +72,7 @@ mod tests {
 
     use crate::config;
     use crate::config::SandboxConfig;
+    use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::problem::Problems;
     use crate::proxy::rpc::BuildScriptOutput;
@@ -105,9 +108,10 @@ mod tests {
     fn test_link_directive() {
         assert_eq!(
             check("cargo:rustc-link-search=some_directory", ""),
-            Problem::new(
-                "my_pkg's build script emitted disallowed instruction `cargo:rustc-link-search=some_directory`"
-            )
+            Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+                pkg_name: "my_pkg".to_owned(),
+                instruction: "cargo:rustc-link-search=some_directory".to_owned(),
+            })
             .into()
         );
         assert_eq!(

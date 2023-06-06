@@ -62,31 +62,31 @@ pub(crate) struct CrateInfo {
     ignore_unreachable: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Usage {
     pub(crate) location: UsageLocation,
     pub(crate) from: Referee,
     pub(crate) to: Symbol,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Referee {
     Symbol(Symbol),
     Section(SectionName),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum UsageLocation {
     Source(SourceLocation),
     Unknown(UnknownLocation),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnknownLocation {
     pub(crate) object_path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
 }

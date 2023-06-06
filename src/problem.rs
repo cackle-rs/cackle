@@ -20,7 +20,7 @@ pub(crate) struct Problems {
 }
 
 #[must_use]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Problem {
     Message(String),
     UsesBuildScript(String),
@@ -29,20 +29,27 @@ pub(crate) enum Problem {
     DisallowedApiUsage(DisallowedApiUsage),
     MultipleSymbolsInSection(MultipleSymbolsInSection),
     BuildScriptFailed(BuildScriptFailed),
+    DisallowedBuildInstruction(DisallowedBuildInstruction),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BuildScriptFailed {
     pub(crate) output: BuildScriptOutput,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DisallowedApiUsage {
     pub(crate) pkg_name: String,
     pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DisallowedBuildInstruction {
+    pub(crate) pkg_name: String,
+    pub(crate) instruction: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MultipleSymbolsInSection {
     pub(crate) section_name: SectionName,
     pub(crate) symbols: Vec<Symbol>,
@@ -174,6 +181,10 @@ impl Display for Problem {
                     writeln!(f, "Sandbox config:\n{}", sandbox.display_to_run(&info.output.build_script))?;
                 }
             }
+            Problem::DisallowedBuildInstruction(info) => {
+                writeln!(f, "{}'s build script emitted disallowed instruction `{}`",
+                    info.pkg_name, info.instruction)?;
+            }
         }
         Ok(())
     }
@@ -183,15 +194,6 @@ impl From<Problem> for Problems {
     fn from(value: Problem) -> Self {
         Self {
             problems: vec![value],
-        }
-    }
-}
-
-impl PartialEq for Problem {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Message(l0), Self::Message(r0)) => l0 == r0,
-            _ => false,
         }
     }
 }

@@ -50,6 +50,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
                 }
             }
         }
+        Problem::DisallowedBuildInstruction(failure) => {
+            edits.append(&mut edits_for_build_instruction(failure));
+        }
         _ => {}
     }
     edits
@@ -118,11 +121,8 @@ impl ConfigEditor {
             .or_insert_with(create_array)
             .as_array_mut()
             .ok_or_else(|| anyhow!("import_std must be an array"))?;
-        imports.set_trailing("\n");
         if !imports.iter().any(|item| item.as_str() == Some(api)) {
-            imports.push_formatted(
-                Value::String(Formatted::new(api.to_string())).decorated("\n    ", ""),
-            );
+            imports.push_formatted(create_string(api.to_string()));
         }
         Ok(())
     }
@@ -145,9 +145,42 @@ impl ConfigEditor {
     }
 }
 
+fn edits_for_build_instruction(
+    failure: &crate::problem::DisallowedBuildInstruction,
+) -> Vec<Box<dyn Edit>> {
+    let mut out: Vec<Box<dyn Edit>> = Vec::new();
+    let mut instruction = failure.instruction.as_str();
+    let mut suffix = "";
+    loop {
+        out.push(Box::new(AllowBuildInstruction {
+            pkg_name: failure.pkg_name.clone(),
+            instruction: format!("{instruction}{suffix}"),
+        }));
+        suffix = "*";
+        let mut last_separator = None;
+        instruction = &instruction[..instruction.len() - 1];
+        for (pos, ch) in instruction.char_indices() {
+            if ch == '=' || ch == '-' || ch == ':' {
+                last_separator = Some(pos);
+                // After =, don't look for any more separators.
+                if ch == '=' {
+                    break;
+                }
+            }
+        }
+        if let Some(last_separator) = last_separator {
+            instruction = &instruction[..last_separator + 1];
+        } else {
+            break;
+        }
+    }
+    out
+}
+
 fn create_array() -> Item {
     let mut array = Array::new();
     array.set_trailing_comma(true);
+    array.set_trailing("\n");
     Item::Value(Value::Array(array))
 }
 
@@ -182,12 +215,15 @@ impl Edit for AllowApiUsage {
         let mut sorted_keys: Vec<_> = self.usage.usages.keys().collect();
         sorted_keys.sort();
         for api in sorted_keys {
-            let value = Value::String(Formatted::new(api.to_string()));
-            allow_apis.push_formatted(value.decorated("\n    ", ""));
+            allow_apis.push_formatted(create_string(api.to_string()));
         }
         allow_apis.set_trailing("\n");
         Ok(())
     }
+}
+
+fn create_string(value: String) -> Value {
+    Value::String(Formatted::new(value)).decorated("\n    ", "")
 }
 
 struct AllowProcMacro {
@@ -202,6 +238,31 @@ impl Edit for AllowProcMacro {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(&self.pkg_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
+        Ok(())
+    }
+}
+
+struct AllowBuildInstruction {
+    pkg_name: String,
+    instruction: String,
+}
+
+impl Edit for AllowBuildInstruction {
+    fn title(&self) -> String {
+        format!(
+            "Allow build script for `{}` to emit instruction `{}`",
+            self.pkg_name, self.instruction
+        )
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(&format!("{}.build", self.pkg_name))?;
+        let allowed = table
+            .entry("allow_build_instructions")
+            .or_insert_with(create_array)
+            .as_array_mut()
+            .ok_or_else(|| anyhow!("allow_build_instructions must be an array"))?;
+        allowed.push_formatted(create_string(self.instruction.clone()));
         Ok(())
     }
 }
@@ -247,6 +308,7 @@ mod tests {
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
     use crate::problem::DisallowedApiUsage;
+    use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::proxy::rpc::BuildScriptOutput;
     use indoc::indoc;
@@ -297,6 +359,27 @@ mod tests {
                 allow_apis = [
                     "fs",
                     "net",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn fix_disallowed_build_instruction() {
+        check(
+            "",
+            &[(
+                2,
+                Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+                    pkg_name: "crab1".to_owned(),
+                    instruction: "cargo:rustc-link-search=/home/some-path".to_owned(),
+                }),
+            )],
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_build_instructions = [
+                    "cargo:rustc-link-*",
                 ]
             "#,
             },
