@@ -110,6 +110,20 @@ impl ConfigEditor {
             .or_insert_with(|| toml_edit::value(version));
     }
 
+    pub(crate) fn add_std_import(&mut self, api: &str) -> Result<()> {
+        let imports = self
+            .document
+            .as_table_mut()
+            .entry("import_std")
+            .or_insert_with(create_array)
+            .as_array_mut()
+            .ok_or_else(|| anyhow!("import_std must be an array"))?;
+        if !imports.iter().any(|item| item.as_str() == Some(api)) {
+            imports.push(api);
+        }
+        Ok(())
+    }
+
     pub(crate) fn set_sandbox_kind(&mut self, sandbox_kind: SandboxKind) -> Result<()> {
         let sandbox_kind = match sandbox_kind {
             SandboxKind::Inherit => "Inherit",

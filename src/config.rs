@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
 
-mod built_in;
+pub(crate) mod built_in;
 
 pub(crate) const MAX_VERSION: i64 = 1;
 

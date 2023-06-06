@@ -1,6 +1,8 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::config;
+use crate::config::PermissionName;
 use crate::config::SandboxKind;
 use crate::config::MAX_VERSION;
 use crate::config_editor;
@@ -138,6 +140,26 @@ impl Ui for BasicTermUi {
             "#});
         }
         editor.set_sandbox_kind(sandbox_kind)?;
+        let built_ins = config::built_in::get_built_ins();
+        println!("Available built-in API definitions:");
+        for name in built_ins.keys() {
+            println!(" - {name}");
+        }
+        println!(r#"Select std APIs you'd like to restrict .e.g "fs,net""#);
+        let mut done = false;
+        while !done {
+            done = true;
+            print_prompt()?;
+            for part in self.stdin_recv.recv()?.trim().split(',') {
+                let part = part.trim();
+                if built_ins.contains_key(&PermissionName::new(part)) {
+                    editor.add_std_import(part)?;
+                } else {
+                    println!("Unknown API `{part}`");
+                    done = false;
+                }
+            }
+        }
         std::fs::write(&self.config_path, editor.to_toml())
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         self.config_last_modified = config_modification_time(&self.config_path);
@@ -147,8 +169,7 @@ impl Ui for BasicTermUi {
 
 impl BasicTermUi {
     fn get_action(&mut self, num_fixes: usize) -> Result<Action> {
-        print!(">> ");
-        std::io::stdout().lock().flush()?;
+        print_prompt()?;
 
         // Wait until either the user enters a response line, or the config file gets changed.
         // We poll for config file changes because inotify is relatively heavyweight and we
@@ -177,6 +198,12 @@ impl BasicTermUi {
         }
         Ok(Action::ApplyFix(fix_index(response, num_fixes)?))
     }
+}
+
+fn print_prompt() -> Result<(), anyhow::Error> {
+    print!(">> ");
+    std::io::stdout().lock().flush()?;
+    Ok(())
 }
 
 fn fix_index(n_str: &str, num_fixes: usize) -> Result<usize> {

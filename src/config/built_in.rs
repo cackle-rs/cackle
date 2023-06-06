@@ -2,7 +2,7 @@ use super::PermConfig;
 use super::PermissionName;
 use std::collections::BTreeMap;
 
-pub(super) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
+pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
     let mut result = BTreeMap::new();
     result.insert(
         PermissionName::from("fs"),
