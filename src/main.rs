@@ -130,7 +130,8 @@ fn run(args: Args) -> Result<()> {
 
     if !cackle.args.object_paths.is_empty() {
         let paths: Vec<_> = cackle.args.object_paths.clone();
-        report_problems_and_maybe_exit(&cackle.check_object_paths(&paths)?);
+        let mut check_state = CheckState::default();
+        report_problems_and_maybe_exit(&cackle.check_object_paths(&paths, &mut check_state)?);
         return Ok(());
     }
 
@@ -241,8 +242,9 @@ impl Cackle {
     }
 
     fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<Problems> {
+        let mut check_state = CheckState::default();
         loop {
-            let mut problems = self.problems(&request)?;
+            let mut problems = self.problems(&request, &mut check_state)?;
             problems.condense();
             if problems.is_empty() {
                 return Ok(problems);
@@ -265,7 +267,11 @@ impl Cackle {
         }
     }
 
-    fn problems(&mut self, request: &Option<proxy::rpc::Request>) -> Result<Problems> {
+    fn problems(
+        &mut self,
+        request: &Option<proxy::rpc::Request>,
+        check_state: &mut CheckState,
+    ) -> Result<Problems> {
         let Some(request) = request else {
             return Ok(self.checker.problems());
         };
@@ -274,7 +280,7 @@ impl Cackle {
                 Ok(self.checker.crate_uses_unsafe(usage))
             }
             proxy::rpc::Request::LinkerInvoked(link_info) => {
-                self.check_linker_invocation(link_info)
+                self.check_linker_invocation(link_info, check_state)
             }
             proxy::rpc::Request::BuildScriptComplete(output) => {
                 Ok(self.check_build_script_output(output))
@@ -282,7 +288,11 @@ impl Cackle {
         }
     }
 
-    fn check_linker_invocation(&mut self, info: &LinkInfo) -> Result<Problems> {
+    fn check_linker_invocation(
+        &mut self,
+        info: &LinkInfo,
+        check_state: &mut CheckState,
+    ) -> Result<Problems> {
         let mut problems = Problems::default();
         if info.is_build_script {
             problems.merge(
@@ -290,17 +300,27 @@ impl Cackle {
                     .verify_build_script_permitted(&info.package_name),
             );
         }
-        problems.merge(self.check_object_paths(&info.object_paths_under(&self.target_dir))?);
+        problems.merge(
+            self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
+        );
         Ok(problems)
     }
 
-    fn check_object_paths(&mut self, paths: &[PathBuf]) -> Result<Problems> {
-        let mut graph = SymGraph::default();
-        for path in paths {
-            graph
-                .process_file(path)
-                .with_context(|| format!("Failed to process `{}`", path.display()))?;
+    fn check_object_paths(
+        &mut self,
+        paths: &[PathBuf],
+        check_state: &mut CheckState,
+    ) -> Result<Problems> {
+        if check_state.graph.is_none() {
+            let mut graph = SymGraph::default();
+            for path in paths {
+                graph
+                    .process_file(path)
+                    .with_context(|| format!("Failed to process `{}`", path.display()))?;
+            }
+            check_state.graph = Some(graph);
         }
+        let graph = check_state.graph.as_mut().unwrap();
         if self.args.print_all_references {
             println!("{graph}");
         }
@@ -334,6 +354,11 @@ impl Cackle {
         }
         Ok(())
     }
+}
+
+#[derive(Default)]
+struct CheckState {
+    graph: Option<SymGraph>,
 }
 
 const _CHECK_OS: () = if cfg!(all(

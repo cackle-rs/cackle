@@ -114,6 +114,9 @@ impl SymGraph {
     }
 
     pub(crate) fn compute_reachability(&mut self, args: &Args) -> Result<()> {
+        if self.reachabilty_computed {
+            return Ok(());
+        }
         let mut queue = Vec::with_capacity(100);
         const ROOT_PREFIXES: &[&str] = &[".text.main", ".data.rel.ro.__rustc_proc_macro_decls"];
         queue.extend(
