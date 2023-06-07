@@ -29,9 +29,6 @@ pub(crate) struct Config {
     pub(crate) sandbox: SandboxConfig,
 
     #[serde(default)]
-    pub(crate) ignore_unreachable: bool,
-
-    #[serde(default)]
     pub(crate) explicit_build_scripts: bool,
 
     #[serde(default)]

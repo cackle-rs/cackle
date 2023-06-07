@@ -155,16 +155,14 @@ fn run(args: Args) -> Result<()> {
         std::process::exit(-1);
     }
 
-    if !cackle.config.ignore_unreachable {
-        if let Err(unused) = cackle.checker.check_unused() {
-            println!("{}", unused);
-            if cackle.args.fail_on_warnings {
-                println!(
-                    "{}: Warnings promoted to errors by --fail-on-warnings",
-                    "ERROR".red()
-                );
-                std::process::exit(-1);
-            }
+    if let Err(unused) = cackle.checker.check_unused() {
+        println!("{}", unused);
+        if cackle.args.fail_on_warnings {
+            println!(
+                "{}: Warnings promoted to errors by --fail-on-warnings",
+                "ERROR".red()
+            );
+            std::process::exit(-1);
         }
     }
 
