@@ -1,4 +1,8 @@
 version = 1
+features = [
+    "crash-if-not-sandboxed",
+    "foo",
+]
 import_std = [
     "fs",
     "env",

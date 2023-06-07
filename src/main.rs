@@ -136,8 +136,9 @@ fn run(args: Args) -> Result<()> {
 
     let mut problems = cackle.unfixed_problems(None)?;
     let config_path = cackle.flattened_config_path();
+    let config = cackle.config.clone();
     let build_result = if problems.is_empty() {
-        proxy::invoke_cargo_build(&root_path, &config_path, &args, |request| {
+        proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
             problems.merge(cackle.unfixed_problems(Some(request))?);
             Ok(problems.can_continue())
         })

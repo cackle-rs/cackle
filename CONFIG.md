@@ -115,3 +115,11 @@ since we haven't yet implemented a way to find the roots of a shared object for 
 computing reachability.
 
 Reachability only ever applies to API usage. Reachability doesn't affect checking for unsafe code.
+
+## Specifying features
+
+Features to be be passed to `cargo build` can be specified in `cackle.toml` as follows:
+
+```toml
+features = ["feature1", "feature2"]
+```

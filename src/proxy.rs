@@ -20,6 +20,7 @@
 //! * We can run them inside a sandbox if the config says to do so.
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
+use crate::config::Config;
 use crate::Args;
 use anyhow::Context;
 use anyhow::Result;
@@ -57,6 +58,7 @@ pub(crate) fn clean(dir: &Path, args: &Args) -> Result<()> {
 pub(crate) fn invoke_cargo_build(
     dir: &Path,
     config_path: &Path,
+    config: &Config,
     args: &Args,
     mut callback: impl FnMut(rpc::Request) -> Result<rpc::CanContinueResponse>,
 ) -> Result<Option<CargoBuildFailure>> {
@@ -75,6 +77,10 @@ pub(crate) fn invoke_cargo_build(
     let mut command = cargo::command("build", dir, args);
     if let Some(target) = &args.target {
         command.arg("--target").arg(target);
+    }
+    if !config.features.is_empty() {
+        command.arg("--features");
+        command.arg(config.features.join(","));
     }
     command
         .env(SOCKET_ENV, &ipc_path)

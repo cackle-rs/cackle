@@ -5,6 +5,7 @@ use anyhow::Result;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::Path;
+use std::path::PathBuf;
 
 mod bubblewrap;
 
@@ -60,16 +61,17 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     for dir in &config.allow_read {
         sandbox.ro_bind(Path::new(dir));
     }
-    let home = std::env::var("HOME").context("Couldn't get HOME env var")?;
+    let home = PathBuf::from(std::env::var("HOME").context("Couldn't get HOME env var")?);
     // TODO: Reasses if we want to list these here or just have the user list them in
     // their allow_read config.
     sandbox.ro_bind(Path::new("/"));
     // Note, we don't bind all of ~/.cargo because it might contain
     // crates.io credentials, which we'd like to avoid exposing.
-    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/bin")));
-    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/git")));
-    sandbox.ro_bind(Path::new(&format!("{home}/.cargo/registry")));
-    sandbox.ro_bind(Path::new(&format!("{home}/.rustup")));
+    sandbox.tmpfs(&home.join(".cargo"));
+    sandbox.ro_bind(&home.join(".cargo").join("bin"));
+    sandbox.ro_bind(&home.join(".cargo").join("git"));
+    sandbox.ro_bind(&home.join(".cargo").join("registry"));
+    sandbox.ro_bind(&home.join(".rustup"));
     sandbox.tmpfs(Path::new("/var"));
     sandbox.tmpfs(Path::new("/tmp"));
     sandbox.tmpfs(Path::new("/usr/share"));

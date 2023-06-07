@@ -36,6 +36,9 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) import_std: Vec<String>,
+
+    #[serde(default)]
+    pub(crate) features: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]

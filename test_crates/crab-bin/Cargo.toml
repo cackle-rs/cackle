@@ -10,3 +10,4 @@ pmacro1 = { path = "../pmacro1" }
 
 [features]
 crash-if-not-sandboxed = [ "crab2/crash-if-not-sandboxed" ]
+foo = []
