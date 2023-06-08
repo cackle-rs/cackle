@@ -117,6 +117,7 @@ impl SymGraph {
         if self.reachabilty_computed {
             return Ok(());
         }
+        let start = std::time::Instant::now();
         let mut queue = Vec::with_capacity(100);
         const ROOT_PREFIXES: &[&str] = &[".text.main", ".data.rel.ro.__rustc_proc_macro_decls"];
         queue.extend(
@@ -157,6 +158,12 @@ impl SymGraph {
                 };
                 queue.extend(next_section_index.into_iter());
             }
+        }
+        if args.print_timing {
+            println!(
+                "Reachability computation took {}ms",
+                start.elapsed().as_millis()
+            );
         }
         self.reachabilty_computed = true;
         Ok(())

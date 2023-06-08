@@ -92,6 +92,14 @@ struct Args {
     /// Provide additional information on some kinds of errors.
     #[clap(long)]
     verbose_errors: bool,
+
+    /// Print how long various things take to run.
+    #[clap(long)]
+    print_timing: bool,
+
+    /// Print additional information that's probably only useful for debugging.
+    #[clap(long)]
+    debug: bool,
 }
 
 fn main() -> Result<()> {
@@ -311,12 +319,26 @@ impl Cackle {
         paths: &[PathBuf],
         check_state: &mut CheckState,
     ) -> Result<Problems> {
+        if self.args.debug {
+            println!(
+                "{}",
+                paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
         if check_state.graph.is_none() {
+            let start = std::time::Instant::now();
             let mut graph = SymGraph::default();
             for path in paths {
                 graph
                     .process_file(path)
                     .with_context(|| format!("Failed to process `{}`", path.display()))?;
+            }
+            if self.args.print_timing {
+                println!("Graph computation took {}ms", start.elapsed().as_millis());
             }
             check_state.graph = Some(graph);
         }
@@ -334,7 +356,11 @@ impl Cackle {
             }
             result?;
         }
+        let start = std::time::Instant::now();
         let problems = graph.problems(&mut self.checker, &self.crate_index)?;
+        if self.args.print_timing {
+            println!("API usage checking took {}ms", start.elapsed().as_millis());
+        }
         Ok(problems)
     }
 
