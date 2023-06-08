@@ -26,6 +26,8 @@ toml_edit = "0.19.8"
 diff = "0.1.13"
 rustc-ap-rustc_lexer = "727.0.0"
 indoc = "2.0.1"
+crossterm = "0.26.1"
+ratatui = "0.21.0"
 
 [features]
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working

@@ -77,6 +77,14 @@ impl Problems {
         self.problems.is_empty()
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.problems.len()
+    }
+
+    pub(crate) fn remove(&mut self, index: usize) {
+        let _ = self.problems.remove(index);
+    }
+
     pub(crate) fn should_send_retry_to_subprocess(&self) -> bool {
         self.problems
             .iter()
@@ -87,6 +95,15 @@ impl Problems {
     #[must_use]
     pub(crate) fn grouped_by_type_and_crate(self) -> Problems {
         self.grouped_by(|usage| usage.pkg_name.clone())
+    }
+
+    /// Combines all disallowed API usages for a crate.
+    #[must_use]
+    pub(crate) fn grouped_by_type_crate_and_api(self) -> Problems {
+        self.grouped_by(|usage| match usage.usages.first_key_value() {
+            Some((key, _)) => format!("{}-{key}", usage.pkg_name),
+            None => usage.pkg_name.clone(),
+        })
     }
 
     /// Combines disallowed API usages by whatever the supplied `group_fn` returns.
@@ -120,6 +137,14 @@ impl Problems {
     }
 }
 
+impl std::ops::Index<usize> for Problems {
+    type Output = Problem;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.problems[index]
+    }
+}
+
 impl<'a> IntoIterator for &'a Problems {
     type Item = &'a Problem;
 
@@ -133,6 +158,30 @@ impl<'a> IntoIterator for &'a Problems {
 impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
+    }
+
+    pub(crate) fn short_description(&self) -> String {
+        match self {
+            Problem::DisallowedApiUsage(info) => {
+                if info.usages.len() == 1 {
+                    if let Some((perm, _)) = info.usages.first_key_value() {
+                        return format!("Crate `{}` uses API `{perm}`", info.pkg_name);
+                    }
+                }
+            }
+            Problem::BuildScriptFailed(info) => {
+                return format!(
+                    "Build script for package `{}` failed",
+                    info.output.package_name
+                );
+            }
+            _ => (),
+        }
+        self.to_string()
+    }
+
+    pub(crate) fn details(&self) -> String {
+        self.to_string()
     }
 
     /// Returns whether a retry on this problem needs to be sent to a subprocess.

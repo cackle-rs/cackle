@@ -107,13 +107,16 @@ fn main() -> Result<()> {
 
     let mut args = Args::parse();
     args.colour = args.colour.detect();
-    if let Err(error) = run(args) {
-        println!("{} {:#}", "ERROR:".red(), error);
+    match run(args) {
+        Err(error) => {
+            println!("{} {:#}", "ERROR:".red(), error);
+            std::process::exit(-1);
+        }
+        Ok(exit_code) => std::process::exit(exit_code),
     }
-    Ok(())
 }
 
-fn run(args: Args) -> Result<()> {
+fn run(args: Args) -> Result<i32> {
     let root_path = args
         .path
         .clone()
@@ -139,8 +142,12 @@ fn run(args: Args) -> Result<()> {
     if !cackle.args.object_paths.is_empty() {
         let paths: Vec<_> = cackle.args.object_paths.clone();
         let mut check_state = CheckState::default();
-        report_problems_and_maybe_exit(&cackle.check_object_paths(&paths, &mut check_state)?);
-        return Ok(());
+        let problems = cackle.check_object_paths(&paths, &mut check_state)?;
+        if !problems.is_empty() {
+            report_problems(&problems);
+            return Ok(-1);
+        }
+        return Ok(0);
     }
 
     let mut problems = cackle.unfixed_problems(None)?;
@@ -156,12 +163,15 @@ fn run(args: Args) -> Result<()> {
         Ok(None)
     };
 
-    report_problems_and_maybe_exit(&problems);
+    if !problems.is_empty() {
+        report_problems(&problems);
+        return Ok(-1);
+    }
 
     // We only check if the build failed if there were no ACL check errors.
     if let Some(build_failure) = build_result? {
         println!("{build_failure}");
-        std::process::exit(-1);
+        return Ok(-1);
     }
 
     if let Err(unused) = cackle.checker.check_unused() {
@@ -171,7 +181,7 @@ fn run(args: Args) -> Result<()> {
                 "{}: Warnings promoted to errors by --fail-on-warnings",
                 "ERROR".red()
             );
-            std::process::exit(-1);
+            return Ok(-1);
         }
     }
 
@@ -179,15 +189,12 @@ fn run(args: Args) -> Result<()> {
         println!("Cackle succcess");
     }
 
-    Ok(())
+    Ok(0)
 }
 
-fn report_problems_and_maybe_exit(problems: &Problems) {
-    if !problems.is_empty() {
-        for problem in problems {
-            println!("{} {problem}", "ERROR:".red());
-        }
-        std::process::exit(-1);
+fn report_problems(problems: &Problems) {
+    for problem in problems {
+        println!("{} {problem}", "ERROR:".red());
     }
 }
 
@@ -216,7 +223,7 @@ impl Cackle {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_proc_macro(crate_id);
         }
-        let ui = ui::create(args.ui, &config_path);
+        let ui = ui::create(args.ui, &config_path)?;
         Ok(Self {
             config_path,
             config: Config::default(),
