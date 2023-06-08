@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub(crate) struct Problems {
     problems: Vec<Problem>,
 }
@@ -83,15 +83,21 @@ impl Problems {
             .all(Problem::should_send_retry_to_subprocess)
     }
 
-    /// Combines problems together where possible. e.g all disallowed API usages for a package will
-    /// be combined.
-    pub(crate) fn condense(&mut self) {
+    /// Combines all disallowed API usages for a crate.
+    #[must_use]
+    pub(crate) fn grouped_by_type_and_crate(self) -> Problems {
+        self.grouped_by(|usage| usage.pkg_name.clone())
+    }
+
+    /// Combines disallowed API usages by whatever the supplied `group_fn` returns.
+    #[must_use]
+    fn grouped_by(mut self, group_fn: impl Fn(&DisallowedApiUsage) -> String) -> Problems {
         let mut merged = Problems::default();
         let mut disallowed_by_crate_name: HashMap<String, usize> = HashMap::new();
         for problem in self.problems.drain(..) {
             match problem {
                 Problem::DisallowedApiUsage(usage) => {
-                    match disallowed_by_crate_name.entry(usage.pkg_name.clone()) {
+                    match disallowed_by_crate_name.entry(group_fn(&usage)) {
                         Entry::Occupied(entry) => {
                             let Problem::DisallowedApiUsage(existing) = &mut merged.problems[*entry.get()] else {
                                 panic!("Problems::condense internal error");
@@ -110,7 +116,7 @@ impl Problems {
                 other => merged.push(other),
             }
         }
-        *self = merged;
+        merged
     }
 }
 
@@ -229,7 +235,7 @@ mod tests {
             &[("fs", &[create_usage("aaa", "fs_stuff")])],
         ));
 
-        problems.condense();
+        problems = problems.grouped_by_type_and_crate();
 
         let mut package_names = Vec::new();
         for p in &problems.problems {

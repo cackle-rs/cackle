@@ -248,8 +248,7 @@ impl Cackle {
     fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<Problems> {
         let mut check_state = CheckState::default();
         loop {
-            let mut problems = self.problems(&request, &mut check_state)?;
-            problems.condense();
+            let problems = self.problems(&request, &mut check_state)?;
             if problems.is_empty() {
                 return Ok(problems);
             }
@@ -265,7 +264,7 @@ impl Cackle {
                     }
                 }
                 ui::FixOutcome::GiveUp => {
-                    return Ok(problems);
+                    return Ok(problems.grouped_by_type_and_crate());
                 }
             }
         }
