@@ -3,11 +3,24 @@
 
 use crate::problem::Problems;
 use anyhow::Result;
-pub(crate) use basic_term::BasicTermUi;
-pub(crate) use null_ui::NullUi;
+use clap::ValueEnum;
+use std::path::Path;
 
 mod basic_term;
 mod null_ui;
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub(crate) enum Kind {
+    None,
+    Basic,
+}
+
+pub(crate) fn create(kind: Kind, config_path: &Path) -> Box<dyn Ui> {
+    match kind {
+        Kind::None => Box::new(null_ui::NullUi),
+        Kind::Basic => Box::new(basic_term::BasicTermUi::new(config_path.to_owned())),
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum FixOutcome {

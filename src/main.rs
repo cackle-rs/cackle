@@ -48,9 +48,9 @@ struct Args {
     #[clap(short, long)]
     cackle_path: Option<PathBuf>,
 
-    /// If problems are found, don't prompt whether to adjust the configuration.
-    #[clap(long)]
-    non_interactive: bool,
+    /// What kind of user interface to use. Set to "none" for non-interactive use.
+    #[clap(long, default_value = "basic")]
+    ui: ui::Kind,
 
     /// Print all references (may be large). Useful for debugging why something is passing when you
     /// think it shouldn't be.
@@ -216,11 +216,7 @@ impl Cackle {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_proc_macro(crate_id);
         }
-        let ui: Box<dyn ui::Ui> = if args.non_interactive {
-            Box::new(ui::NullUi)
-        } else {
-            Box::new(ui::BasicTermUi::new(config_path.clone()))
-        };
+        let ui = ui::create(args.ui, &config_path);
         Ok(Self {
             config_path,
             config: Config::default(),
