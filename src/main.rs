@@ -35,6 +35,7 @@ use problem::Problems;
 use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
+use ui::FixOutcome;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(version, about)]
@@ -104,7 +105,9 @@ struct Args {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Command {
+    /// Non-interactive check of configuration.
     Check,
+    /// Interactive check of configuration.
     Ui(UiArgs),
 }
 
@@ -120,89 +123,9 @@ fn main() -> Result<()> {
 
     let mut args = Args::parse();
     args.colour = args.colour.detect();
-    match run(args) {
-        Err(error) => {
-            println!("{} {:#}", "ERROR:".red(), error);
-            std::process::exit(-1);
-        }
-        Ok(exit_code) => std::process::exit(exit_code),
-    }
-}
-
-fn run(args: Args) -> Result<i32> {
-    let root_path = args
-        .path
-        .clone()
-        .or_else(|| std::env::current_dir().ok())
-        .ok_or_else(|| anyhow!("Failed to get current working directory"))?;
-    let root_path = Path::new(&root_path)
-        .canonicalize()
-        .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
-
-    if args.object_paths.is_empty() {
-        proxy::clean(&root_path, &args)?;
-    }
-
-    let config_path = args
-        .cackle_path
-        .clone()
-        .unwrap_or_else(|| root_path.join("cackle.toml"));
-
-    let mut cackle = Cackle::new(config_path, &root_path, args.clone())?;
-    cackle.maybe_create_config()?;
-    cackle.load_config()?;
-
-    if !cackle.args.object_paths.is_empty() {
-        let paths: Vec<_> = cackle.args.object_paths.clone();
-        let mut check_state = CheckState::default();
-        let problems = cackle.check_object_paths(&paths, &mut check_state)?;
-        if !problems.is_empty() {
-            report_problems(&problems);
-            return Ok(-1);
-        }
-        return Ok(0);
-    }
-
-    let mut problems = cackle.unfixed_problems(None)?;
-    let config_path = cackle.flattened_config_path();
-    let config = cackle.config.clone();
-    let build_result = if problems.is_empty() {
-        proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
-            problems.merge(cackle.unfixed_problems(Some(request))?);
-            Ok(problems.can_continue())
-        })
-    } else {
-        // We've already detected problems before running cargo, don't run cargo.
-        Ok(None)
-    };
-
-    if !problems.is_empty() {
-        report_problems(&problems);
-        return Ok(-1);
-    }
-
-    // We only check if the build failed if there were no ACL check errors.
-    if let Some(build_failure) = build_result? {
-        println!("{build_failure}");
-        return Ok(-1);
-    }
-
-    if let Err(unused) = cackle.checker.check_unused() {
-        println!("{}", unused);
-        if cackle.args.fail_on_warnings {
-            println!(
-                "{}: Warnings promoted to errors by --fail-on-warnings",
-                "ERROR".red()
-            );
-            return Ok(-1);
-        }
-    }
-
-    if !cackle.args.quiet {
-        println!("Cackle succcess");
-    }
-
-    Ok(0)
+    let cackle = Cackle::new(args)?;
+    let exit_code = cackle.run_and_report_errors();
+    std::process::exit(exit_code);
 }
 
 fn report_problems(problems: &Problems) {
@@ -212,6 +135,7 @@ fn report_problems(problems: &Problems) {
 }
 
 struct Cackle {
+    root_path: PathBuf,
     config_path: PathBuf,
     config: Config,
     checker: Checker,
@@ -222,8 +146,26 @@ struct Cackle {
 }
 
 impl Cackle {
-    fn new(config_path: PathBuf, root_path: &Path, args: Args) -> Result<Self> {
-        let crate_index = CrateIndex::new(root_path)?;
+    fn new(args: Args) -> Result<Self> {
+        let root_path = args
+            .path
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .ok_or_else(|| anyhow!("Failed to get current working directory"))?;
+        let root_path = Path::new(&root_path)
+            .canonicalize()
+            .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
+
+        if args.object_paths.is_empty() {
+            proxy::clean(&root_path, &args)?;
+        }
+
+        let config_path = args
+            .cackle_path
+            .clone()
+            .unwrap_or_else(|| root_path.join("cackle.toml"));
+
+        let crate_index = CrateIndex::new(&root_path)?;
         let mut checker = Checker::default();
         if args.print_path_to_crate_map {
             println!("{crate_index}");
@@ -237,15 +179,100 @@ impl Cackle {
             checker.report_proc_macro(crate_id);
         }
         let ui = ui::create(args.ui_kind(), &config_path)?;
+        let target_dir = root_path.join("target");
         Ok(Self {
+            root_path,
             config_path,
             config: Config::default(),
             checker,
-            target_dir: root_path.join("target"),
+            target_dir,
             crate_index,
             args,
             ui,
         })
+    }
+
+    /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
+    /// before we return. That way the user interface will be cleaned up before we exit.
+    fn run_and_report_errors(mut self) -> i32 {
+        match self.run() {
+            Err(error) => {
+                if self.ui.report_error(&error).is_err() {
+                    // If we failed to report the error, then report it by printing. Whatever error
+                    // we encountered while reporting the error gets ignored, since the original
+                    // error is probably more important.
+                    println!("{} {:#}", "ERROR:".red(), error);
+                }
+                -1
+            }
+            Ok(exit_code) => exit_code,
+        }
+    }
+
+    fn run(&mut self) -> Result<i32> {
+        if self.maybe_create_config()? == FixOutcome::GiveUp {
+            return Ok(-1);
+        }
+        self.load_config()?;
+
+        if !self.args.object_paths.is_empty() {
+            let paths: Vec<_> = self.args.object_paths.clone();
+            let mut check_state = CheckState::default();
+            let problems = self.check_object_paths(&paths, &mut check_state)?;
+            if !problems.is_empty() {
+                report_problems(&problems);
+                return Ok(-1);
+            }
+            return Ok(0);
+        }
+
+        let mut problems = self.unfixed_problems(None)?;
+        let config_path = self.flattened_config_path();
+        let config = self.config.clone();
+        let root_path = self.root_path.clone();
+        let args = self.args.clone();
+        let build_result = if problems.is_empty() {
+            proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
+                problems.merge(self.unfixed_problems(Some(request))?);
+                Ok(problems.can_continue())
+            })
+        } else {
+            // We've already detected problems before running cargo, don't run cargo.
+            Ok(None)
+        };
+
+        if !problems.is_empty() {
+            report_problems(&problems);
+            return Ok(-1);
+        }
+
+        // We only check if the build failed if there were no ACL check errors.
+        if let Some(build_failure) = build_result? {
+            println!("{build_failure}");
+            return Ok(-1);
+        }
+
+        if let Err(unused) = self.checker.check_unused() {
+            if self.args.fail_on_warnings {
+                self.ui.report_error(&anyhow!("{unused}"))?;
+                return Ok(-1);
+            } else {
+                self.ui
+                    .display_message("Unused configuration", &format!("{unused}"))?;
+            }
+        }
+
+        if !self.args.quiet {
+            self.ui.display_message(
+                "Cackle success",
+                &format!(
+                    "Completed successfully for configuration {}",
+                    self.config_path.display()
+                ),
+            )?;
+        }
+
+        Ok(0)
     }
 
     fn load_config(&mut self) -> Result<()> {
@@ -389,11 +416,11 @@ impl Cackle {
             .join("flattened_cackle.toml")
     }
 
-    fn maybe_create_config(&mut self) -> Result<()> {
+    fn maybe_create_config(&mut self) -> Result<FixOutcome> {
         if !self.config_path.exists() {
-            self.ui.create_initial_config()?;
+            return self.ui.create_initial_config();
         }
-        Ok(())
+        Ok(FixOutcome::Retry)
     }
 }
 

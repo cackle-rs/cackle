@@ -4,6 +4,7 @@
 use crate::problem::Problems;
 use anyhow::Result;
 use clap::ValueEnum;
+use colored::Colorize;
 use std::path::Path;
 
 mod basic_term;
@@ -25,7 +26,7 @@ pub(crate) fn create(kind: Kind, config_path: &Path) -> Result<Box<dyn Ui>> {
     })
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FixOutcome {
     Retry,
     GiveUp,
@@ -35,5 +36,15 @@ pub(crate) trait Ui {
     /// Prompt the user to fix the supplied problems.
     fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome>;
 
-    fn create_initial_config(&mut self) -> Result<()>;
+    fn create_initial_config(&mut self) -> Result<FixOutcome>;
+
+    fn report_error(&mut self, error: &anyhow::Error) -> Result<()> {
+        println!("{} {:#}", "ERROR:".red(), error);
+        Ok(())
+    }
+
+    fn display_message(&mut self, title: &str, message: &str) -> Result<()> {
+        println!("{title}\n{message}");
+        Ok(())
+    }
 }

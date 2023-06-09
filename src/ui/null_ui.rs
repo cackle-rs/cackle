@@ -12,8 +12,8 @@ impl Ui for NullUi {
         Ok(FixOutcome::GiveUp)
     }
 
-    fn create_initial_config(&mut self) -> Result<()> {
+    fn create_initial_config(&mut self) -> Result<FixOutcome> {
         // We'll error later when we try to read the configuration.
-        Ok(())
+        Ok(FixOutcome::Retry)
     }
 }

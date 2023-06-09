@@ -104,7 +104,7 @@ impl Ui for BasicTermUi {
         }
     }
 
-    fn create_initial_config(&mut self) -> Result<()> {
+    fn create_initial_config(&mut self) -> Result<FixOutcome> {
         println!("Creating initial cackle.toml");
         let mut editor = config_editor::ConfigEditor::initial();
         editor.set_version(MAX_VERSION);
@@ -151,7 +151,7 @@ impl Ui for BasicTermUi {
         std::fs::write(&self.config_path, initial_toml)
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         self.config_last_modified = config_modification_time(&self.config_path);
-        Ok(())
+        Ok(FixOutcome::Retry)
     }
 }
 

@@ -1,9 +1,13 @@
+//! Terminal user interface for basic editing of the configuration with the exception of fixing
+//! problems. Primarily this is used for creating the initial configuration.
+
 use super::render_list;
 use super::update_counter;
 use super::Screen;
 use crate::config::MAX_VERSION;
 use crate::config::SANDBOX_KINDS;
 use crate::config_editor::ConfigEditor;
+use crate::ui::FixOutcome;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -38,16 +42,18 @@ enum Mode {
     SelectAction,
     RenderingAction,
     Quit,
+    Continue,
 }
 
 const ACTIONS: &[&dyn Action] = &[&SelectSandbox, &SelectImports, &WriteConfig, &Quit];
 
 impl Screen for EditConfigUi {
-    type ExitStatus = ();
+    type ExitStatus = FixOutcome;
 
     fn exit_status(&self) -> Option<Self::ExitStatus> {
         match self.mode {
-            Mode::Quit => Some(()),
+            Mode::Quit => Some(FixOutcome::GiveUp),
+            Mode::Continue => Some(FixOutcome::Retry),
             _ => None,
         }
     }
@@ -293,7 +299,7 @@ impl Action for WriteConfig {
     fn run(&self, ui: &mut EditConfigUi) -> Result<()> {
         std::fs::write(&ui.config_path, ui.editor.to_toml())
             .with_context(|| format!("Failed to write `{}`", ui.config_path.display()))?;
-        ui.mode = Mode::Quit;
+        ui.mode = Mode::Continue;
         Ok(())
     }
 }

@@ -8,7 +8,6 @@ use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use anyhow::Result;
-use colored::Colorize;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -317,11 +316,7 @@ fn to_relative_path(input_path: &Path) -> &std::path::Path {
 impl Display for UnusedConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.unknown_crates.is_empty() {
-            writeln!(
-                f,
-                "{} Config supplied for packages not in dependency tree:",
-                "WARNING:".yellow(),
-            )?;
+            writeln!(f, "Config supplied for packages not in dependency tree:",)?;
             for crate_name in &self.unknown_crates {
                 writeln!(f, "    {crate_name}")?;
             }
@@ -329,8 +324,7 @@ impl Display for UnusedConfig {
         for (pkg_name, used_apis) in &self.unused_allow_apis {
             writeln!(
                 f,
-                "{} The config for package '{pkg_name}' allows the following APIs that aren't used:",
-                "WARNING:".yellow()
+                "The config for package '{pkg_name}' allows the following APIs that aren't used:"
             )?;
             for api in used_apis {
                 writeln!(f, "    {api}")?;
