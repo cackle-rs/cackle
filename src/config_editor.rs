@@ -139,6 +139,9 @@ impl ConfigEditor {
             .or_insert_with(create_array)
             .as_array_mut()
             .ok_or_else(|| anyhow!("import_std must be an array"))?;
+        if imports.is_empty() {
+            imports.set_trailing_comma(true);
+        }
         let existing = imports
             .iter()
             .enumerate()
@@ -230,11 +233,7 @@ impl Edit for AllowApiUsage {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(&self.usage.pkg_name)?;
-        let allow_apis = table
-            .entry("allow_apis")
-            .or_insert_with(create_array)
-            .as_array_mut()
-            .ok_or_else(|| anyhow!("pkg.{}.allow_apis should be an array", self.usage.pkg_name))?;
+        let allow_apis = get_or_create_array(table, "allow_apis")?;
         let mut sorted_keys: Vec<_> = self.usage.usages.keys().collect();
         sorted_keys.sort();
         for api in sorted_keys {
@@ -256,11 +255,7 @@ impl Edit for RemoveUnusedAllowApis {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(&self.unused.pkg_name)?;
-        let allow_apis = table
-            .entry("allow_apis")
-            .or_insert_with(create_array)
-            .as_array_mut()
-            .ok_or_else(|| anyhow!("pkg.{}.allow_apis should be an array", self.unused.pkg_name))?;
+        let allow_apis = get_or_create_array(table, "allow_apis")?;
         for api in &self.unused.permissions {
             let index_and_entry = allow_apis
                 .iter()
@@ -272,6 +267,21 @@ impl Edit for RemoveUnusedAllowApis {
         }
         Ok(())
     }
+}
+
+fn get_or_create_array<'table>(
+    table: &'table mut toml_edit::Table,
+    array_name: &str,
+) -> Result<&'table mut Array> {
+    let array = table
+        .entry(array_name)
+        .or_insert_with(create_array)
+        .as_array_mut()
+        .ok_or_else(|| anyhow!("{array_name} should be an array"))?;
+    if array.is_empty() {
+        array.set_trailing_comma(true);
+    }
+    Ok(array)
 }
 
 fn create_string(value: String) -> Value {
@@ -309,11 +319,7 @@ impl Edit for AllowBuildInstruction {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(&format!("{}.build", self.pkg_name))?;
-        let allowed = table
-            .entry("allow_build_instructions")
-            .or_insert_with(create_array)
-            .as_array_mut()
-            .ok_or_else(|| anyhow!("allow_build_instructions must be an array"))?;
+        let allowed = get_or_create_array(table, "allow_build_instructions")?;
         allowed.push_formatted(create_string(self.instruction.clone()));
         Ok(())
     }
@@ -471,6 +477,24 @@ mod tests {
                 allow_apis = [
                     "env",
                     "fs",
+                    "net",
+                ]
+            "#},
+        );
+    }
+
+    #[test]
+    fn fix_missing_api_existing_empty_config() {
+        check(
+            indoc! {r#"
+                [pkg.crab1]
+                allow_apis = [
+                ]
+            "#},
+            &[(0, disallowed_apis("crab1", &["net"]))],
+            indoc! {r#"
+                [pkg.crab1]
+                allow_apis = [
                     "net",
                 ]
             "#},
