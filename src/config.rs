@@ -76,6 +76,8 @@ pub(crate) enum SandboxKind {
     Bubblewrap,
 }
 
+pub(crate) const SANDBOX_KINDS: &[SandboxKind] = &[SandboxKind::Disabled, SandboxKind::Bubblewrap];
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackageConfig {

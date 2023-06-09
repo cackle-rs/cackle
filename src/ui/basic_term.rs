@@ -134,7 +134,7 @@ impl Ui for BasicTermUi {
                     continue;
                 }
                 if built_ins.contains_key(&PermissionName::new(part)) {
-                    editor.add_std_import(part)?;
+                    editor.toggle_std_import(part)?;
                 } else {
                     println!("Unknown API `{part}`");
                     done = false;

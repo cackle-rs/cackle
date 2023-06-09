@@ -116,7 +116,18 @@ impl ConfigEditor {
             .or_insert_with(|| toml_edit::value(version));
     }
 
-    pub(crate) fn add_std_import(&mut self, api: &str) -> Result<()> {
+    pub(crate) fn std_imports(&self) -> Option<impl Iterator<Item = &str>> {
+        Some(
+            self.document
+                .as_table()
+                .get("import_std")?
+                .as_array()?
+                .iter()
+                .filter_map(|imp| imp.as_str()),
+        )
+    }
+
+    pub(crate) fn toggle_std_import(&mut self, api: &str) -> Result<()> {
         let imports = self
             .document
             .as_table_mut()
@@ -124,7 +135,13 @@ impl ConfigEditor {
             .or_insert_with(create_array)
             .as_array_mut()
             .ok_or_else(|| anyhow!("import_std must be an array"))?;
-        if !imports.iter().any(|item| item.as_str() == Some(api)) {
+        let existing = imports
+            .iter()
+            .enumerate()
+            .find(|(_, item)| item.as_str() == Some(api));
+        if let Some((index, _)) = existing {
+            imports.remove(index);
+        } else {
             imports.push_formatted(create_string(api.to_string()));
         }
         Ok(())
@@ -141,9 +158,8 @@ impl ConfigEditor {
             .entry("sandbox")
             .or_insert_with(toml_edit::table)
             .as_table_mut()
-            .ok_or_else(|| anyhow!("sanbox isn't a table"))?
-            .entry("kind")
-            .or_insert_with(|| toml_edit::value(sandbox_kind));
+            .ok_or_else(|| anyhow!("sandbox isn't a table"))?
+            .insert("kind", toml_edit::value(sandbox_kind));
         Ok(())
     }
 }
