@@ -26,6 +26,7 @@ use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
+use clap::Subcommand;
 use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
@@ -47,10 +48,6 @@ struct Args {
     /// the crate to be analyzed.
     #[clap(short, long)]
     cackle_path: Option<PathBuf>,
-
-    /// What kind of user interface to use. Set to "none" for non-interactive use.
-    #[clap(long, default_value = "basic")]
-    ui: ui::Kind,
 
     /// Print all references (may be large). Useful for debugging why something is passing when you
     /// think it shouldn't be.
@@ -100,6 +97,22 @@ struct Args {
     /// Print additional information that's probably only useful for debugging.
     #[clap(long)]
     debug: bool,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum Command {
+    Check,
+    Ui(UiArgs),
+}
+
+#[derive(Parser, Debug, Clone)]
+struct UiArgs {
+    /// What kind of user interface to use.
+    #[clap(long, default_value = "full")]
+    ui: ui::Kind,
 }
 
 fn main() -> Result<()> {
@@ -223,7 +236,7 @@ impl Cackle {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_proc_macro(crate_id);
         }
-        let ui = ui::create(args.ui, &config_path)?;
+        let ui = ui::create(args.ui_kind(), &config_path)?;
         Ok(Self {
             config_path,
             config: Config::default(),
@@ -381,6 +394,15 @@ impl Cackle {
             self.ui.create_initial_config()?;
         }
         Ok(())
+    }
+}
+
+impl Args {
+    fn ui_kind(&self) -> ui::Kind {
+        match &self.command {
+            Command::Check => ui::Kind::None,
+            Command::Ui(ui_args) => ui_args.ui,
+        }
     }
 }
 
