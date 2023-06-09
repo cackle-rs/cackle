@@ -3,6 +3,7 @@
 use crate::config::SandboxKind;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
+use crate::problem::UnusedAllowApi;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::path::Path;
@@ -55,6 +56,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         }
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
             pkg_name: failure.crate_name.to_owned(),
+        })),
+        Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
+            unused: failure.clone(),
         })),
         _ => {}
     }
@@ -237,6 +241,35 @@ impl Edit for AllowApiUsage {
             allow_apis.push_formatted(create_string(api.to_string()));
         }
         allow_apis.set_trailing("\n");
+        Ok(())
+    }
+}
+
+struct RemoveUnusedAllowApis {
+    unused: UnusedAllowApi,
+}
+
+impl Edit for RemoveUnusedAllowApis {
+    fn title(&self) -> String {
+        "Remove unused allowed APIs".to_owned()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(&self.unused.pkg_name)?;
+        let allow_apis = table
+            .entry("allow_apis")
+            .or_insert_with(create_array)
+            .as_array_mut()
+            .ok_or_else(|| anyhow!("pkg.{}.allow_apis should be an array", self.unused.pkg_name))?;
+        for api in &self.unused.permissions {
+            let index_and_entry = allow_apis
+                .iter()
+                .enumerate()
+                .find(|(_, allowed)| allowed.as_str() == Some(api.to_string().as_str()));
+            if let Some((index, _)) = index_and_entry {
+                allow_apis.remove(index);
+            }
+        }
         Ok(())
     }
 }
@@ -511,6 +544,32 @@ mod tests {
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
                 allow_network = true
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn unused_allow_api() {
+        let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
+            pkg_name: "crab1.build".to_owned(),
+            permissions: vec![PermissionName::new("fs"), PermissionName::new("net")],
+        });
+        check(
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_apis = [
+                    "fs",
+                    "env",
+                    "net",
+                ]
+            "#},
+            &[(0, failure)],
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_apis = [
+                    "env",
+                ]
             "#,
             },
         );

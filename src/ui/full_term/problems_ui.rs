@@ -9,7 +9,6 @@ use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
 use crate::problem::Problems;
-use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -90,11 +89,11 @@ impl Screen for ProblemsUi {
                 let num_edits = self.edits().len();
                 update_counter(&mut self.edit_index, key.code, num_edits);
             }
-            (Mode::SelectProblem, KeyCode::Char(' ')) => {
+            (Mode::SelectProblem, KeyCode::Char(' ') | KeyCode::Enter) => {
                 self.mode = Mode::SelectEdit;
                 self.edit_index = 0;
             }
-            (Mode::SelectEdit, KeyCode::Char(' ')) => {
+            (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
                 self.problems.remove(self.problem_index);
                 if self.problem_index >= self.problems.len() {
@@ -174,6 +173,13 @@ impl ProblemsUi {
         f: &mut Frame<CrosstermBackend<Stdout>>,
         area: Rect,
     ) {
+        if edits.is_empty() {
+            let block = Block::default().title("Edits").borders(Borders::ALL);
+            let paragraph = Paragraph::new("No automatic edits are available for this problem")
+                .block(block)
+                .wrap(Wrap { trim: false });
+            f.render_widget(paragraph, area);
+        }
         let items = edits.iter().map(|fix| ListItem::new(fix.title()));
         render_list(
             f,
@@ -256,9 +262,9 @@ impl ProblemsUi {
 
     fn apply_selected_edit(&self) -> Result<()> {
         let edits = &self.edits();
-        let edit = edits
-            .get(self.edit_index)
-            .ok_or_else(|| anyhow!("Selected edit out of range"))?;
+        let Some(edit) = edits.get(self.edit_index) else {
+            return Ok(());
+        };
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
         edit.apply(&mut editor)?;
         std::fs::write(&self.config_path, editor.to_toml())

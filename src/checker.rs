@@ -4,10 +4,10 @@ use crate::problem::DisallowedApiUsage;
 use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
 use crate::problem::Problems;
+use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
-use anyhow::Result;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -276,30 +276,25 @@ impl Checker {
         }
     }
 
-    pub(crate) fn check_unused(&self) -> Result<(), UnusedConfig> {
-        let mut unused_config = UnusedConfig::default();
+    pub(crate) fn check_unused(&self) -> Problems {
+        let mut problems = Problems::default();
         for crate_info in &self.crate_infos {
             let Some(crate_name) = crate_info.name.as_ref() else { continue };
             if !crate_info.used && crate_info.has_config {
-                unused_config.unknown_crates.push(crate_name.clone());
+                problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
             }
             if !crate_info.unused_allowed_perms.is_empty() {
-                unused_config.unused_allow_apis.insert(
-                    crate_name.clone(),
-                    crate_info
+                problems.push(Problem::UnusedAllowApi(UnusedAllowApi {
+                    pkg_name: crate_name.clone(),
+                    permissions: crate_info
                         .unused_allowed_perms
                         .iter()
                         .map(|perm_id| self.permission_names[perm_id.0].clone())
                         .collect(),
-                );
+                }));
             }
         }
-
-        if unused_config == UnusedConfig::default() {
-            Ok(())
-        } else {
-            Err(unused_config)
-        }
+        problems
     }
 }
 
@@ -311,27 +306,6 @@ fn to_relative_path(input_path: &Path) -> &std::path::Path {
         .ok()
         .and_then(|current_dir| input_path.strip_prefix(current_dir).ok())
         .unwrap_or(input_path)
-}
-
-impl Display for UnusedConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if !self.unknown_crates.is_empty() {
-            writeln!(f, "Config supplied for packages not in dependency tree:",)?;
-            for crate_name in &self.unknown_crates {
-                writeln!(f, "    {crate_name}")?;
-            }
-        }
-        for (pkg_name, used_apis) in &self.unused_allow_apis {
-            writeln!(
-                f,
-                "The config for package '{pkg_name}' allows the following APIs that aren't used:"
-            )?;
-            for api in used_apis {
-                writeln!(f, "    {api}")?;
-            }
-        }
-        Ok(())
-    }
 }
 
 impl Display for Usage {
@@ -457,10 +431,10 @@ mod tests {
         );
 
         assert!(problems.is_empty());
-        checker.check_unused().map_err(DebugAsDisplay).unwrap();
+        assert!(checker.check_unused().is_empty());
 
         // Now reload the config and make that we still don't report any unused configuration.
         checker.load_config(&config);
-        checker.check_unused().map_err(DebugAsDisplay).unwrap();
+        assert!(checker.check_unused().is_empty());
     }
 }

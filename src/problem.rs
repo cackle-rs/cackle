@@ -30,6 +30,8 @@ pub(crate) enum Problem {
     MultipleSymbolsInSection(MultipleSymbolsInSection),
     BuildScriptFailed(BuildScriptFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
+    UnusedPackageConfig(String),
+    UnusedAllowApi(UnusedAllowApi),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +43,12 @@ pub(crate) struct BuildScriptFailed {
 pub(crate) struct DisallowedApiUsage {
     pub(crate) pkg_name: String,
     pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnusedAllowApi {
+    pub(crate) pkg_name: String,
+    pub(crate) permissions: Vec<PermissionName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +183,12 @@ impl Problem {
                     info.output.package_name
                 );
             }
+            Problem::UnusedAllowApi(info) => {
+                return format!(
+                    "Config for `{}` allows APIs that it doesn't use",
+                    info.pkg_name
+                );
+            }
             _ => (),
         }
         self.to_string()
@@ -240,6 +254,17 @@ impl Display for Problem {
                 writeln!(f, "{}'s build script emitted disallowed instruction `{}`",
                     info.pkg_name, info.instruction)?;
             }
+            Problem::UnusedPackageConfig(pkg_name) => writeln!(f, "Config supplied for package `{pkg_name}` not in dependency tree")?,
+            Problem::UnusedAllowApi(info) => {
+                writeln!(
+                    f,
+                    "The config for package '{}' allows the following APIs that aren't used:",
+                    info.pkg_name
+                )?;
+                for api in &info.permissions {
+                    writeln!(f, "    {api}")?;
+                }
+            },
         }
         Ok(())
     }

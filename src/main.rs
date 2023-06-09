@@ -252,14 +252,12 @@ impl Cackle {
             return Ok(-1);
         }
 
-        if let Err(unused) = self.checker.check_unused() {
-            if self.args.fail_on_warnings {
-                self.ui.report_error(&anyhow!("{unused}"))?;
-                return Ok(-1);
-            } else {
-                self.ui
-                    .display_message("Unused configuration", &format!("{unused}"))?;
-            }
+        let unused_problems = self.checker.check_unused();
+        if !unused_problems.is_empty()
+            && self.ui.maybe_fix_problems(&unused_problems)? == FixOutcome::GiveUp
+        {
+            report_problems(&problems);
+            return Ok(-1);
         }
 
         if !self.args.quiet {
