@@ -1,7 +1,7 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use anyhow::Result;
 use clap::ValueEnum;
 use colored::Colorize;
@@ -34,7 +34,7 @@ pub(crate) enum FixOutcome {
 
 pub(crate) trait Ui {
     /// Prompt the user to fix the supplied problems.
-    fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome>;
+    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> Result<FixOutcome>;
 
     fn create_initial_config(&mut self) -> Result<FixOutcome>;
 

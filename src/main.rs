@@ -31,7 +31,7 @@ use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
 use link_info::LinkInfo;
-use problem::Problems;
+use problem::ProblemList;
 use std::path::Path;
 use std::path::PathBuf;
 use symbol_graph::SymGraph;
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
     std::process::exit(exit_code);
 }
 
-fn report_problems(problems: &Problems) {
+fn report_problems(problems: &ProblemList) {
     for problem in problems {
         println!("{} {problem}", "ERROR:".red());
     }
@@ -290,7 +290,7 @@ impl Cackle {
         Ok(())
     }
 
-    fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<Problems> {
+    fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<ProblemList> {
         let mut check_state = CheckState::default();
         loop {
             let problems = self.problems(&request, &mut check_state)?;
@@ -305,7 +305,7 @@ impl Cackle {
                         // an empty error set. This signals the subprocess that it should proceed,
                         // which since something failed means that it should reload the config and
                         // retry whatever failed.
-                        return Ok(Problems::default());
+                        return Ok(ProblemList::default());
                     }
                 }
                 ui::FixOutcome::GiveUp => {
@@ -319,7 +319,7 @@ impl Cackle {
         &mut self,
         request: &Option<proxy::rpc::Request>,
         check_state: &mut CheckState,
-    ) -> Result<Problems> {
+    ) -> Result<ProblemList> {
         let Some(request) = request else {
             return Ok(self.checker.problems());
         };
@@ -340,8 +340,8 @@ impl Cackle {
         &mut self,
         info: &LinkInfo,
         check_state: &mut CheckState,
-    ) -> Result<Problems> {
-        let mut problems = Problems::default();
+    ) -> Result<ProblemList> {
+        let mut problems = ProblemList::default();
         if info.is_build_script {
             problems.merge(
                 self.checker
@@ -358,7 +358,7 @@ impl Cackle {
         &mut self,
         paths: &[PathBuf],
         check_state: &mut CheckState,
-    ) -> Result<Problems> {
+    ) -> Result<ProblemList> {
         if self.args.debug {
             println!(
                 "{}",
@@ -404,7 +404,7 @@ impl Cackle {
         Ok(problems)
     }
 
-    fn check_build_script_output(&self, output: &proxy::rpc::BuildScriptOutput) -> Problems {
+    fn check_build_script_output(&self, output: &proxy::rpc::BuildScriptOutput) -> ProblemList {
         build_script_checker::check(output, &self.config)
     }
 

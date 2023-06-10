@@ -15,7 +15,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 #[derive(Default, Debug, PartialEq, Clone)]
-pub(crate) struct Problems {
+pub(crate) struct ProblemList {
     problems: Vec<Problem>,
 }
 
@@ -64,12 +64,12 @@ pub(crate) struct MultipleSymbolsInSection {
     pub(crate) defined_in: PathBuf,
 }
 
-impl Problems {
+impl ProblemList {
     pub(crate) fn push<T: Into<Problem>>(&mut self, problem: T) {
         self.problems.push(problem.into());
     }
 
-    pub(crate) fn merge(&mut self, mut other: Problems) {
+    pub(crate) fn merge(&mut self, mut other: ProblemList) {
         self.problems.append(&mut other.problems);
     }
 
@@ -101,13 +101,13 @@ impl Problems {
 
     /// Combines all disallowed API usages for a crate.
     #[must_use]
-    pub(crate) fn grouped_by_type_and_crate(self) -> Problems {
+    pub(crate) fn grouped_by_type_and_crate(self) -> ProblemList {
         self.grouped_by(|usage| usage.pkg_name.clone())
     }
 
     /// Combines all disallowed API usages for a crate.
     #[must_use]
-    pub(crate) fn grouped_by_type_crate_and_api(self) -> Problems {
+    pub(crate) fn grouped_by_type_crate_and_api(self) -> ProblemList {
         self.grouped_by(|usage| match usage.usages.first_key_value() {
             Some((key, _)) => format!("{}-{key}", usage.pkg_name),
             None => usage.pkg_name.clone(),
@@ -116,8 +116,8 @@ impl Problems {
 
     /// Combines disallowed API usages by whatever the supplied `group_fn` returns.
     #[must_use]
-    fn grouped_by(mut self, group_fn: impl Fn(&DisallowedApiUsage) -> String) -> Problems {
-        let mut merged = Problems::default();
+    fn grouped_by(mut self, group_fn: impl Fn(&DisallowedApiUsage) -> String) -> ProblemList {
+        let mut merged = ProblemList::default();
         let mut disallowed_by_crate_name: HashMap<String, usize> = HashMap::new();
         for problem in self.problems.drain(..) {
             match problem {
@@ -145,7 +145,7 @@ impl Problems {
     }
 }
 
-impl std::ops::Index<usize> for Problems {
+impl std::ops::Index<usize> for ProblemList {
     type Output = Problem;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -153,7 +153,7 @@ impl std::ops::Index<usize> for Problems {
     }
 }
 
-impl<'a> IntoIterator for &'a Problems {
+impl<'a> IntoIterator for &'a ProblemList {
     type Item = &'a Problem;
 
     type IntoIter = std::slice::Iter<'a, Problem>;
@@ -270,7 +270,7 @@ impl Display for Problem {
     }
 }
 
-impl From<Problem> for Problems {
+impl From<Problem> for ProblemList {
     fn from(value: Problem) -> Self {
         Self {
             problems: vec![value],
@@ -281,7 +281,7 @@ impl From<Problem> for Problems {
 #[cfg(test)]
 mod tests {
     use super::Problem;
-    use super::Problems;
+    use super::ProblemList;
     use crate::checker::SourceLocation;
     use crate::checker::Usage;
     use crate::config::PermissionName;
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_condense() {
-        let mut problems = Problems::default();
+        let mut problems = ProblemList::default();
         problems.push(create_problem(
             "foo2",
             &[("net", &[create_usage("bbb", "net_stuff")])],

@@ -8,7 +8,7 @@ use super::Screen;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -33,7 +33,7 @@ use std::io::Stdout;
 use std::path::PathBuf;
 
 pub(super) struct ProblemsUi {
-    problems: Problems,
+    problems: ProblemList,
     mode: Mode,
     problem_index: usize,
     edit_index: usize,
@@ -113,7 +113,7 @@ impl Screen for ProblemsUi {
 }
 
 impl ProblemsUi {
-    pub(super) fn new(problems: Problems, config_path: PathBuf) -> Self {
+    pub(super) fn new(problems: ProblemList, config_path: PathBuf) -> Self {
         Self {
             problems,
             mode: Mode::SelectProblem,

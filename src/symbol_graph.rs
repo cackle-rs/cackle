@@ -12,7 +12,7 @@ use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
 use crate::crate_index::CrateIndex;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use crate::Args;
@@ -169,8 +169,12 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn problems(&self, checker: &mut Checker, mapping: &CrateIndex) -> Result<Problems> {
-        let mut problems = Problems::default();
+    pub(crate) fn problems(
+        &self,
+        checker: &mut Checker,
+        mapping: &CrateIndex,
+    ) -> Result<ProblemList> {
+        let mut problems = ProblemList::default();
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
             problems.push(format!(
                 "Multiple definitions for {} symbols, e.g. {}",

@@ -2,13 +2,13 @@
 
 use super::FixOutcome;
 use super::Ui;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use anyhow::Result;
 
 pub(crate) struct NullUi;
 
 impl Ui for NullUi {
-    fn maybe_fix_problems(&mut self, _problems: &Problems) -> Result<FixOutcome> {
+    fn maybe_fix_problems(&mut self, _problems: &ProblemList) -> Result<FixOutcome> {
         Ok(FixOutcome::GiveUp)
     }
 

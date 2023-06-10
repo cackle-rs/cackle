@@ -3,7 +3,7 @@ use crate::config::PermissionName;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
@@ -133,8 +133,8 @@ impl Checker {
         }
     }
 
-    pub(crate) fn problems(&self) -> Problems {
-        let mut problems = Problems::default();
+    pub(crate) fn problems(&self) -> ProblemList {
+        let mut problems = ProblemList::default();
         for crate_info in &self.crate_infos {
             if crate_info.is_proc_macro && !crate_info.allow_proc_macro {
                 if let Some(crate_name) = &crate_info.name {
@@ -145,7 +145,7 @@ impl Checker {
         problems
     }
 
-    pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> Problems {
+    pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> ProblemList {
         Problem::DisallowedUnsafe(usage.clone()).into()
     }
 
@@ -154,7 +154,7 @@ impl Checker {
         defined_in: &Path,
         symbols: &[Symbol],
         section_name: &SectionName,
-        problems: &mut Problems,
+        problems: &mut ProblemList,
     ) {
         problems.push(Problem::MultipleSymbolsInSection(
             MultipleSymbolsInSection {
@@ -165,14 +165,14 @@ impl Checker {
         ));
     }
 
-    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> Problems {
+    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> ProblemList {
         let pkg_id = self.crate_id_from_name(&format!("{package_name}.build"));
         let crate_info = &mut self.crate_infos[pkg_id.0];
         if !crate_info.has_config && self.config.explicit_build_scripts {
             return Problem::UsesBuildScript(package_name.to_owned()).into();
         }
         crate_info.used = true;
-        Problems::default()
+        ProblemList::default()
     }
 
     fn perm_id(&mut self, permission: &PermissionName) -> PermId {
@@ -222,7 +222,7 @@ impl Checker {
         &mut self,
         crate_id: CrateId,
         name_parts: &[String],
-        problems: &mut Problems,
+        problems: &mut ProblemList,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         // TODO: If compute_usage_fn is not expensive, then just pass it in instead of using a
@@ -255,7 +255,7 @@ impl Checker {
         &mut self,
         crate_id: CrateId,
         perm_id: PermId,
-        problems: &mut Problems,
+        problems: &mut ProblemList,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         let crate_info = &mut self.crate_infos[crate_id.0];
@@ -276,8 +276,8 @@ impl Checker {
         }
     }
 
-    pub(crate) fn check_unused(&self) -> Problems {
-        let mut problems = Problems::default();
+    pub(crate) fn check_unused(&self) -> ProblemList {
+        let mut problems = ProblemList::default();
         for crate_info in &self.crate_infos {
             let Some(crate_name) = crate_info.name.as_ref() else { continue };
             if !crate_info.used && crate_info.has_config {
@@ -410,7 +410,7 @@ mod tests {
         let mut checker = Checker::default();
         checker.load_config(&config);
         let crate_id = checker.crate_id_from_name("foo");
-        let mut problems = Problems::default();
+        let mut problems = ProblemList::default();
 
         checker.report_crate_used(crate_id);
         checker.path_used(

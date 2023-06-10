@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use crate::proxy::rpc::BuildScriptOutput;
 
-pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
+pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> ProblemList {
     if outputs.exit_code != 0 {
         return Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
             output: outputs.clone(),
@@ -21,7 +21,7 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Problems {
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
         return Problem::new(format!("The package `{pkg_name}`'s build script emitted invalid UTF-8")).into();
     };
-    let mut problems = Problems::default();
+    let mut problems = ProblemList::default();
     for line in stdout.lines() {
         if line.starts_with("cargo:") {
             problems.merge(check_directive(line, pkg_name, allow_build_instructions));
@@ -38,18 +38,18 @@ fn check_directive(
     instruction: &str,
     pkg_name: &str,
     allow_build_instructions: &[String],
-) -> Problems {
+) -> ProblemList {
     if ALWAYS_PERMITTED
         .iter()
         .any(|prefix| instruction.starts_with(prefix))
     {
-        return Problems::default();
+        return ProblemList::default();
     }
     if allow_build_instructions
         .iter()
         .any(|i| matches(instruction, i))
     {
-        return Problems::default();
+        return ProblemList::default();
     }
     Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
         pkg_name: pkg_name.to_owned(),
@@ -74,11 +74,11 @@ mod tests {
     use crate::config::SandboxConfig;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
-    use crate::problem::Problems;
+    use crate::problem::ProblemList;
     use crate::proxy::rpc::BuildScriptOutput;
 
     #[track_caller]
-    fn check(stdout: &str, config_str: &str) -> Problems {
+    fn check(stdout: &str, config_str: &str) -> ProblemList {
         let config = config::testing::parse(config_str).unwrap();
         let outputs = BuildScriptOutput {
             exit_code: 0,
@@ -93,14 +93,14 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        assert_eq!(check("", ""), Problems::default());
+        assert_eq!(check("", ""), ProblemList::default());
     }
 
     #[test]
     fn test_rerun_if_changed() {
         assert_eq!(
             check("cargo:rerun-if-changed=a.txt", ""),
-            Problems::default()
+            ProblemList::default()
         );
     }
 
@@ -122,7 +122,7 @@ mod tests {
                 allow_build_instructions = [ "cargo:rustc-link-search=some_directory" ]
                 "#
             ),
-            Problems::default()
+            ProblemList::default()
         );
         assert_eq!(
             check(
@@ -132,7 +132,7 @@ mod tests {
                 allow_build_instructions = [ "cargo:rustc-link-*" ]
                 "#
             ),
-            Problems::default()
+            ProblemList::default()
         );
     }
 }

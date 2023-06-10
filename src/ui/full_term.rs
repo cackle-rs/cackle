@@ -1,5 +1,5 @@
 use super::FixOutcome;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use anyhow::Result;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
@@ -49,7 +49,7 @@ impl FullTermUi {
 }
 
 impl super::Ui for FullTermUi {
-    fn maybe_fix_problems(&mut self, problems: &Problems) -> anyhow::Result<FixOutcome> {
+    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> anyhow::Result<FixOutcome> {
         let problems = problems.clone().grouped_by_type_crate_and_api();
         let mut problems_ui = problems_ui::ProblemsUi::new(problems, self.config_path.clone());
         problems_ui.run(&mut self.terminal)

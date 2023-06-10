@@ -7,7 +7,7 @@ use crate::config::SandboxKind;
 use crate::config::MAX_VERSION;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
-use crate::problem::Problems;
+use crate::problem::ProblemList;
 use crate::sandbox;
 use crate::ui::FixOutcome;
 use anyhow::bail;
@@ -60,7 +60,7 @@ fn start_stdin_channel() -> Receiver<String> {
 }
 
 impl Ui for BasicTermUi {
-    fn maybe_fix_problems(&mut self, problems: &Problems) -> Result<FixOutcome> {
+    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> Result<FixOutcome> {
         let problems = problems.clone().grouped_by_type_and_crate();
         // For now, we only fix the first problem, then retry.
         let Some(problem) = problems.into_iter().next() else {
