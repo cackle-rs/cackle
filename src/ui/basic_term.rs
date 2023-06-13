@@ -7,7 +7,10 @@ use crate::config::SandboxKind;
 use crate::config::MAX_VERSION;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
-use crate::problem::ProblemList;
+use crate::config_editor::Edit;
+use crate::events::AppEvent;
+use crate::problem::Problem;
+use crate::problem_store::ProblemStoreRef;
 use crate::sandbox;
 use crate::ui::FixOutcome;
 use anyhow::bail;
@@ -25,8 +28,6 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use super::Ui;
-
 pub(crate) struct BasicTermUi {
     config_path: PathBuf,
     stdin_recv: Receiver<String>,
@@ -41,67 +42,57 @@ impl BasicTermUi {
             stdin_recv: start_stdin_channel(),
         }
     }
-}
 
-fn start_stdin_channel() -> Receiver<String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let stdin = std::io::stdin().lock();
-        for line in stdin.lines() {
-            let Ok(line) = line else {
-                break;
-            };
-            if tx.send(line).is_err() {
-                break;
+    pub(crate) fn run(
+        mut self,
+        problem_store: ProblemStoreRef,
+        event_receiver: Receiver<AppEvent>,
+    ) -> Result<()> {
+        while let Ok(event) = event_receiver.recv() {
+            match event {
+                AppEvent::Shutdown => return Ok(()),
+                AppEvent::ProblemsAdded => {}
             }
-        }
-    });
-    rx
-}
-
-impl Ui for BasicTermUi {
-    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> Result<FixOutcome> {
-        let problems = problems.clone().grouped_by_type_and_crate();
-        // For now, we only fix the first problem, then retry.
-        let Some(problem) = problems.into_iter().next() else {
-            return Ok(FixOutcome::Retry);
-        };
-        println!("{problem}");
-        let fixes = config_editor::fixes_for_problem(problem);
-        for (index, fix) in fixes.iter().enumerate() {
-            println!("{})  {}", index + 1, fix.title());
-        }
-        if fixes.is_empty() {
-            println!("No automatic fixes available. Edit config manually to continue.");
-        } else {
-            println!("dN) Diff for fix N. e.g 'd1'");
-        }
-        loop {
-            match self.get_action(fixes.len()) {
-                Ok(Action::ApplyFix(n)) => {
-                    let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    fixes[n].apply(&mut editor)?;
-                    editor.write(&self.config_path)?;
-                    self.config_last_modified = config_modification_time(&self.config_path);
-                    return Ok(FixOutcome::Retry);
+            loop {
+                let pstore_lock = problem_store.lock();
+                let Some((problem_index, problem)) = pstore_lock.into_iter().next() else {
+                        break;
+                    };
+                if matches!(problem, Problem::MissingConfiguration(_)) {
+                    drop(pstore_lock);
+                    match self.create_initial_config() {
+                        Ok(FixOutcome::Continue) => {
+                            problem_store.lock().resolve(problem_index);
+                        }
+                        Ok(FixOutcome::GiveUp) => {}
+                        Err(_) => todo!(),
+                    }
+                    continue;
                 }
-                Ok(Action::ShowDiff(n)) => {
-                    let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    let fix = &fixes[n];
-                    fix.apply(&mut editor)?;
-                    println!("Diff for {}:", fix.title());
-                    show_diff(
-                        &std::fs::read_to_string(&self.config_path)?,
-                        &editor.to_toml(),
-                    );
+                println!("{problem}");
+                let fixes = config_editor::fixes_for_problem(problem);
+                // We don't want to hold the mutex for any significant time, so we drop it now
+                // that we're done with `problem`, which was the only thing borrowed from the
+                // store. We certainly don't want to hold the lock while we prompt for user
+                // input.
+                drop(pstore_lock);
+                for (index, fix) in fixes.iter().enumerate() {
+                    println!("{})  {}", index + 1, fix.title());
                 }
-                Ok(Action::GiveUp) => return Ok(FixOutcome::GiveUp),
-                Ok(Action::Retry) => return Ok(FixOutcome::Retry),
-                Err(error) => {
-                    println!("{error}")
+                if fixes.is_empty() {
+                    println!("No automatic fixes available. Edit config manually to continue.");
+                } else {
+                    println!("dN) Diff for fix N. e.g 'd1'");
+                }
+                match self.prompt_for_fix(&fixes)? {
+                    FixOutcome::Continue => {
+                        problem_store.lock().resolve(problem_index);
+                    }
+                    FixOutcome::GiveUp => {}
                 }
             }
         }
+        Ok(())
     }
 
     fn create_initial_config(&mut self) -> Result<FixOutcome> {
@@ -151,11 +142,38 @@ impl Ui for BasicTermUi {
         std::fs::write(&self.config_path, initial_toml)
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         self.config_last_modified = config_modification_time(&self.config_path);
-        Ok(FixOutcome::Retry)
+        Ok(FixOutcome::Continue)
     }
-}
 
-impl BasicTermUi {
+    fn prompt_for_fix(&mut self, fixes: &[Box<dyn Edit>]) -> Result<FixOutcome> {
+        loop {
+            match self.get_action(fixes.len()) {
+                Ok(Action::ApplyFix(n)) => {
+                    let mut editor = ConfigEditor::from_file(&self.config_path)?;
+                    fixes[n].apply(&mut editor)?;
+                    editor.write(&self.config_path)?;
+                    self.config_last_modified = config_modification_time(&self.config_path);
+                    return Ok(FixOutcome::Continue);
+                }
+                Ok(Action::ShowDiff(n)) => {
+                    let mut editor = ConfigEditor::from_file(&self.config_path)?;
+                    let fix = &fixes[n];
+                    fix.apply(&mut editor)?;
+                    println!("Diff for {}:", fix.title());
+                    show_diff(
+                        &std::fs::read_to_string(&self.config_path)?,
+                        &editor.to_toml(),
+                    );
+                }
+                Ok(Action::GiveUp) => return Ok(FixOutcome::GiveUp),
+                Ok(Action::Retry) => return Ok(FixOutcome::Continue),
+                Err(error) => {
+                    println!("{error}")
+                }
+            }
+        }
+    }
+
     fn get_action(&mut self, num_fixes: usize) -> Result<Action> {
         print_prompt()?;
 
@@ -186,6 +204,22 @@ impl BasicTermUi {
         }
         Ok(Action::ApplyFix(fix_index(response, num_fixes)?))
     }
+}
+
+fn start_stdin_channel() -> Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin().lock();
+        for line in stdin.lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    rx
 }
 
 fn print_prompt() -> Result<(), anyhow::Error> {

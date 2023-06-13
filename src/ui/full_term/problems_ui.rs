@@ -3,12 +3,11 @@
 use super::render_list;
 use super::split_vertical;
 use super::update_counter;
-use super::FixOutcome;
 use super::Screen;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
-use crate::problem::ProblemList;
+use crate::problem_store::ProblemStoreRef;
 use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -33,7 +32,7 @@ use std::io::Stdout;
 use std::path::PathBuf;
 
 pub(super) struct ProblemsUi {
-    problems: ProblemList,
+    problem_store: ProblemStoreRef,
     mode: Mode,
     problem_index: usize,
     edit_index: usize,
@@ -45,18 +44,11 @@ enum Mode {
     SelectProblem,
     SelectEdit,
     Quit,
-    Continue,
 }
 
 impl Screen for ProblemsUi {
-    type ExitStatus = FixOutcome;
-
-    fn exit_status(&self) -> Option<Self::ExitStatus> {
-        match self.mode {
-            Mode::Quit => Some(FixOutcome::GiveUp),
-            Mode::Continue => Some(FixOutcome::Retry),
-            _ => None,
-        }
+    fn quit_requested(&self) -> bool {
+        self.mode == Mode::Quit
     }
 
     fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -74,7 +66,7 @@ impl Screen for ProblemsUi {
         match self.mode {
             Mode::SelectProblem => {}
             Mode::SelectEdit => self.render_edits_and_diff(f, horizontal[1])?,
-            Mode::Quit | Mode::Continue => {}
+            Mode::Quit => {}
         }
         Ok(())
     }
@@ -83,7 +75,11 @@ impl Screen for ProblemsUi {
         match (self.mode, key.code) {
             (_, KeyCode::Char('q')) => self.mode = Mode::Quit,
             (Mode::SelectProblem, KeyCode::Up | KeyCode::Down) => {
-                update_counter(&mut self.problem_index, key.code, self.problems.len());
+                update_counter(
+                    &mut self.problem_index,
+                    key.code,
+                    self.problem_store.lock().len(),
+                );
             }
             (Mode::SelectEdit, KeyCode::Up | KeyCode::Down) => {
                 let num_edits = self.edits().len();
@@ -95,15 +91,14 @@ impl Screen for ProblemsUi {
             }
             (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
-                self.problems.remove(self.problem_index);
-                if self.problem_index >= self.problems.len() {
+                let mut pstore_lock = self.problem_store.lock();
+                if let Some((index, _)) = pstore_lock.into_iter().nth(self.problem_index) {
+                    pstore_lock.resolve(index);
+                }
+                if self.problem_index >= pstore_lock.len() {
                     self.problem_index = 0;
                 }
-                if self.problems.is_empty() {
-                    self.mode = Mode::Continue;
-                } else {
-                    self.mode = Mode::SelectProblem;
-                }
+                self.mode = Mode::SelectProblem;
             }
             (_, KeyCode::Esc) => self.mode = Mode::SelectProblem,
             _ => {}
@@ -113,9 +108,9 @@ impl Screen for ProblemsUi {
 }
 
 impl ProblemsUi {
-    pub(super) fn new(problems: ProblemList, config_path: PathBuf) -> Self {
+    pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
         Self {
-            problems,
+            problem_store,
             mode: Mode::SelectProblem,
             problem_index: 0,
             edit_index: 0,
@@ -124,10 +119,10 @@ impl ProblemsUi {
     }
 
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-        let items = self
-            .problems
+        let pstore_lock = &self.problem_store.lock();
+        let items = pstore_lock
             .into_iter()
-            .map(|problem| ListItem::new(problem.short_description()));
+            .map(|(_, problem)| ListItem::new(problem.short_description()));
         render_list(
             f,
             "Problems",
@@ -140,7 +135,11 @@ impl ProblemsUi {
 
     fn render_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let block = Block::default().title("Details").borders(Borders::ALL);
-        let paragraph = Paragraph::new(self.problems[self.problem_index].details())
+        let pstore_lock = &self.problem_store.lock();
+        let Some((_, problem)) = pstore_lock.into_iter().nth(self.problem_index) else {
+            return;
+        };
+        let paragraph = Paragraph::new(problem.details())
             .block(block)
             .wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);
@@ -163,7 +162,10 @@ impl ProblemsUi {
     }
 
     fn edits(&self) -> Vec<Box<dyn Edit>> {
-        let problem = &self.problems[self.problem_index];
+        let pstore_lock = &self.problem_store.lock();
+        let Some((_, problem)) = pstore_lock.into_iter().nth(self.problem_index) else {
+            return Vec::new();
+        };
         config_editor::fixes_for_problem(problem)
     }
 

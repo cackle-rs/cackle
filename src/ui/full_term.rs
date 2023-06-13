@@ -1,5 +1,7 @@
-use super::FixOutcome;
-use crate::problem::ProblemList;
+//! A fullscreen terminal user interface.
+
+use crate::events::AppEvent;
+use crate::problem_store::ProblemStoreRef;
 use anyhow::Result;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
@@ -25,6 +27,9 @@ use ratatui::Frame;
 use ratatui::Terminal;
 use std::io::Stdout;
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::TryRecvError;
+use std::time::Duration;
 
 mod edit_config_ui;
 mod problems_ui;
@@ -46,64 +51,76 @@ impl FullTermUi {
             terminal,
         })
     }
-}
 
-impl super::Ui for FullTermUi {
-    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> anyhow::Result<FixOutcome> {
-        let problems = problems.clone().grouped_by_type_crate_and_api();
-        let mut problems_ui = problems_ui::ProblemsUi::new(problems, self.config_path.clone());
-        problems_ui.run(&mut self.terminal)
-    }
-
-    fn create_initial_config(&mut self) -> anyhow::Result<FixOutcome> {
-        edit_config_ui::EditConfigUi::new(self.config_path.clone()).run(&mut self.terminal)
-    }
-
-    fn report_error(&mut self, error: &anyhow::Error) -> Result<()> {
-        ErrorScreen::new(error).run(&mut self.terminal)
-    }
-
-    fn display_message(&mut self, title: &str, message: &str) -> Result<()> {
-        MessageScreen::new(title, message).run(&mut self.terminal)
-    }
-}
-
-trait Screen {
-    type ExitStatus;
-
-    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()>;
-    fn handle_key(&mut self, key: KeyEvent) -> Result<()>;
-    fn exit_status(&self) -> Option<Self::ExitStatus>;
-
-    fn run(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    ) -> Result<Self::ExitStatus> {
+    pub(crate) fn run(
+        mut self,
+        problem_store: ProblemStoreRef,
+        event_receiver: Receiver<AppEvent>,
+    ) -> Result<()> {
+        let mut problems_ui =
+            problems_ui::ProblemsUi::new(problem_store.clone(), self.config_path.clone());
+        let mut edit_ui =
+            edit_config_ui::EditConfigUi::new(problem_store.clone(), self.config_path.clone());
+        let mut needs_redraw = true;
         let mut error = None;
         loop {
-            if let Some(exit_status) = self.exit_status() {
-                return Ok(exit_status);
+            let mut screen: &mut dyn Screen = &mut problems_ui;
+            if edit_ui.is_active() {
+                screen = &mut edit_ui;
             }
-            terminal.draw(|f| {
-                if let Err(e) = self.render(f) {
-                    error = Some(e);
+            if screen.quit_requested() {
+                // When quit has been requested, we abort all problems in the store. New problems
+                // may be added afterwards, in which case we'll go around the loop again and abort
+                // those problems too. We don't return from this function until we get a shutdown
+                // event from the main thread.
+                problem_store.lock().abort();
+            }
+            if needs_redraw {
+                self.terminal.draw(|f| {
+                    if let Err(e) = screen.render(f) {
+                        error = Some(e);
+                    }
+                    if let Some(e) = error.as_ref() {
+                        render_error(f, e);
+                    }
+                })?;
+                needs_redraw = false;
+            }
+            match event_receiver.try_recv() {
+                Ok(AppEvent::ProblemsAdded) => {
+                    needs_redraw = true;
                 }
-                if let Some(e) = error.as_ref() {
-                    render_error(f, e);
+                Ok(AppEvent::Shutdown) => {
+                    return Ok(());
                 }
-            })?;
-            if let Event::Key(key) = crossterm::event::read()? {
-                // When we're displaying an error, any key will dismiss the error popup. They key
-                // should then be ignored.
-                if error.take().is_some() {
-                    continue;
-                }
-                if let Err(e) = self.handle_key(key) {
-                    error = Some(e);
+                Err(TryRecvError::Disconnected) => return Ok(()),
+                Err(TryRecvError::Empty) => {
+                    // TODO: Consider spawning a separate thread to read crossterm events, then feed
+                    // them into the main event channel. That way we can avoid polling.
+                    if crossterm::event::poll(Duration::from_millis(100))? {
+                        needs_redraw = true;
+                        let Ok(Event::Key(key)) = crossterm::event::read() else {
+                            continue;
+                        };
+                        // When we're displaying an error, any key will dismiss the error popup. The key
+                        // should then be ignored.
+                        if error.take().is_some() {
+                            continue;
+                        }
+                        if let Err(e) = screen.handle_key(key) {
+                            error = Some(e);
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+trait Screen {
+    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()>;
+    fn handle_key(&mut self, key: KeyEvent) -> Result<()>;
+    fn quit_requested(&self) -> bool;
 }
 
 impl Drop for FullTermUi {
@@ -189,81 +206,5 @@ fn update_counter(counter: &mut usize, key_code: KeyCode, len: usize) {
         KeyCode::Up => *counter = (*counter + len - 1) % len,
         KeyCode::Down => *counter = (*counter + len + 1) % len,
         _ => panic!("Invalid call to update_counter"),
-    }
-}
-
-/// A screen that just displays an error with nothing behind it.
-struct ErrorScreen<'a> {
-    error: &'a anyhow::Error,
-    exit_status: Option<()>,
-}
-
-impl<'a> ErrorScreen<'a> {
-    fn new(error: &'a anyhow::Error) -> Self {
-        Self {
-            error,
-            exit_status: None,
-        }
-    }
-}
-
-impl<'a> Screen for ErrorScreen<'a> {
-    type ExitStatus = ();
-
-    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
-        render_error(f, self.error);
-        Ok(())
-    }
-
-    fn handle_key(&mut self, _key: KeyEvent) -> Result<()> {
-        self.exit_status = Some(());
-        Ok(())
-    }
-
-    fn exit_status(&self) -> Option<Self::ExitStatus> {
-        self.exit_status
-    }
-}
-
-/// A screen that just displays a message.
-struct MessageScreen {
-    title: String,
-    message: String,
-    exit_status: Option<()>,
-}
-
-impl MessageScreen {
-    fn new(title: &str, message: &str) -> Self {
-        Self {
-            title: title.to_owned(),
-            message: message.to_owned(),
-            exit_status: None,
-        }
-    }
-}
-
-impl Screen for MessageScreen {
-    type ExitStatus = ();
-
-    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
-        let area = message_area(f.size());
-        let block = Block::default()
-            .title(self.title.as_str())
-            .borders(Borders::ALL);
-        let paragraph = Paragraph::new(self.message.clone())
-            .block(block)
-            .wrap(Wrap { trim: false });
-        f.render_widget(Clear, area);
-        f.render_widget(paragraph, area);
-        Ok(())
-    }
-
-    fn handle_key(&mut self, _key: KeyEvent) -> Result<()> {
-        self.exit_status = Some(());
-        Ok(())
-    }
-
-    fn exit_status(&self) -> Option<Self::ExitStatus> {
-        self.exit_status
     }
 }

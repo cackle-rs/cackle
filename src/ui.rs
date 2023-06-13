@@ -1,11 +1,15 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
-use crate::problem::ProblemList;
+use crate::events::AppEvent;
+use crate::problem_store::ProblemStoreRef;
 use anyhow::Result;
 use clap::ValueEnum;
 use colored::Colorize;
+use log::info;
 use std::path::Path;
+use std::sync::mpsc::Receiver;
+use std::thread::JoinHandle;
 
 mod basic_term;
 mod full_term;
@@ -18,23 +22,40 @@ pub(crate) enum Kind {
     Full,
 }
 
-pub(crate) fn create(kind: Kind, config_path: &Path) -> Result<Box<dyn Ui>> {
+pub(crate) fn start_ui(
+    kind: Kind,
+    config_path: &Path,
+    problem_store: ProblemStoreRef,
+    event_receiver: Receiver<AppEvent>,
+) -> Result<JoinHandle<Result<()>>> {
     Ok(match kind {
-        Kind::None => Box::new(null_ui::NullUi),
-        Kind::Basic => Box::new(basic_term::BasicTermUi::new(config_path.to_owned())),
-        Kind::Full => Box::new(full_term::FullTermUi::new(config_path.to_owned())?),
+        Kind::None => {
+            info!("Starting null UI");
+            let ui = null_ui::NullUi::new();
+            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+        }
+        Kind::Basic => {
+            info!("Starting basic terminal UI");
+            let ui = basic_term::BasicTermUi::new(config_path.to_owned());
+            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+        }
+        Kind::Full => {
+            info!("Starting full terminal UI");
+            let ui = full_term::FullTermUi::new(config_path.to_owned())?;
+            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+        }
     })
 }
 
+// TODO: Do we need both this can CanContinueResponse
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FixOutcome {
-    Retry,
+    Continue,
     GiveUp,
 }
 
 pub(crate) trait Ui {
-    /// Prompt the user to fix the supplied problems.
-    fn maybe_fix_problems(&mut self, problems: &ProblemList) -> Result<FixOutcome>;
+    fn start_problem_solving(&mut self, problem_store: ProblemStoreRef);
 
     fn create_initial_config(&mut self) -> Result<FixOutcome>;
 

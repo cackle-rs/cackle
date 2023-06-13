@@ -4,7 +4,6 @@
 use crate::checker::Usage;
 use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
-use crate::proxy::rpc::CanContinueResponse;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
@@ -23,6 +22,7 @@ pub(crate) struct ProblemList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Problem {
     Message(String),
+    MissingConfiguration(PathBuf),
     UsesBuildScript(String),
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(String),
@@ -73,12 +73,8 @@ impl ProblemList {
         self.problems.append(&mut other.problems);
     }
 
-    pub(crate) fn can_continue(&self) -> CanContinueResponse {
-        if self.problems.is_empty() {
-            CanContinueResponse::Proceed
-        } else {
-            CanContinueResponse::Deny
-        }
+    pub(crate) fn get(&self, index: usize) -> Option<&Problem> {
+        self.problems.get(index)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -105,7 +101,7 @@ impl ProblemList {
         self.grouped_by(|usage| usage.pkg_name.clone())
     }
 
-    /// Combines all disallowed API usages for a crate.
+    /// Combines all disallowed API usages for a crate and API.
     #[must_use]
     pub(crate) fn grouped_by_type_crate_and_api(self) -> ProblemList {
         self.grouped_by(|usage| match usage.usages.first_key_value() {
@@ -265,6 +261,9 @@ impl Display for Problem {
                     writeln!(f, "    {api}")?;
                 }
             },
+            Problem::MissingConfiguration(path) => {
+                writeln!(f, "Config file `{}` not found", path.display())?;
+            }
         }
         Ok(())
     }

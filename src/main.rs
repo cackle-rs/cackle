@@ -11,9 +11,11 @@ mod config_editor;
 mod config_validation;
 mod crate_index;
 mod deps;
+pub(crate) mod events;
 pub(crate) mod link_info;
 mod logging;
 pub(crate) mod problem;
+pub(crate) mod problem_store;
 mod proxy;
 mod sandbox;
 pub(crate) mod section_name;
@@ -31,10 +33,15 @@ use clap::Subcommand;
 use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
+use events::AppEvent;
 use link_info::LinkInfo;
+use problem::Problem;
 use problem::ProblemList;
+use problem_store::ProblemStoreRef;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::mpsc::Sender;
+use std::thread::JoinHandle;
 use symbol_graph::SymGraph;
 use ui::FixOutcome;
 
@@ -136,13 +143,8 @@ fn main() -> Result<()> {
     std::process::exit(exit_code);
 }
 
-fn report_problems(problems: &ProblemList) {
-    for problem in problems {
-        println!("{} {problem}", "ERROR:".red());
-    }
-}
-
 struct Cackle {
+    problem_store: ProblemStoreRef,
     root_path: PathBuf,
     config_path: PathBuf,
     config: Config,
@@ -150,7 +152,8 @@ struct Cackle {
     target_dir: PathBuf,
     crate_index: CrateIndex,
     args: Args,
-    ui: Box<dyn ui::Ui>,
+    event_sender: Sender<AppEvent>,
+    ui_join_handle: JoinHandle<Result<()>>,
 }
 
 impl Cackle {
@@ -186,9 +189,17 @@ impl Cackle {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_proc_macro(crate_id);
         }
-        let ui = ui::create(args.ui_kind(), &config_path)?;
+        let (event_sender, event_receiver) = std::sync::mpsc::channel();
+        let problem_store = crate::problem_store::create(event_sender.clone());
+        let ui_join_handle = ui::start_ui(
+            args.ui_kind(),
+            &config_path,
+            problem_store.clone(),
+            event_receiver,
+        )?;
         let target_dir = root_path.join("target");
         Ok(Self {
+            problem_store,
             root_path,
             config_path,
             config: Config::default(),
@@ -196,25 +207,27 @@ impl Cackle {
             target_dir,
             crate_index,
             args,
-            ui,
+            event_sender,
+            ui_join_handle,
         })
     }
 
     /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
     /// before we return. That way the user interface will be cleaned up before we exit.
     fn run_and_report_errors(mut self) -> i32 {
-        match self.run() {
+        let exit_code = match self.run() {
             Err(error) => {
-                if self.ui.report_error(&error).is_err() {
-                    // If we failed to report the error, then report it by printing. Whatever error
-                    // we encountered while reporting the error gets ignored, since the original
-                    // error is probably more important.
-                    println!("{} {:#}", "ERROR:".red(), error);
-                }
+                self.problem_store.report_error(error);
                 -1
             }
             Ok(exit_code) => exit_code,
+        };
+        let _ = self.event_sender.send(AppEvent::Shutdown);
+        if let Ok(Err(error)) = self.ui_join_handle.join() {
+            println!("{error}");
+            return -1;
         }
+        exit_code
     }
 
     fn run(&mut self) -> Result<i32> {
@@ -228,29 +241,35 @@ impl Cackle {
             let mut check_state = CheckState::default();
             let problems = self.check_object_paths(&paths, &mut check_state)?;
             if !problems.is_empty() {
-                report_problems(&problems);
+                for problem in &problems {
+                    println!("{problem}");
+                }
                 return Ok(-1);
             }
             return Ok(0);
         }
 
-        let mut problems = self.unfixed_problems(None)?;
+        let initial_outcome = self.outcome_for_request(None)?;
         let config_path = self.flattened_config_path();
         let config = self.config.clone();
         let root_path = self.root_path.clone();
         let args = self.args.clone();
-        let build_result = if problems.is_empty() {
-            proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
-                problems.merge(self.unfixed_problems(Some(request))?);
-                Ok(problems.can_continue())
-            })
-        } else {
-            // We've already detected problems before running cargo, don't run cargo.
-            Ok(None)
-        };
+        let build_result =
+            if initial_outcome == FixOutcome::Continue {
+                proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
+                    match self.outcome_for_request(Some(request))? {
+                        FixOutcome::Continue => Ok(proxy::rpc::CanContinueResponse::Proceed),
+                        FixOutcome::GiveUp => Ok(proxy::rpc::CanContinueResponse::Deny),
+                    }
+                })
+            } else {
+                // We've already detected problems before running cargo, don't run cargo.
+                Ok(None)
+            };
 
-        if !problems.is_empty() {
-            report_problems(&problems);
+        // TODO: Should the NullUi be responsible for reporting errors in the non-interactive case?
+        if !self.problem_store.lock().is_empty() {
+            self.report_problems();
             return Ok(-1);
         }
 
@@ -261,21 +280,22 @@ impl Cackle {
         }
 
         let unused_problems = self.checker.check_unused();
-        if !unused_problems.is_empty()
-            && self.ui.maybe_fix_problems(&unused_problems)? == FixOutcome::GiveUp
-        {
-            report_problems(&problems);
+        let resolution = self.problem_store.fix_problems(unused_problems);
+        if resolution != FixOutcome::Continue {
+            self.report_problems();
             return Ok(-1);
         }
 
         if !self.args.quiet {
-            self.ui.display_message(
-                "Cackle success",
-                &format!(
-                    "Completed successfully for configuration {}",
-                    self.config_path.display()
-                ),
-            )?;
+            // TODO: Figure out how we want to report success.
+
+            // self.ui.display_message(
+            //     "Cackle success",
+            //     &format!(
+            //         "Completed successfully for configuration {}",
+            //         self.config_path.display()
+            //     ),
+            // )?;
         }
 
         Ok(0)
@@ -298,28 +318,34 @@ impl Cackle {
         Ok(())
     }
 
-    fn unfixed_problems(&mut self, request: Option<proxy::rpc::Request>) -> Result<ProblemList> {
+    fn outcome_for_request(&mut self, request: Option<proxy::rpc::Request>) -> Result<FixOutcome> {
         let mut check_state = CheckState::default();
         loop {
             let problems = self.problems(&request, &mut check_state)?;
-            if problems.is_empty() {
-                return Ok(problems);
-            }
-            match self.ui.maybe_fix_problems(&problems)? {
-                ui::FixOutcome::Retry => {
+            let return_on_retry = problems.should_send_retry_to_subprocess();
+            match self.problem_store.fix_problems(problems) {
+                ui::FixOutcome::Continue => {
                     self.load_config()?;
-                    if problems.should_send_retry_to_subprocess() {
+                    if return_on_retry {
                         // If the only problem is that something in a subprocess failed, we return
                         // an empty error set. This signals the subprocess that it should proceed,
                         // which since something failed means that it should reload the config and
                         // retry whatever failed.
-                        return Ok(ProblemList::default());
+                        return Ok(FixOutcome::Continue);
                     }
                 }
                 ui::FixOutcome::GiveUp => {
-                    return Ok(problems.grouped_by_type_and_crate());
+                    return Ok(FixOutcome::GiveUp);
                 }
             }
+        }
+    }
+
+    fn report_problems(&self) {
+        let mut pstore = self.problem_store.lock();
+        pstore.group_by_crate();
+        for (_, problem) in pstore.into_iter() {
+            println!("{} {problem}", "ERROR:".red());
         }
     }
 
@@ -359,7 +385,7 @@ impl Cackle {
         problems.merge(
             self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
         );
-        Ok(problems)
+        Ok(problems.grouped_by_type_crate_and_api())
     }
 
     fn check_object_paths(
@@ -424,9 +450,11 @@ impl Cackle {
 
     fn maybe_create_config(&mut self) -> Result<FixOutcome> {
         if !self.config_path.exists() {
-            return self.ui.create_initial_config();
+            return Ok(self
+                .problem_store
+                .fix_problems(Problem::MissingConfiguration(self.config_path.clone()).into()));
         }
-        Ok(FixOutcome::Retry)
+        Ok(FixOutcome::Continue)
     }
 }
 

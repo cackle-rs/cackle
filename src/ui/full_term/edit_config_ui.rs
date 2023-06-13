@@ -7,7 +7,8 @@ use super::Screen;
 use crate::config::MAX_VERSION;
 use crate::config::SANDBOX_KINDS;
 use crate::config_editor::ConfigEditor;
-use crate::ui::FixOutcome;
+use crate::problem::Problem;
+use crate::problem_store::ProblemStoreRef;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
@@ -35,6 +36,7 @@ pub(super) struct EditConfigUi {
     action_index: usize,
     item_index: usize,
     config_path: PathBuf,
+    problem_store: ProblemStoreRef,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,20 +44,13 @@ enum Mode {
     SelectAction,
     RenderingAction,
     Quit,
-    Continue,
 }
 
 const ACTIONS: &[&dyn Action] = &[&SelectSandbox, &SelectImports, &WriteConfig, &Quit];
 
 impl Screen for EditConfigUi {
-    type ExitStatus = FixOutcome;
-
-    fn exit_status(&self) -> Option<Self::ExitStatus> {
-        match self.mode {
-            Mode::Quit => Some(FixOutcome::GiveUp),
-            Mode::Continue => Some(FixOutcome::Retry),
-            _ => None,
-        }
+    fn quit_requested(&self) -> bool {
+        self.mode == Mode::Quit
     }
 
     fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -122,7 +117,7 @@ impl Screen for EditConfigUi {
 }
 
 impl EditConfigUi {
-    pub(super) fn new(config_path: PathBuf) -> Self {
+    pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
         let mut editor = ConfigEditor::initial();
         editor.set_version(MAX_VERSION);
         Self {
@@ -131,7 +126,19 @@ impl EditConfigUi {
             action_index: 0,
             item_index: 0,
             config_path,
+            problem_store,
         }
+    }
+
+    /// Returns whether the edit config UI should be active, which currently is only the case if the
+    /// first problem is a missing config.
+    pub(super) fn is_active(&self) -> bool {
+        self.problem_store
+            .lock()
+            .into_iter()
+            .next()
+            .map(|(_, problem)| matches!(problem, Problem::MissingConfiguration(..)))
+            .unwrap_or(false)
     }
 
     fn render_config(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: ratatui::layout::Rect) {
@@ -299,7 +306,10 @@ impl Action for WriteConfig {
     fn run(&self, ui: &mut EditConfigUi) -> Result<()> {
         std::fs::write(&ui.config_path, ui.editor.to_toml())
             .with_context(|| format!("Failed to write `{}`", ui.config_path.display()))?;
-        ui.mode = Mode::Continue;
+        let mut pstore = ui.problem_store.lock();
+        if let Some((index, _)) = pstore.into_iter().next() {
+            pstore.resolve(index);
+        }
         Ok(())
     }
 }

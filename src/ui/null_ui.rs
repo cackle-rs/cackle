@@ -1,19 +1,29 @@
 //! A user-interface that never prompts. This is used when non-interactive mode is selected.
 
-use super::FixOutcome;
-use super::Ui;
-use crate::problem::ProblemList;
+use std::sync::mpsc::Receiver;
+
+use crate::events::AppEvent;
+use crate::problem_store::ProblemStoreRef;
 use anyhow::Result;
 
 pub(crate) struct NullUi;
 
-impl Ui for NullUi {
-    fn maybe_fix_problems(&mut self, _problems: &ProblemList) -> Result<FixOutcome> {
-        Ok(FixOutcome::GiveUp)
+impl NullUi {
+    pub(crate) fn new() -> Self {
+        Self
     }
 
-    fn create_initial_config(&mut self) -> Result<FixOutcome> {
-        // We'll error later when we try to read the configuration.
-        Ok(FixOutcome::Retry)
+    pub(crate) fn run(
+        self,
+        problem_store: ProblemStoreRef,
+        event_receiver: Receiver<AppEvent>,
+    ) -> Result<()> {
+        while let Ok(event) = event_receiver.recv() {
+            match event {
+                AppEvent::Shutdown => return Ok(()),
+                AppEvent::ProblemsAdded => problem_store.lock().abort(),
+            }
+        }
+        Ok(())
     }
 }
