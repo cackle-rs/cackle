@@ -12,6 +12,7 @@ mod config_validation;
 mod crate_index;
 mod deps;
 pub(crate) mod link_info;
+mod logging;
 pub(crate) mod problem;
 mod proxy;
 mod sandbox;
@@ -99,6 +100,10 @@ struct Args {
     #[clap(long)]
     debug: bool,
 
+    /// Output file for logs that might be useful for diagnosing problems.
+    #[clap(long)]
+    log_file: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -123,6 +128,9 @@ fn main() -> Result<()> {
 
     let mut args = Args::parse();
     args.colour = args.colour.detect();
+    if let Some(log_file) = &args.log_file {
+        logging::init(log_file)?;
+    }
     let cackle = Cackle::new(args)?;
     let exit_code = cackle.run_and_report_errors();
     std::process::exit(exit_code);
