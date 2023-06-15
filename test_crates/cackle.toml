@@ -70,5 +70,11 @@ allow_apis = [
 [pkg.crab-bin.build.sandbox]
 kind = "Disabled"
 
+[pkg.crab4]
+allow_apis = [
+    "fs",
+]
+allow_unsafe = true
+
 [pkg.crab1.build.sandbox]
 allow_network = true

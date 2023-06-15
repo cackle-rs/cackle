@@ -5,4 +5,5 @@ fn main() {
     println!("{value}");
     write_to_file("a.txt", "Hello");
     crab2::stuff::do_stuff();
+    crab4::access_file();
 }
