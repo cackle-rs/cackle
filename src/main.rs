@@ -40,6 +40,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 use symbol_graph::SymGraph;
 use ui::FixOutcome;
@@ -148,9 +149,8 @@ struct Cackle {
     root_path: PathBuf,
     config_path: PathBuf,
     config: Arc<Config>,
-    checker: Checker,
+    checker: Arc<Mutex<Checker>>,
     target_dir: PathBuf,
-    crate_index: Arc<CrateIndex>,
     args: Args,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
@@ -178,7 +178,12 @@ impl Cackle {
 
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
         let target_dir = root_path.join("target");
-        let mut checker = Checker::new(target_dir.clone(), args.clone(), crate_index.clone());
+        let mut checker = Checker::new(
+            target_dir.clone(),
+            args.clone(),
+            crate_index.clone(),
+            config_path.clone(),
+        );
         if args.print_path_to_crate_map {
             println!("{crate_index}");
         }
@@ -203,9 +208,8 @@ impl Cackle {
             root_path,
             config_path,
             config: Arc::new(Config::default()),
-            checker,
+            checker: Arc::new(Mutex::new(checker)),
             target_dir,
-            crate_index,
             args,
             event_sender,
             ui_join_handle,
@@ -234,12 +238,16 @@ impl Cackle {
         if self.maybe_create_config()? == FixOutcome::GiveUp {
             return Ok(-1);
         }
-        self.load_config()?;
+        self.checker.lock().unwrap().load_config()?;
 
         if !self.args.object_paths.is_empty() {
             let paths: Vec<_> = self.args.object_paths.clone();
             let mut check_state = CheckState::default();
-            let problems = self.checker.check_object_paths(&paths, &mut check_state)?;
+            let problems = self
+                .checker
+                .lock()
+                .unwrap()
+                .check_object_paths(&paths, &mut check_state)?;
             if !problems.is_empty() {
                 for problem in &problems {
                     println!("{problem}");
@@ -249,15 +257,18 @@ impl Cackle {
             return Ok(0);
         }
 
-        let initial_outcome = self.outcome_for_request(None)?;
-        let config_path = self.flattened_config_path();
+        let initial_outcome = self.new_request_handler().outcome_for_request(None)?;
+        let config_path = crate::config::flattened_config_path(&self.target_dir);
         let config = self.config.clone();
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result =
             if initial_outcome == FixOutcome::Continue {
                 proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
-                    match self.outcome_for_request(Some(request))? {
+                    match self
+                        .new_request_handler()
+                        .outcome_for_request(Some(request))?
+                    {
                         FixOutcome::Continue => Ok(proxy::rpc::CanContinueResponse::Proceed),
                         FixOutcome::GiveUp => Ok(proxy::rpc::CanContinueResponse::Deny),
                     }
@@ -279,7 +290,7 @@ impl Cackle {
             return Ok(-1);
         }
 
-        let unused_problems = self.checker.check_unused();
+        let unused_problems = self.checker.lock().unwrap().check_unused();
         let resolution = self.problem_store.fix_problems(unused_problems);
         if resolution != FixOutcome::Continue {
             self.report_problems();
@@ -301,43 +312,11 @@ impl Cackle {
         Ok(0)
     }
 
-    fn load_config(&mut self) -> Result<()> {
-        let config = config::parse_file(&self.config_path, &self.crate_index)?;
-        self.checker.load_config(&config);
-        // Every time we reload our configuration, we rewrite the flattened configuration. The
-        // flattened configuration is used by subprocesses rather than using the original
-        // configuration since using the original would require each subprocess to run `cargo
-        // metadata`.
-        let flattened_path = self.flattened_config_path();
-        if let Some(dir) = flattened_path.parent() {
-            std::fs::create_dir_all(dir)
-                .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
-        }
-        std::fs::write(&flattened_path, config.flattened_toml()?)?;
-        self.config = config;
-        Ok(())
-    }
-
-    fn outcome_for_request(&mut self, request: Option<proxy::rpc::Request>) -> Result<FixOutcome> {
-        let mut check_state = CheckState::default();
-        loop {
-            let problems = self.checker.problems(&request, &mut check_state)?;
-            let return_on_retry = problems.should_send_retry_to_subprocess();
-            match self.problem_store.fix_problems(problems) {
-                ui::FixOutcome::Continue => {
-                    self.load_config()?;
-                    if return_on_retry {
-                        // If the only problem is that something in a subprocess failed, we return
-                        // an empty error set. This signals the subprocess that it should proceed,
-                        // which since something failed means that it should reload the config and
-                        // retry whatever failed.
-                        return Ok(FixOutcome::Continue);
-                    }
-                }
-                ui::FixOutcome::GiveUp => {
-                    return Ok(FixOutcome::GiveUp);
-                }
-            }
+    fn new_request_handler(&self) -> RequestHandler {
+        RequestHandler {
+            check_state: CheckState::default(),
+            checker: self.checker.clone(),
+            problem_store: self.problem_store.clone(),
         }
     }
 
@@ -347,12 +326,6 @@ impl Cackle {
         for (_, problem) in pstore.into_iter() {
             println!("{} {problem}", "ERROR:".red());
         }
-    }
-
-    fn flattened_config_path(&self) -> PathBuf {
-        self.target_dir
-            .join(proxy::cargo::PROFILE_NAME)
-            .join("flattened_cackle.toml")
     }
 
     fn maybe_create_config(&mut self) -> Result<FixOutcome> {
@@ -377,6 +350,40 @@ impl Args {
 #[derive(Default)]
 struct CheckState {
     graph: Option<SymGraph>,
+}
+
+struct RequestHandler {
+    check_state: CheckState,
+    checker: Arc<Mutex<Checker>>,
+    problem_store: ProblemStoreRef,
+}
+
+impl RequestHandler {
+    fn outcome_for_request(&mut self, request: Option<proxy::rpc::Request>) -> Result<FixOutcome> {
+        loop {
+            let problems = self
+                .checker
+                .lock()
+                .unwrap()
+                .problems(&request, &mut self.check_state)?;
+            let return_on_retry = problems.should_send_retry_to_subprocess();
+            match self.problem_store.fix_problems(problems) {
+                ui::FixOutcome::Continue => {
+                    self.checker.lock().unwrap().load_config()?;
+                    if return_on_retry {
+                        // If the only problem is that something in a subprocess failed, we return
+                        // an empty error set. This signals the subprocess that it should proceed,
+                        // which since something failed means that it should reload the config and
+                        // retry whatever failed.
+                        return Ok(FixOutcome::Continue);
+                    }
+                }
+                ui::FixOutcome::GiveUp => {
+                    return Ok(FixOutcome::GiveUp);
+                }
+            }
+        }
+    }
 }
 
 const _CHECK_OS: () = if cfg!(all(

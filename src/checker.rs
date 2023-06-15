@@ -33,6 +33,7 @@ pub(crate) struct Checker {
     exclusions: HashMap<String, HashSet<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
+    config_path: PathBuf,
     config: Arc<Config>,
     target_dir: PathBuf,
     args: Args,
@@ -110,7 +111,12 @@ pub(crate) struct UnusedConfig {
 }
 
 impl Checker {
-    pub(crate) fn new(target_dir: PathBuf, args: Args, crate_index: Arc<CrateIndex>) -> Self {
+    pub(crate) fn new(
+        target_dir: PathBuf,
+        args: Args,
+        crate_index: Arc<CrateIndex>,
+        config_path: PathBuf,
+    ) -> Self {
         Self {
             permission_names: Default::default(),
             permission_name_to_id: Default::default(),
@@ -118,6 +124,7 @@ impl Checker {
             exclusions: Default::default(),
             crate_infos: Default::default(),
             crate_name_to_index: Default::default(),
+            config_path,
             config: Default::default(),
             target_dir,
             args,
@@ -126,8 +133,23 @@ impl Checker {
     }
 
     /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
-    pub(crate) fn load_config(&mut self, config: &Arc<crate::config::Config>) {
-        self.config = config.clone();
+    pub(crate) fn load_config(&mut self) -> Result<()> {
+        let config = crate::config::parse_file(&self.config_path, &self.crate_index)?;
+        // Every time we reload our configuration, we rewrite the flattened configuration. The
+        // flattened configuration is used by subprocesses rather than using the original
+        // configuration since using the original would require each subprocess to run `cargo
+        // metadata`.
+        let flattened_path = crate::config::flattened_config_path(&self.target_dir);
+        if let Some(dir) = flattened_path.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
+        }
+        std::fs::write(&flattened_path, config.flattened_toml()?)?;
+        self.update_config(config);
+        Ok(())
+    }
+
+    fn update_config(&mut self, config: Arc<Config>) {
         for (perm_name, api) in &config.apis {
             let id = self.perm_id(perm_name);
             for prefix in &api.include {
@@ -159,6 +181,7 @@ impl Checker {
                 }
             }
         }
+        self.config = config;
     }
 
     fn base_problems(&self) -> ProblemList {
@@ -473,7 +496,7 @@ mod tests {
     #[track_caller]
     fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
         let mut checker = Checker::default();
-        checker.load_config(&parse(config).unwrap());
+        checker.update_config(parse(config).unwrap());
 
         let path: Vec<String> = path.iter().map(|s| s.to_string()).collect();
         let apis = checker.apis_for_path(&path);
@@ -522,7 +545,7 @@ mod tests {
         )
         .unwrap();
         let mut checker = Checker::default();
-        checker.load_config(&config);
+        checker.update_config(config.clone());
         let crate_id = checker.crate_id_from_name("foo");
         let mut problems = ProblemList::default();
 
@@ -548,7 +571,7 @@ mod tests {
         assert!(checker.check_unused().is_empty());
 
         // Now reload the config and make that we still don't report any unused configuration.
-        checker.load_config(&config);
+        checker.update_config(config);
         assert!(checker.check_unused().is_empty());
     }
 }

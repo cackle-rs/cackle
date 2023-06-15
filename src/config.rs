@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 pub(crate) mod built_in;
@@ -259,6 +260,12 @@ impl Config {
     pub(crate) fn needs_reachability(&self) -> bool {
         self.packages.values().any(|pkg| pkg.ignore_unreachable)
     }
+}
+
+pub(crate) fn flattened_config_path(target_dir: &Path) -> PathBuf {
+    target_dir
+        .join(crate::proxy::cargo::PROFILE_NAME)
+        .join("flattened_cackle.toml")
 }
 
 #[cfg(test)]
