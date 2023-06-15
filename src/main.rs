@@ -41,6 +41,7 @@ use problem_store::ProblemStoreRef;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use symbol_graph::SymGraph;
 use ui::FixOutcome;
@@ -147,7 +148,7 @@ struct Cackle {
     problem_store: ProblemStoreRef,
     root_path: PathBuf,
     config_path: PathBuf,
-    config: Config,
+    config: Arc<Config>,
     checker: Checker,
     target_dir: PathBuf,
     crate_index: CrateIndex,
@@ -202,7 +203,7 @@ impl Cackle {
             problem_store,
             root_path,
             config_path,
-            config: Config::default(),
+            config: Arc::new(Config::default()),
             checker,
             target_dir,
             crate_index,

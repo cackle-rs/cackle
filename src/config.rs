@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
+use std::sync::Arc;
 
 pub(crate) mod built_in;
 
@@ -107,7 +108,7 @@ pub(crate) struct PackageConfig {
     pub(crate) ignore_unreachable: bool,
 }
 
-pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Config> {
+pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Arc<Config>> {
     let cackle: String = std::fs::read_to_string(cackle_path)
         .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
 
@@ -115,7 +116,7 @@ pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result
         parse(&cackle).with_context(|| format!("Failed to parse {}", cackle_path.display()))?;
     config.load_imports(crate_index)?;
     crate::config_validation::validate(&config, cackle_path)?;
-    Ok(config)
+    Ok(Arc::new(config))
 }
 
 fn parse(cackle: &str) -> Result<Config> {
@@ -155,7 +156,7 @@ impl Config {
                 pkg_dir.join("cackle").join("export.toml").as_std_path(),
                 crate_index,
             )?;
-            for (api_name, api_def) in pkg_exports.apis {
+            for (api_name, api_def) in &pkg_exports.apis {
                 if !pkg_config
                     .import
                     .iter()
@@ -169,7 +170,7 @@ impl Config {
                 };
                 if self
                     .apis
-                    .insert(qualified_api_name.clone(), api_def)
+                    .insert(qualified_api_name.clone(), api_def.clone())
                     .is_some()
                 {
                     bail!(
@@ -263,14 +264,15 @@ impl Config {
 #[cfg(test)]
 pub(crate) mod testing {
     use crate::config_validation::validate;
+    use std::sync::Arc;
 
-    pub(crate) fn parse(cackle: &str) -> anyhow::Result<super::Config> {
+    pub(crate) fn parse(cackle: &str) -> anyhow::Result<Arc<super::Config>> {
         let cackle_with_header = format!(
             "version = 1\n\
             {cackle}
         "
         );
-        let config = super::parse(&cackle_with_header)?;
+        let config = Arc::new(super::parse(&cackle_with_header)?);
         validate(&config, std::path::Path::new("/dev/null"))?;
         Ok(config)
     }
@@ -282,6 +284,7 @@ mod tests {
     use crate::config::SandboxKind;
     use crate::crate_index::CrateIndex;
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     #[test]
     fn empty() {
@@ -408,7 +411,8 @@ mod tests {
         let crate_index = CrateIndex::new(&test_crates_dir).unwrap();
         let config = super::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
 
-        let roundtripped_config = super::parse(&config.flattened_toml().unwrap()).unwrap();
+        let roundtripped_config =
+            Arc::new(super::parse(&config.flattened_toml().unwrap()).unwrap());
         assert_eq!(config, roundtripped_config);
     }
 }

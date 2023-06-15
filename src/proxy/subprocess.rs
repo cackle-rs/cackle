@@ -18,6 +18,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitStatus;
+use std::sync::Arc;
 
 use super::cackle_exe;
 use super::rpc::BuildScriptOutput;
@@ -280,7 +281,7 @@ fn default_linker() -> String {
     "cc".to_owned()
 }
 
-fn get_config_from_env() -> Result<Config> {
+fn get_config_from_env() -> Result<Arc<Config>> {
     let Ok(config_path) = std::env::var(CONFIG_PATH_ENV) else {
         bail!("Internal env var `{}` not set", CONFIG_PATH_ENV);
     };

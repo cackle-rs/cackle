@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub(crate) struct Checker {
@@ -23,7 +24,7 @@ pub(crate) struct Checker {
     exclusions: HashMap<String, HashSet<PermId>>,
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
-    config: Config,
+    config: Arc<Config>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -98,7 +99,7 @@ pub(crate) struct UnusedConfig {
 
 impl Checker {
     /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
-    pub(crate) fn load_config(&mut self, config: &crate::config::Config) {
+    pub(crate) fn load_config(&mut self, config: &Arc<crate::config::Config>) {
         self.config = config.clone();
         for (perm_name, api) in &config.apis {
             let id = self.perm_id(perm_name);
