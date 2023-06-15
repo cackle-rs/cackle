@@ -34,9 +34,7 @@ use colored::Colorize;
 use config::Config;
 use crate_index::CrateIndex;
 use events::AppEvent;
-use link_info::LinkInfo;
 use problem::Problem;
-use problem::ProblemList;
 use problem_store::ProblemStoreRef;
 use std::path::Path;
 use std::path::PathBuf;
@@ -46,7 +44,7 @@ use std::thread::JoinHandle;
 use symbol_graph::SymGraph;
 use ui::FixOutcome;
 
-#[derive(Parser, Debug, Clone)]
+#[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
 struct Args {
     /// Directory containing crate to analyze. Defaults to current working
@@ -116,9 +114,10 @@ struct Args {
     command: Command,
 }
 
-#[derive(Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug, Clone, Default)]
 enum Command {
     /// Non-interactive check of configuration.
+    #[default]
     Check,
     /// Interactive check of configuration.
     Ui(UiArgs),
@@ -151,7 +150,7 @@ struct Cackle {
     config: Arc<Config>,
     checker: Checker,
     target_dir: PathBuf,
-    crate_index: CrateIndex,
+    crate_index: Arc<CrateIndex>,
     args: Args,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
@@ -177,8 +176,9 @@ impl Cackle {
             .clone()
             .unwrap_or_else(|| root_path.join("cackle.toml"));
 
-        let crate_index = CrateIndex::new(&root_path)?;
-        let mut checker = Checker::default();
+        let crate_index = Arc::new(CrateIndex::new(&root_path)?);
+        let target_dir = root_path.join("target");
+        let mut checker = Checker::new(target_dir.clone(), args.clone(), crate_index.clone());
         if args.print_path_to_crate_map {
             println!("{crate_index}");
         }
@@ -198,7 +198,6 @@ impl Cackle {
             problem_store.clone(),
             event_receiver,
         )?;
-        let target_dir = root_path.join("target");
         Ok(Self {
             problem_store,
             root_path,
@@ -240,7 +239,7 @@ impl Cackle {
         if !self.args.object_paths.is_empty() {
             let paths: Vec<_> = self.args.object_paths.clone();
             let mut check_state = CheckState::default();
-            let problems = self.check_object_paths(&paths, &mut check_state)?;
+            let problems = self.checker.check_object_paths(&paths, &mut check_state)?;
             if !problems.is_empty() {
                 for problem in &problems {
                     println!("{problem}");
@@ -322,7 +321,7 @@ impl Cackle {
     fn outcome_for_request(&mut self, request: Option<proxy::rpc::Request>) -> Result<FixOutcome> {
         let mut check_state = CheckState::default();
         loop {
-            let problems = self.problems(&request, &mut check_state)?;
+            let problems = self.checker.problems(&request, &mut check_state)?;
             let return_on_retry = problems.should_send_retry_to_subprocess();
             match self.problem_store.fix_problems(problems) {
                 ui::FixOutcome::Continue => {
@@ -348,99 +347,6 @@ impl Cackle {
         for (_, problem) in pstore.into_iter() {
             println!("{} {problem}", "ERROR:".red());
         }
-    }
-
-    fn problems(
-        &mut self,
-        request: &Option<proxy::rpc::Request>,
-        check_state: &mut CheckState,
-    ) -> Result<ProblemList> {
-        let Some(request) = request else {
-            return Ok(self.checker.problems());
-        };
-        match request {
-            proxy::rpc::Request::CrateUsesUnsafe(usage) => {
-                Ok(self.checker.crate_uses_unsafe(usage))
-            }
-            proxy::rpc::Request::LinkerInvoked(link_info) => {
-                self.check_linker_invocation(link_info, check_state)
-            }
-            proxy::rpc::Request::BuildScriptComplete(output) => {
-                Ok(self.check_build_script_output(output))
-            }
-        }
-    }
-
-    fn check_linker_invocation(
-        &mut self,
-        info: &LinkInfo,
-        check_state: &mut CheckState,
-    ) -> Result<ProblemList> {
-        let mut problems = ProblemList::default();
-        if info.is_build_script {
-            problems.merge(
-                self.checker
-                    .verify_build_script_permitted(&info.package_name),
-            );
-        }
-        problems.merge(
-            self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
-        );
-        Ok(problems.grouped_by_type_crate_and_api())
-    }
-
-    fn check_object_paths(
-        &mut self,
-        paths: &[PathBuf],
-        check_state: &mut CheckState,
-    ) -> Result<ProblemList> {
-        if self.args.debug {
-            println!(
-                "{}",
-                paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-        }
-        if check_state.graph.is_none() {
-            let start = std::time::Instant::now();
-            let mut graph = SymGraph::default();
-            for path in paths {
-                graph
-                    .process_file(path)
-                    .with_context(|| format!("Failed to process `{}`", path.display()))?;
-            }
-            if self.args.print_timing {
-                println!("Graph computation took {}ms", start.elapsed().as_millis());
-            }
-            check_state.graph = Some(graph);
-        }
-        let graph = check_state.graph.as_mut().unwrap();
-        if self.args.print_all_references {
-            println!("{graph}");
-        }
-        if self.config.needs_reachability() {
-            let result = graph.compute_reachability(&self.args);
-            if result.is_err() && self.args.verbose_errors {
-                println!("Object paths:");
-                for p in paths {
-                    println!("  {}", p.display());
-                }
-            }
-            result?;
-        }
-        let start = std::time::Instant::now();
-        let problems = graph.problems(&mut self.checker, &self.crate_index)?;
-        if self.args.print_timing {
-            println!("API usage checking took {}ms", start.elapsed().as_millis());
-        }
-        Ok(problems)
-    }
-
-    fn check_build_script_output(&self, output: &proxy::rpc::BuildScriptOutput) -> ProblemList {
-        build_script_checker::check(output, &self.config)
     }
 
     fn flattened_config_path(&self) -> PathBuf {

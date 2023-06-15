@@ -1,13 +1,22 @@
+use crate::build_script_checker;
 use crate::config::Config;
 use crate::config::PermissionName;
+use crate::crate_index::CrateIndex;
+use crate::link_info::LinkInfo;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
+use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
+use crate::symbol_graph::SymGraph;
+use crate::Args;
+use crate::CheckState;
+use anyhow::Context;
+use anyhow::Result;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -25,6 +34,9 @@ pub(crate) struct Checker {
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
     config: Arc<Config>,
+    target_dir: PathBuf,
+    args: Args,
+    pub(crate) crate_index: Arc<CrateIndex>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -98,6 +110,21 @@ pub(crate) struct UnusedConfig {
 }
 
 impl Checker {
+    pub(crate) fn new(target_dir: PathBuf, args: Args, crate_index: Arc<CrateIndex>) -> Self {
+        Self {
+            permission_names: Default::default(),
+            permission_name_to_id: Default::default(),
+            inclusions: Default::default(),
+            exclusions: Default::default(),
+            crate_infos: Default::default(),
+            crate_name_to_index: Default::default(),
+            config: Default::default(),
+            target_dir,
+            args,
+            crate_index,
+        }
+    }
+
     /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
     pub(crate) fn load_config(&mut self, config: &Arc<crate::config::Config>) {
         self.config = config.clone();
@@ -134,7 +161,7 @@ impl Checker {
         }
     }
 
-    pub(crate) fn problems(&self) -> ProblemList {
+    fn base_problems(&self) -> ProblemList {
         let mut problems = ProblemList::default();
         for crate_info in &self.crate_infos {
             if crate_info.is_proc_macro && !crate_info.allow_proc_macro {
@@ -144,6 +171,92 @@ impl Checker {
             }
         }
         problems
+    }
+
+    pub(crate) fn problems(
+        &mut self,
+        request: &Option<rpc::Request>,
+        check_state: &mut CheckState,
+    ) -> Result<ProblemList> {
+        let Some(request) = request else {
+            return Ok(self.base_problems());
+        };
+        match request {
+            rpc::Request::CrateUsesUnsafe(usage) => Ok(self.crate_uses_unsafe(usage)),
+            rpc::Request::LinkerInvoked(link_info) => {
+                self.check_linker_invocation(link_info, check_state)
+            }
+            rpc::Request::BuildScriptComplete(output) => Ok(self.check_build_script_output(output)),
+        }
+    }
+
+    fn check_linker_invocation(
+        &mut self,
+        info: &LinkInfo,
+        check_state: &mut CheckState,
+    ) -> Result<ProblemList> {
+        let mut problems = ProblemList::default();
+        if info.is_build_script {
+            problems.merge(self.verify_build_script_permitted(&info.package_name));
+        }
+        problems.merge(
+            self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
+        );
+        Ok(problems.grouped_by_type_crate_and_api())
+    }
+
+    pub(crate) fn check_object_paths(
+        &mut self,
+        paths: &[PathBuf],
+        check_state: &mut CheckState,
+    ) -> Result<ProblemList> {
+        if self.args.debug {
+            println!(
+                "{}",
+                paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+        if check_state.graph.is_none() {
+            let start = std::time::Instant::now();
+            let mut graph = SymGraph::default();
+            for path in paths {
+                graph
+                    .process_file(path)
+                    .with_context(|| format!("Failed to process `{}`", path.display()))?;
+            }
+            if self.args.print_timing {
+                println!("Graph computation took {}ms", start.elapsed().as_millis());
+            }
+            check_state.graph = Some(graph);
+        }
+        let graph = check_state.graph.as_mut().unwrap();
+        if self.args.print_all_references {
+            println!("{graph}");
+        }
+        if self.config.needs_reachability() {
+            let result = graph.compute_reachability(&self.args);
+            if result.is_err() && self.args.verbose_errors {
+                println!("Object paths:");
+                for p in paths {
+                    println!("  {}", p.display());
+                }
+            }
+            result?;
+        }
+        let start = std::time::Instant::now();
+        let problems = graph.problems(self)?;
+        if self.args.print_timing {
+            println!("API usage checking took {}ms", start.elapsed().as_millis());
+        }
+        Ok(problems)
+    }
+
+    fn check_build_script_output(&self, output: &rpc::BuildScriptOutput) -> ProblemList {
+        build_script_checker::check(output, &self.config)
     }
 
     pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> ProblemList {

@@ -11,7 +11,6 @@ use crate::checker::SourceLocation;
 use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
-use crate::crate_index::CrateIndex;
 use crate::problem::ProblemList;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
@@ -169,11 +168,7 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn problems(
-        &self,
-        checker: &mut Checker,
-        mapping: &CrateIndex,
-    ) -> Result<ProblemList> {
+    pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
         let mut problems = ProblemList::default();
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
             problems.push(format!(
@@ -182,6 +177,7 @@ impl SymGraph {
                 dup
             ));
         }
+        let crate_index = checker.crate_index.clone();
         for section in &self.sections {
             if section.name.is_empty() {
                 // TODO: Determine if it's OK to just ignore this.
@@ -207,7 +203,7 @@ impl SymGraph {
                     &mut problems,
                 );
             }
-            let crate_name = mapping
+            let crate_name = crate_index
                 .crate_name_for_path(source_filename)
                 .ok_or_else(|| {
                     anyhow!(

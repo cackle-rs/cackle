@@ -1,7 +1,8 @@
 use clap::ValueEnum;
 
-#[derive(ValueEnum, Debug, Clone, Copy)]
+#[derive(ValueEnum, Debug, Clone, Copy, Default)]
 pub(crate) enum Colour {
+    #[default]
     Auto,
     Always,
     Never,
