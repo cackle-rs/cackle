@@ -51,9 +51,11 @@ impl FullTermUi {
             terminal,
         })
     }
+}
 
-    pub(crate) fn run(
-        mut self,
+impl super::UserInterface for FullTermUi {
+    fn run(
+        &mut self,
         problem_store: ProblemStoreRef,
         event_receiver: Receiver<AppEvent>,
     ) -> Result<()> {

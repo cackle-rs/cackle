@@ -22,29 +22,37 @@ pub(crate) enum Kind {
     Full,
 }
 
+trait UserInterface: Send {
+    fn run(
+        &mut self,
+        problem_store: ProblemStoreRef,
+        event_receiver: Receiver<AppEvent>,
+    ) -> Result<()>;
+}
+
 pub(crate) fn start_ui(
     kind: Kind,
     config_path: &Path,
     problem_store: ProblemStoreRef,
     event_receiver: Receiver<AppEvent>,
 ) -> Result<JoinHandle<Result<()>>> {
-    Ok(match kind {
+    let mut ui: Box<dyn UserInterface> = match kind {
         Kind::None => {
             info!("Starting null UI");
-            let ui = null_ui::NullUi::new();
-            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+            Box::new(null_ui::NullUi::new())
         }
         Kind::Basic => {
             info!("Starting basic terminal UI");
-            let ui = basic_term::BasicTermUi::new(config_path.to_owned());
-            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+            Box::new(basic_term::BasicTermUi::new(config_path.to_owned()))
         }
         Kind::Full => {
             info!("Starting full terminal UI");
-            let ui = full_term::FullTermUi::new(config_path.to_owned())?;
-            std::thread::spawn(move || ui.run(problem_store, event_receiver))
+            Box::new(full_term::FullTermUi::new(config_path.to_owned())?)
         }
-    })
+    };
+    Ok(std::thread::Builder::new()
+        .name("UI".to_owned())
+        .spawn(move || ui.run(problem_store, event_receiver))?)
 }
 
 // TODO: Do we need both this can CanContinueResponse

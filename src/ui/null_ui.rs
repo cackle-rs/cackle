@@ -12,9 +12,11 @@ impl NullUi {
     pub(crate) fn new() -> Self {
         Self
     }
+}
 
-    pub(crate) fn run(
-        self,
+impl super::UserInterface for NullUi {
+    fn run(
+        &mut self,
         problem_store: ProblemStoreRef,
         event_receiver: Receiver<AppEvent>,
     ) -> Result<()> {

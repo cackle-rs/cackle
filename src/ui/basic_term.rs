@@ -34,17 +34,9 @@ pub(crate) struct BasicTermUi {
     config_last_modified: Option<SystemTime>,
 }
 
-impl BasicTermUi {
-    pub(crate) fn new(config_path: PathBuf) -> Self {
-        Self {
-            config_last_modified: config_modification_time(&config_path),
-            config_path,
-            stdin_recv: start_stdin_channel(),
-        }
-    }
-
-    pub(crate) fn run(
-        mut self,
+impl super::UserInterface for BasicTermUi {
+    fn run(
+        &mut self,
         problem_store: ProblemStoreRef,
         event_receiver: Receiver<AppEvent>,
     ) -> Result<()> {
@@ -93,6 +85,16 @@ impl BasicTermUi {
             }
         }
         Ok(())
+    }
+}
+
+impl BasicTermUi {
+    pub(crate) fn new(config_path: PathBuf) -> Self {
+        Self {
+            config_last_modified: config_modification_time(&config_path),
+            config_path,
+            stdin_recv: start_stdin_channel(),
+        }
     }
 
     fn create_initial_config(&mut self) -> Result<FixOutcome> {
