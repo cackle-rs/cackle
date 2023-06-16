@@ -2,12 +2,10 @@
 //! them.
 
 use crate::events::AppEvent;
-use crate::outcome::Outcome;
 use crate::problem_store::ProblemStoreRef;
 use crate::Args;
 use anyhow::Result;
 use clap::ValueEnum;
-use colored::Colorize;
 use log::info;
 use std::path::Path;
 use std::sync::mpsc::Receiver;
@@ -56,20 +54,4 @@ pub(crate) fn start_ui(
     Ok(std::thread::Builder::new()
         .name("UI".to_owned())
         .spawn(move || ui.run(problem_store, event_receiver))?)
-}
-
-pub(crate) trait Ui {
-    fn start_problem_solving(&mut self, problem_store: ProblemStoreRef);
-
-    fn create_initial_config(&mut self) -> Result<Outcome>;
-
-    fn report_error(&mut self, error: &anyhow::Error) -> Result<()> {
-        println!("{} {:#}", "ERROR:".red(), error);
-        Ok(())
-    }
-
-    fn display_message(&mut self, title: &str, message: &str) -> Result<()> {
-        println!("{title}\n{message}");
-        Ok(())
-    }
 }
