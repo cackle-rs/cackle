@@ -21,6 +21,7 @@
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use crate::config::Config;
+use crate::exit_code::ExitCode;
 use crate::Args;
 use crate::RequestHandler;
 use anyhow::Context;
@@ -175,25 +176,5 @@ impl Display for CargoBuildFailure {
         write!(f, "{}", String::from_utf8_lossy(&self.output.stdout))?;
         write!(f, "{}", String::from_utf8_lossy(&self.output.stderr))?;
         Ok(())
-    }
-}
-
-/// Our own representation for an ExitCode. We don't use ExitStatus from the standard library
-/// because sometimes we need to construct an ExitCode ourselves.
-struct ExitCode(i32);
-
-impl ExitCode {
-    fn code(&self) -> i32 {
-        self.0
-    }
-
-    fn is_ok(&self) -> bool {
-        self.0 == 0
-    }
-}
-
-impl From<std::process::ExitStatus> for ExitCode {
-    fn from(status: std::process::ExitStatus) -> Self {
-        ExitCode(status.code().unwrap_or(-1))
     }
 }

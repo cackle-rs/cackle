@@ -12,6 +12,7 @@ mod config_validation;
 mod crate_index;
 mod deps;
 pub(crate) mod events;
+mod exit_code;
 pub(crate) mod link_info;
 mod logging;
 pub(crate) mod problem;
@@ -32,6 +33,8 @@ use clap::Parser;
 use clap::Subcommand;
 use crate_index::CrateIndex;
 use events::AppEvent;
+use exit_code::ExitCode;
+use log::info;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
 use proxy::rpc::CanContinueResponse;
@@ -141,7 +144,8 @@ fn main() -> Result<()> {
     }
     let cackle = Cackle::new(args)?;
     let exit_code = cackle.run_and_report_errors();
-    std::process::exit(exit_code);
+    info!("Shutdown with exit code {}", exit_code);
+    std::process::exit(exit_code.code());
 }
 
 struct Cackle {
@@ -216,25 +220,26 @@ impl Cackle {
 
     /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
     /// before we return. That way the user interface will be cleaned up before we exit.
-    fn run_and_report_errors(mut self) -> i32 {
+    fn run_and_report_errors(mut self) -> ExitCode {
         let exit_code = match self.run() {
             Err(error) => {
                 self.problem_store.report_error(error);
-                -1
+                exit_code::FAILURE
             }
             Ok(exit_code) => exit_code,
         };
         let _ = self.event_sender.send(AppEvent::Shutdown);
         if let Ok(Err(error)) = self.ui_join_handle.join() {
-            println!("{error}");
-            return -1;
+            println!("UI error: {error}");
+            return exit_code::FAILURE;
         }
         exit_code
     }
 
-    fn run(&mut self) -> Result<i32> {
+    fn run(&mut self) -> Result<ExitCode> {
         if self.maybe_create_config()? == FixOutcome::GiveUp {
-            return Ok(-1);
+            info!("Gave up creating initial configuration");
+            return Ok(exit_code::FAILURE);
         }
         self.checker.lock().unwrap().load_config()?;
 
@@ -246,13 +251,12 @@ impl Cackle {
                 .lock()
                 .unwrap()
                 .check_object_paths(&paths, &mut check_state)?;
-            if !problems.is_empty() {
-                for problem in &problems {
-                    println!("{problem}");
-                }
-                return Ok(-1);
+            if !problems.is_empty()
+                && self.problem_store.fix_problems(problems) == FixOutcome::GiveUp
+            {
+                return Ok(exit_code::FAILURE);
             }
-            return Ok(0);
+            return Ok(exit_code::SUCCESS);
         }
 
         let initial_outcome = self.new_request_handler(None).handle_request()?;
@@ -269,20 +273,21 @@ impl Cackle {
             Ok(None)
         };
 
-        if !self.problem_store.lock().has_aborted {
-            return Ok(-1);
+        if self.problem_store.lock().has_aborted {
+            return Ok(exit_code::FAILURE);
         }
 
         // We only check if the build failed if there were no ACL check errors.
         if let Some(build_failure) = build_result? {
-            println!("{build_failure}");
-            return Ok(-1);
+            println!("Build failure: {build_failure}");
+            info!("Build failure: {build_failure}");
+            return Ok(exit_code::FAILURE);
         }
 
         let unused_problems = self.checker.lock().unwrap().check_unused();
         let resolution = self.problem_store.fix_problems(unused_problems);
         if resolution != FixOutcome::Continue {
-            return Ok(-1);
+            return Ok(exit_code::FAILURE);
         }
 
         if !self.args.quiet {
@@ -297,7 +302,7 @@ impl Cackle {
             // )?;
         }
 
-        Ok(0)
+        Ok(exit_code::SUCCESS)
     }
 
     fn new_request_handler(&self, request: Option<Request>) -> RequestHandler {

@@ -118,6 +118,7 @@ impl ProblemStore {
                 let _ = sender.send(FixOutcome::GiveUp);
             }
         }
+        self.has_aborted = true;
     }
 }
 
