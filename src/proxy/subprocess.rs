@@ -238,7 +238,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     }
 }
 
-/// Searches for the unsafe keyword in the sources for the current invocation of rustc.
+/// Searches for the first unsafe keyword in the sources for the current invocation of rustc.
 fn find_unsafe_in_sources() -> Result<Option<UnsafeUsage>> {
     for file in crate::deps::source_files_from_rustc_args(std::env::args())? {
         if let Some(unsafe_usage) = unsafe_checker::scan_path(&file)? {
