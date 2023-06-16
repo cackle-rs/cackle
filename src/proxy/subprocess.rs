@@ -1,6 +1,13 @@
 //! This module contains code that is intended for running in a subprocess whenn we're proxying
 //! rustc, the linker or a build script. See comment on parent module for more details.
 
+use super::cackle_exe;
+use super::errors::UnsafeUsage;
+use super::rpc::BuildScriptOutput;
+use super::rpc::CanContinueResponse;
+use super::run_command;
+use super::ExitCode;
+use super::CONFIG_PATH_ENV;
 use crate::config::Config;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
@@ -17,14 +24,7 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::process::ExitStatus;
 use std::sync::Arc;
-
-use super::cackle_exe;
-use super::rpc::BuildScriptOutput;
-use super::rpc::CanContinueResponse;
-use super::run_command;
-use super::CONFIG_PATH_ENV;
 
 /// Checks if we're acting as a wrapper for rustc or the linker. If we are, then we do whatever work
 /// we need to do, then invoke the binary that we're wrapping and then exit - i.e. we don't return.
@@ -53,7 +53,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
         let args: Vec<String> = std::env::args().collect();
         bail!("Unexpected proxy invocation with args: {args:?}");
     };
-    std::process::exit(exit_status.code().unwrap_or(-1));
+    std::process::exit(exit_status.code());
 }
 
 /// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
@@ -101,14 +101,14 @@ fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
     path.with_file_name("original-build-script")
 }
 
-fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitStatus> {
+fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitCode> {
     loop {
         let config = get_config_from_env()?;
         let package_name = get_env("CARGO_PKG_NAME")?;
         let sandbox_config = config.sandbox_config_for_build_script(&package_name);
         let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
             // Config says to run without a sandbox.
-            return Ok(Command::new(&orig_build_script).status()?);
+            return Ok(Command::new(&orig_build_script).status()?.into());
         };
         // Allow read access to the crate's root source directory.
         sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
@@ -130,7 +130,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
                 if output.status.code() == Some(0) {
                     std::io::stderr().lock().write_all(&output.stderr)?;
                     std::io::stdout().lock().write_all(&output.stdout)?;
-                    return Ok(output.status);
+                    return Ok(output.status.into());
                 }
                 // If the build script failed and we were asked to proceed, then fall through and
                 // retry the build script with a hopefully changed config.
@@ -160,7 +160,7 @@ fn target_subdir(build_script_path: &Path) -> Result<&Path> {
     }
 }
 
-fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
+fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     loop {
         let mut args = std::env::args().skip(2).peekable();
         let config = get_config_from_env()?;
@@ -207,12 +207,10 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
         let output = command.output()?;
         if output.status.code() == Some(0) {
             if !unsafe_permitted {
-                for file in crate::deps::source_files_from_rustc_args(std::env::args())? {
-                    if let Some(unsafe_usage) = unsafe_checker::scan_path(&file)? {
-                        let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_usage)?;
-                        if response == CanContinueResponse::Proceed {
-                            continue;
-                        }
+                if let Some(unsafe_usage) = find_unsafe_in_sources()? {
+                    let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_usage)?;
+                    if response == CanContinueResponse::Proceed {
+                        continue;
                     }
                 }
             }
@@ -236,8 +234,18 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitStatus, anyhow::Error> {
                 }
             }
         }
-        return Ok(output.status);
+        return Ok(output.status.into());
     }
+}
+
+/// Searches for the unsafe keyword in the sources for the current invocation of rustc.
+fn find_unsafe_in_sources() -> Result<Option<UnsafeUsage>> {
+    for file in crate::deps::source_files_from_rustc_args(std::env::args())? {
+        if let Some(unsafe_usage) = unsafe_checker::scan_path(&file)? {
+            return Ok(Some(unsafe_usage));
+        }
+    }
+    Ok(None)
 }
 
 /// Advises our parent process that the linker has been invoked, then once it is done checking the
@@ -246,14 +254,14 @@ fn proxy_linker(
     link_info: LinkInfo,
     rpc_client: RpcClient,
     args: std::iter::Peekable<std::env::Args>,
-) -> Result<ExitStatus, anyhow::Error> {
+) -> Result<ExitCode, anyhow::Error> {
     let build_script_bin = link_info
         .is_build_script
         .then(|| link_info.output_file.clone());
     match rpc_client.linker_invoked(link_info)? {
         CanContinueResponse::Proceed => {
             let exit_status = invoke_real_linker(args)?;
-            if exit_status.code() == Some(0) {
+            if exit_status.is_ok() {
                 if let Some(build_script_bin) = build_script_bin {
                     setup_build_script_wrapper(&build_script_bin)?;
                 }
@@ -266,7 +274,7 @@ fn proxy_linker(
 
 fn invoke_real_linker(
     args: std::iter::Peekable<std::env::Args>,
-) -> Result<ExitStatus, anyhow::Error> {
+) -> Result<ExitCode, anyhow::Error> {
     let orig_linker = std::env::var(super::ORIG_LINKER_ENV)
         .ok()
         .unwrap_or_else(default_linker);

@@ -154,13 +154,16 @@ fn process_request(mut request_handler: RequestHandler, mut connection: UnixStre
     Ok(())
 }
 
-fn run_command(command: &mut Command) -> Result<std::process::ExitStatus> {
-    command.status().with_context(|| {
-        format!(
-            "Failed to run `{}`",
-            command.get_program().to_string_lossy()
-        )
-    })
+fn run_command(command: &mut Command) -> Result<ExitCode> {
+    Ok(command
+        .status()
+        .with_context(|| {
+            format!(
+                "Failed to run `{}`",
+                command.get_program().to_string_lossy()
+            )
+        })?
+        .into())
 }
 
 fn cackle_exe() -> Result<PathBuf> {
@@ -172,5 +175,25 @@ impl Display for CargoBuildFailure {
         write!(f, "{}", String::from_utf8_lossy(&self.output.stdout))?;
         write!(f, "{}", String::from_utf8_lossy(&self.output.stderr))?;
         Ok(())
+    }
+}
+
+/// Our own representation for an ExitCode. We don't use ExitStatus from the standard library
+/// because sometimes we need to construct an ExitCode ourselves.
+struct ExitCode(i32);
+
+impl ExitCode {
+    fn code(&self) -> i32 {
+        self.0
+    }
+
+    fn is_ok(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl From<std::process::ExitStatus> for ExitCode {
+    fn from(status: std::process::ExitStatus) -> Self {
+        ExitCode(status.code().unwrap_or(-1))
     }
 }
