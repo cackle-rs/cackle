@@ -27,10 +27,12 @@ use anyhow::Context;
 use anyhow::Result;
 use std::fmt::Display;
 use std::os::unix::net::UnixListener;
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::process::Command;
+use std::sync::mpsc::channel;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -104,6 +106,7 @@ pub(crate) fn invoke_cargo_build(
     listener
         .set_nonblocking(true)
         .context("Failed to set socket to non-blocking")?;
+    let (error_send, error_recv) = channel();
     loop {
         if cargo_thread.is_finished() {
             // The following unwrap will only panic if the cargo thread panicked.
@@ -116,17 +119,24 @@ pub(crate) fn invoke_cargo_build(
             }
             break;
         }
+        if let Ok(error) = error_recv.try_recv() {
+            return Err(error);
+        }
         // We need to concurrently accept connections from our proxy subprocesses and also check to
         // see if our main subprocess has terminated. It should be possible to do this without
         // polling... but it's so much simpler to just poll.
         if let Ok((mut connection, _)) = listener.accept() {
             let request: rpc::Request = rpc::read_from_stream(&mut connection)
                 .context("Malformed request from subprocess")?;
-            let mut request_handler = (request_creator)(request);
-            let response = request_handler.handle_request();
-            let can_continue = response.as_ref().unwrap_or(&rpc::CanContinueResponse::Deny);
-            rpc::write_to_stream(&can_continue, &mut connection)?;
-            response?;
+            let request_handler = (request_creator)(request);
+            let error_send = error_send.clone();
+            std::thread::Builder::new()
+                .name("Request handler".to_owned())
+                .spawn(move || {
+                    if let Err(error) = process_request(request_handler, connection) {
+                        let _ = error_send.send(error);
+                    }
+                })?;
         } else {
             // Avoid using too much CPU with our polling.
             std::thread::sleep(Duration::from_millis(10));
@@ -134,6 +144,14 @@ pub(crate) fn invoke_cargo_build(
     }
 
     Ok(None)
+}
+
+fn process_request(mut request_handler: RequestHandler, mut connection: UnixStream) -> Result<()> {
+    let response = request_handler.handle_request();
+    let can_continue = response.as_ref().unwrap_or(&rpc::CanContinueResponse::Deny);
+    rpc::write_to_stream(&can_continue, &mut connection)?;
+    response?;
+    Ok(())
 }
 
 fn run_command(command: &mut Command) -> Result<std::process::ExitStatus> {
