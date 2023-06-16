@@ -30,7 +30,6 @@ use anyhow::Result;
 use checker::Checker;
 use clap::Parser;
 use clap::Subcommand;
-use colored::Colorize;
 use crate_index::CrateIndex;
 use events::AppEvent;
 use problem::Problem;
@@ -270,9 +269,7 @@ impl Cackle {
             Ok(None)
         };
 
-        // TODO: Should the NullUi be responsible for reporting errors in the non-interactive case?
-        if !self.problem_store.lock().is_empty() {
-            self.report_problems();
+        if !self.problem_store.lock().has_aborted {
             return Ok(-1);
         }
 
@@ -285,7 +282,6 @@ impl Cackle {
         let unused_problems = self.checker.lock().unwrap().check_unused();
         let resolution = self.problem_store.fix_problems(unused_problems);
         if resolution != FixOutcome::Continue {
-            self.report_problems();
             return Ok(-1);
         }
 
@@ -310,14 +306,6 @@ impl Cackle {
             checker: self.checker.clone(),
             problem_store: self.problem_store.clone(),
             request,
-        }
-    }
-
-    fn report_problems(&self) {
-        let mut pstore = self.problem_store.lock();
-        pstore.group_by_crate();
-        for (_, problem) in pstore.into_iter() {
-            println!("{} {problem}", "ERROR:".red());
         }
     }
 

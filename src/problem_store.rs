@@ -21,6 +21,7 @@ pub(crate) fn create(event_sender: Sender<AppEvent>) -> ProblemStoreRef {
 pub(crate) struct ProblemStore {
     entries: Vec<Entry>,
     event_sender: Sender<AppEvent>,
+    pub(crate) has_aborted: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -60,6 +61,7 @@ impl ProblemStore {
         Self {
             entries: Vec::new(),
             event_sender,
+            has_aborted: false,
         }
     }
 
@@ -98,10 +100,6 @@ impl ProblemStore {
         self.entries.iter().map(|entry| entry.problems.len()).sum()
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.iter().all(|entry| entry.problems.is_empty())
-    }
-
     pub(crate) fn resolve(&mut self, index: ProblemStoreIndex) {
         let entry = &mut self.entries[index.a];
         let problem = entry.problems.remove(index.b);
@@ -115,7 +113,7 @@ impl ProblemStore {
     }
 
     pub(crate) fn abort(&mut self) {
-        for entry in &mut self.entries {
+        for mut entry in &mut self.entries.drain(..) {
             if let Some(sender) = entry.sender.take() {
                 let _ = sender.send(FixOutcome::GiveUp);
             }
@@ -189,7 +187,6 @@ mod tests {
         store.add(create_problems());
         store.add(create_problems());
 
-        assert!(!store.is_empty());
         assert_eq!(store.len(), 4);
 
         let mut iter = store.into_iter();
