@@ -349,6 +349,9 @@ impl RequestHandler {
                 .unwrap()
                 .problems(&self.request, &mut self.check_state)?;
             let return_on_retry = problems.should_send_retry_to_subprocess();
+            if problems.is_empty() {
+                return Ok(CanContinueResponse::Proceed);
+            }
             match self.problem_store.fix_problems(problems) {
                 ui::FixOutcome::Continue => {
                     self.checker.lock().unwrap().load_config()?;

@@ -159,7 +159,7 @@ impl Checker {
             )
         })?;
         self.update_config(config);
-        info!("Config reloaded");
+        info!("Config (re)loaded");
         Ok(())
     }
 
