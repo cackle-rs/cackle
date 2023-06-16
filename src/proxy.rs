@@ -22,6 +22,7 @@
 
 use crate::config::Config;
 use crate::Args;
+use crate::RequestHandler;
 use anyhow::Context;
 use anyhow::Result;
 use std::fmt::Display;
@@ -32,6 +33,8 @@ use std::process;
 use std::process::Command;
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use self::rpc::Request;
 
 pub(crate) mod cargo;
 pub(crate) mod errors;
@@ -60,7 +63,7 @@ pub(crate) fn invoke_cargo_build(
     config_path: &Path,
     config: &Config,
     args: &Args,
-    mut callback: impl FnMut(rpc::Request) -> Result<rpc::CanContinueResponse>,
+    request_creator: impl Fn(Request) -> RequestHandler,
 ) -> Result<Option<CargoBuildFailure>> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
         panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
@@ -119,7 +122,8 @@ pub(crate) fn invoke_cargo_build(
         if let Ok((mut connection, _)) = listener.accept() {
             let request: rpc::Request = rpc::read_from_stream(&mut connection)
                 .context("Malformed request from subprocess")?;
-            let response = (callback)(request);
+            let mut request_handler = (request_creator)(request);
+            let response = request_handler.handle_request();
             let can_continue = response.as_ref().unwrap_or(&rpc::CanContinueResponse::Deny);
             rpc::write_to_stream(&can_continue, &mut connection)?;
             response?;

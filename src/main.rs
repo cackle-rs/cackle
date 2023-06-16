@@ -36,6 +36,8 @@ use crate_index::CrateIndex;
 use events::AppEvent;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
+use proxy::rpc::CanContinueResponse;
+use proxy::rpc::Request;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -257,26 +259,19 @@ impl Cackle {
             return Ok(0);
         }
 
-        let initial_outcome = self.new_request_handler().outcome_for_request(None)?;
+        let initial_outcome = self.new_request_handler(None).handle_request()?;
         let config_path = crate::config::flattened_config_path(&self.target_dir);
         let config = self.config.clone();
         let root_path = self.root_path.clone();
         let args = self.args.clone();
-        let build_result =
-            if initial_outcome == FixOutcome::Continue {
-                proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
-                    match self
-                        .new_request_handler()
-                        .outcome_for_request(Some(request))?
-                    {
-                        FixOutcome::Continue => Ok(proxy::rpc::CanContinueResponse::Proceed),
-                        FixOutcome::GiveUp => Ok(proxy::rpc::CanContinueResponse::Deny),
-                    }
-                })
-            } else {
-                // We've already detected problems before running cargo, don't run cargo.
-                Ok(None)
-            };
+        let build_result = if initial_outcome == CanContinueResponse::Proceed {
+            proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
+                self.new_request_handler(Some(request))
+            })
+        } else {
+            // We've already detected problems before running cargo, don't run cargo.
+            Ok(None)
+        };
 
         // TODO: Should the NullUi be responsible for reporting errors in the non-interactive case?
         if !self.problem_store.lock().is_empty() {
@@ -312,11 +307,12 @@ impl Cackle {
         Ok(0)
     }
 
-    fn new_request_handler(&self) -> RequestHandler {
+    fn new_request_handler(&self, request: Option<Request>) -> RequestHandler {
         RequestHandler {
             check_state: CheckState::default(),
             checker: self.checker.clone(),
             problem_store: self.problem_store.clone(),
+            request,
         }
     }
 
@@ -356,16 +352,17 @@ struct RequestHandler {
     check_state: CheckState,
     checker: Arc<Mutex<Checker>>,
     problem_store: ProblemStoreRef,
+    request: Option<proxy::rpc::Request>,
 }
 
 impl RequestHandler {
-    fn outcome_for_request(&mut self, request: Option<proxy::rpc::Request>) -> Result<FixOutcome> {
+    fn handle_request(&mut self) -> Result<CanContinueResponse> {
         loop {
             let problems = self
                 .checker
                 .lock()
                 .unwrap()
-                .problems(&request, &mut self.check_state)?;
+                .problems(&self.request, &mut self.check_state)?;
             let return_on_retry = problems.should_send_retry_to_subprocess();
             match self.problem_store.fix_problems(problems) {
                 ui::FixOutcome::Continue => {
@@ -375,11 +372,11 @@ impl RequestHandler {
                         // an empty error set. This signals the subprocess that it should proceed,
                         // which since something failed means that it should reload the config and
                         // retry whatever failed.
-                        return Ok(FixOutcome::Continue);
+                        return Ok(CanContinueResponse::Proceed);
                     }
                 }
                 ui::FixOutcome::GiveUp => {
-                    return Ok(FixOutcome::GiveUp);
+                    return Ok(CanContinueResponse::Deny);
                 }
             }
         }
