@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::events::AppEvent;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -65,6 +67,9 @@ impl ProblemStore {
     /// problems in the supplied list have been resolved, or abort has been called. The supplied
     /// problem list must not be empty.
     fn add(&mut self, problems: ProblemList) -> Receiver<FixOutcome> {
+        for problem in &problems {
+            info!("Reported problem: {}", problem.short_description());
+        }
         assert!(!problems.is_empty());
         let (sender, receiver) = std::sync::mpsc::channel();
         self.entries.push(Entry {
@@ -99,7 +104,8 @@ impl ProblemStore {
 
     pub(crate) fn resolve(&mut self, index: ProblemStoreIndex) {
         let entry = &mut self.entries[index.a];
-        entry.problems.remove(index.b);
+        let problem = entry.problems.remove(index.b);
+        info!("Resolved problem: {}", problem.short_description());
         if entry.problems.is_empty() {
             if let Some(sender) = entry.sender.take() {
                 let _ = sender.send(FixOutcome::Continue);

@@ -85,8 +85,8 @@ impl ProblemList {
         self.problems.len()
     }
 
-    pub(crate) fn remove(&mut self, index: usize) {
-        let _ = self.problems.remove(index);
+    pub(crate) fn remove(&mut self, index: usize) -> Problem {
+        self.problems.remove(index)
     }
 
     pub(crate) fn should_send_retry_to_subprocess(&self) -> bool {

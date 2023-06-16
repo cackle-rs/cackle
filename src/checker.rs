@@ -17,6 +17,7 @@ use crate::Args;
 use crate::CheckState;
 use anyhow::Context;
 use anyhow::Result;
+use log::info;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -146,6 +147,7 @@ impl Checker {
         }
         std::fs::write(&flattened_path, config.flattened_toml()?)?;
         self.update_config(config);
+        info!("Config reloaded");
         Ok(())
     }
 
