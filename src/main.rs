@@ -12,9 +12,9 @@ mod config_validation;
 mod crate_index;
 mod deps;
 pub(crate) mod events;
-mod exit_code;
 pub(crate) mod link_info;
 mod logging;
+mod outcome;
 pub(crate) mod problem;
 pub(crate) mod problem_store;
 mod proxy;
@@ -33,11 +33,11 @@ use clap::Parser;
 use clap::Subcommand;
 use crate_index::CrateIndex;
 use events::AppEvent;
-use exit_code::ExitCode;
 use log::info;
+use outcome::ExitCode;
+use outcome::Outcome;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
-use proxy::rpc::CanContinueResponse;
 use proxy::rpc::Request;
 use std::path::Path;
 use std::path::PathBuf;
@@ -46,7 +46,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use symbol_graph::SymGraph;
-use ui::FixOutcome;
 
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
@@ -221,22 +220,22 @@ impl Cackle {
         let exit_code = match self.run() {
             Err(error) => {
                 self.problem_store.report_error(error);
-                exit_code::FAILURE
+                outcome::FAILURE
             }
             Ok(exit_code) => exit_code,
         };
         let _ = self.event_sender.send(AppEvent::Shutdown);
         if let Ok(Err(error)) = self.ui_join_handle.join() {
             println!("UI error: {error}");
-            return exit_code::FAILURE;
+            return outcome::FAILURE;
         }
         exit_code
     }
 
     fn run(&mut self) -> Result<ExitCode> {
-        if self.maybe_create_config()? == FixOutcome::GiveUp {
+        if self.maybe_create_config()? == Outcome::GiveUp {
             info!("Gave up creating initial configuration");
-            return Ok(exit_code::FAILURE);
+            return Ok(outcome::FAILURE);
         }
         self.checker.lock().unwrap().load_config()?;
 
@@ -248,12 +247,11 @@ impl Cackle {
                 .lock()
                 .unwrap()
                 .check_object_paths(&paths, &mut check_state)?;
-            if !problems.is_empty()
-                && self.problem_store.fix_problems(problems) == FixOutcome::GiveUp
+            if !problems.is_empty() && self.problem_store.fix_problems(problems) == Outcome::GiveUp
             {
-                return Ok(exit_code::FAILURE);
+                return Ok(outcome::FAILURE);
             }
-            return Ok(exit_code::SUCCESS);
+            return Ok(outcome::SUCCESS);
         }
 
         let initial_outcome = self.new_request_handler(None).handle_request()?;
@@ -261,7 +259,7 @@ impl Cackle {
         let config = self.checker.lock().unwrap().config.clone();
         let root_path = self.root_path.clone();
         let args = self.args.clone();
-        let build_result = if initial_outcome == CanContinueResponse::Proceed {
+        let build_result = if initial_outcome == Outcome::Continue {
             proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
                 self.new_request_handler(Some(request))
             })
@@ -271,20 +269,20 @@ impl Cackle {
         };
 
         if self.problem_store.lock().has_aborted {
-            return Ok(exit_code::FAILURE);
+            return Ok(outcome::FAILURE);
         }
 
         // We only check if the build failed if there were no ACL check errors.
         if let Some(build_failure) = build_result? {
             println!("Build failure: {build_failure}");
             info!("Build failure: {build_failure}");
-            return Ok(exit_code::FAILURE);
+            return Ok(outcome::FAILURE);
         }
 
         let unused_problems = self.checker.lock().unwrap().check_unused();
         let resolution = self.problem_store.fix_problems(unused_problems);
-        if resolution != FixOutcome::Continue {
-            return Ok(exit_code::FAILURE);
+        if resolution != Outcome::Continue {
+            return Ok(outcome::FAILURE);
         }
 
         if !self.args.quiet {
@@ -299,7 +297,7 @@ impl Cackle {
             // )?;
         }
 
-        Ok(exit_code::SUCCESS)
+        Ok(outcome::SUCCESS)
     }
 
     fn new_request_handler(&self, request: Option<Request>) -> RequestHandler {
@@ -311,13 +309,13 @@ impl Cackle {
         }
     }
 
-    fn maybe_create_config(&mut self) -> Result<FixOutcome> {
+    fn maybe_create_config(&mut self) -> Result<Outcome> {
         if !self.config_path.exists() {
             return Ok(self
                 .problem_store
                 .fix_problems(Problem::MissingConfiguration(self.config_path.clone()).into()));
         }
-        Ok(FixOutcome::Continue)
+        Ok(Outcome::Continue)
     }
 }
 
@@ -343,7 +341,7 @@ struct RequestHandler {
 }
 
 impl RequestHandler {
-    fn handle_request(&mut self) -> Result<CanContinueResponse> {
+    fn handle_request(&mut self) -> Result<Outcome> {
         loop {
             let problems = self
                 .checker
@@ -352,21 +350,21 @@ impl RequestHandler {
                 .problems(&self.request, &mut self.check_state)?;
             let return_on_retry = problems.should_send_retry_to_subprocess();
             if problems.is_empty() {
-                return Ok(CanContinueResponse::Proceed);
+                return Ok(Outcome::Continue);
             }
             match self.problem_store.fix_problems(problems) {
-                ui::FixOutcome::Continue => {
+                Outcome::Continue => {
                     self.checker.lock().unwrap().load_config()?;
                     if return_on_retry {
                         // If the only problem is that something in a subprocess failed, we return
                         // an empty error set. This signals the subprocess that it should proceed,
                         // which since something failed means that it should reload the config and
                         // retry whatever failed.
-                        return Ok(CanContinueResponse::Proceed);
+                        return Ok(Outcome::Continue);
                     }
                 }
-                ui::FixOutcome::GiveUp => {
-                    return Ok(CanContinueResponse::Deny);
+                Outcome::GiveUp => {
+                    return Ok(Outcome::GiveUp);
                 }
             }
         }

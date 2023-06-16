@@ -2,6 +2,7 @@
 //! them.
 
 use crate::events::AppEvent;
+use crate::outcome::Outcome;
 use crate::problem_store::ProblemStoreRef;
 use crate::Args;
 use anyhow::Result;
@@ -57,17 +58,10 @@ pub(crate) fn start_ui(
         .spawn(move || ui.run(problem_store, event_receiver))?)
 }
 
-// TODO: Do we need both this can CanContinueResponse
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FixOutcome {
-    Continue,
-    GiveUp,
-}
-
 pub(crate) trait Ui {
     fn start_problem_solving(&mut self, problem_store: ProblemStoreRef);
 
-    fn create_initial_config(&mut self) -> Result<FixOutcome>;
+    fn create_initial_config(&mut self) -> Result<Outcome>;
 
     fn report_error(&mut self, error: &anyhow::Error) -> Result<()> {
         println!("{} {:#}", "ERROR:".red(), error);

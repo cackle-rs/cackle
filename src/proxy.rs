@@ -21,7 +21,8 @@
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use crate::config::Config;
-use crate::exit_code::ExitCode;
+use crate::outcome::ExitCode;
+use crate::outcome::Outcome;
 use crate::Args;
 use crate::RequestHandler;
 use anyhow::Context;
@@ -149,7 +150,7 @@ pub(crate) fn invoke_cargo_build(
 
 fn process_request(mut request_handler: RequestHandler, mut connection: UnixStream) -> Result<()> {
     let response = request_handler.handle_request();
-    let can_continue = response.as_ref().unwrap_or(&rpc::CanContinueResponse::Deny);
+    let can_continue = response.as_ref().unwrap_or(&Outcome::GiveUp);
     rpc::write_to_stream(&can_continue, &mut connection)?;
     response?;
     Ok(())

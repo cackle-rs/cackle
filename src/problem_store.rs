@@ -1,9 +1,9 @@
 use log::info;
 
 use crate::events::AppEvent;
+use crate::outcome::Outcome;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
-use crate::ui::FixOutcome;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -37,12 +37,12 @@ pub(crate) struct ProblemStoreRef {
 
 impl ProblemStoreRef {
     /// Reports some problems and waits until either they're resolved, or we abort.
-    pub(crate) fn fix_problems(&mut self, problems: ProblemList) -> FixOutcome {
+    pub(crate) fn fix_problems(&mut self, problems: ProblemList) -> Outcome {
         if problems.is_empty() {
-            return FixOutcome::Continue;
+            return Outcome::Continue;
         }
         let outcome = self.lock().add(problems);
-        outcome.recv().unwrap_or(FixOutcome::GiveUp)
+        outcome.recv().unwrap_or(Outcome::GiveUp)
     }
 
     /// Reports an error and waits until it's acknowledged or the UI shuts down.
@@ -68,7 +68,7 @@ impl ProblemStore {
     /// Adds `problems` to this store. The returned receiver will receive a single value once all
     /// problems in the supplied list have been resolved, or abort has been called. The supplied
     /// problem list must not be empty.
-    fn add(&mut self, problems: ProblemList) -> Receiver<FixOutcome> {
+    fn add(&mut self, problems: ProblemList) -> Receiver<Outcome> {
         for problem in &problems {
             info!("Reported problem: {}", problem.short_description());
         }
@@ -92,7 +92,7 @@ impl ProblemStore {
         }
     }
 
-    pub(crate) fn report_error(&mut self, error: anyhow::Error) -> Receiver<FixOutcome> {
+    pub(crate) fn report_error(&mut self, error: anyhow::Error) -> Receiver<Outcome> {
         self.add(Problem::new(error.to_string()).into())
     }
 
@@ -110,7 +110,7 @@ impl ProblemStore {
         info!("Resolved problem: {}", problem.short_description());
         if entry.problems.is_empty() {
             if let Some(sender) = entry.sender.take() {
-                let _ = sender.send(FixOutcome::Continue);
+                let _ = sender.send(Outcome::Continue);
             }
             self.entries.remove(index.a);
         }
@@ -119,7 +119,7 @@ impl ProblemStore {
     pub(crate) fn abort(&mut self) {
         for mut entry in &mut self.entries.drain(..) {
             if let Some(sender) = entry.sender.take() {
-                let _ = sender.send(FixOutcome::GiveUp);
+                let _ = sender.send(Outcome::GiveUp);
             }
         }
         self.has_aborted = true;
@@ -128,7 +128,7 @@ impl ProblemStore {
 
 struct Entry {
     problems: ProblemList,
-    sender: Option<Sender<FixOutcome>>,
+    sender: Option<Sender<Outcome>>,
 }
 
 pub(crate) struct ProblemStoreIterator<'a> {
@@ -226,13 +226,13 @@ mod tests {
         store.resolve(store.into_iter().next().unwrap().0);
         assert_eq!(done1.try_recv(), Err(TryRecvError::Empty));
         store.resolve(store.into_iter().next().unwrap().0);
-        assert_eq!(done1.try_recv(), Ok(crate::ui::FixOutcome::Continue));
+        assert_eq!(done1.try_recv(), Ok(crate::outcome::Outcome::Continue));
 
         assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
         store.resolve(store.into_iter().next().unwrap().0);
         assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
         store.resolve(store.into_iter().next().unwrap().0);
-        assert_eq!(done2.try_recv(), Ok(crate::ui::FixOutcome::Continue));
+        assert_eq!(done2.try_recv(), Ok(crate::outcome::Outcome::Continue));
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
         let done1 = store.add(create_problems());
         let done2 = store.add(create_problems());
         store.abort();
-        assert_eq!(done1.try_recv(), Ok(crate::ui::FixOutcome::GiveUp));
-        assert_eq!(done2.try_recv(), Ok(crate::ui::FixOutcome::GiveUp));
+        assert_eq!(done1.try_recv(), Ok(crate::outcome::Outcome::GiveUp));
+        assert_eq!(done2.try_recv(), Ok(crate::outcome::Outcome::GiveUp));
     }
 }

@@ -1,7 +1,15 @@
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt::Display;
 
 pub(crate) const SUCCESS: ExitCode = ExitCode(0);
 pub(crate) const FAILURE: ExitCode = ExitCode(-1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum Outcome {
+    Continue,
+    GiveUp,
+}
 
 /// Our own representation for an ExitCode. We don't use ExitStatus from the standard library
 /// because sometimes we need to construct an ExitCode ourselves.

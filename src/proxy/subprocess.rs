@@ -4,13 +4,13 @@
 use super::cackle_exe;
 use super::errors::UnsafeUsage;
 use super::rpc::BuildScriptOutput;
-use super::rpc::CanContinueResponse;
 use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::Config;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
+use crate::outcome::Outcome;
 use crate::proxy::errors::ErrorKind;
 use crate::proxy::rpc::RpcClient;
 use crate::unsafe_checker;
@@ -126,7 +126,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
             orig_build_script.clone(),
         ))?;
         match rpc_response {
-            CanContinueResponse::Proceed => {
+            Outcome::Continue => {
                 if output.status.code() == Some(0) {
                     std::io::stderr().lock().write_all(&output.stderr)?;
                     std::io::stdout().lock().write_all(&output.stdout)?;
@@ -135,7 +135,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
                 // If the build script failed and we were asked to proceed, then fall through and
                 // retry the build script with a hopefully changed config.
             }
-            CanContinueResponse::Deny => std::process::exit(-1),
+            Outcome::GiveUp => std::process::exit(-1),
         }
     }
 }
@@ -209,7 +209,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             if !unsafe_permitted {
                 if let Some(unsafe_usage) = find_unsafe_in_sources()? {
                     let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_usage)?;
-                    if response == CanContinueResponse::Proceed {
+                    if response == Outcome::Continue {
                         continue;
                     }
                 }
@@ -224,7 +224,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             match super::errors::get_error(stderr) {
                 Some(ErrorKind::Unsafe(usage)) => {
                     let response = rpc_client.crate_uses_unsafe(crate_name, usage)?;
-                    if response == CanContinueResponse::Proceed {
+                    if response == Outcome::Continue {
                         continue;
                     }
                 }
@@ -259,7 +259,7 @@ fn proxy_linker(
         .is_build_script
         .then(|| link_info.output_file.clone());
     match rpc_client.linker_invoked(link_info)? {
-        CanContinueResponse::Proceed => {
+        Outcome::Continue => {
             let exit_status = invoke_real_linker(args)?;
             if exit_status.is_ok() {
                 if let Some(build_script_bin) = build_script_bin {
@@ -268,7 +268,7 @@ fn proxy_linker(
             }
             Ok(exit_status)
         }
-        CanContinueResponse::Deny => std::process::exit(1),
+        Outcome::GiveUp => std::process::exit(1),
     }
 }
 

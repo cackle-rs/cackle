@@ -12,18 +12,9 @@ use std::path::PathBuf;
 
 use crate::config::SandboxConfig;
 use crate::link_info::LinkInfo;
+use crate::outcome::Outcome;
 
 use super::errors;
-
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub(crate) enum CanContinueResponse {
-    /// Used by the controller to indicate that the build process should continue. In the case that
-    /// something failed, proceed means that whatever failed should be retried. In the case that
-    /// nothing failed, proceed means we can move onto whatever is next. Conceptually, we could
-    /// model retry as separate from proceed, however this just adds complexity to the code.
-    Proceed,
-    Deny,
-}
 
 /// A communication channel to the main Cackle process.
 pub(crate) struct RpcClient {
@@ -40,7 +31,7 @@ impl RpcClient {
         &self,
         crate_name: &str,
         error_info: errors::UnsafeUsage,
-    ) -> Result<CanContinueResponse> {
+    ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: crate_name.to_owned(),
@@ -50,16 +41,13 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn linker_invoked(&self, info: LinkInfo) -> Result<CanContinueResponse> {
+    pub(crate) fn linker_invoked(&self, info: LinkInfo) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         write_to_stream(&Request::LinkerInvoked(info), &mut ipc)?;
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn buid_script_complete(
-        &self,
-        info: BuildScriptOutput,
-    ) -> Result<CanContinueResponse> {
+    pub(crate) fn buid_script_complete(&self, info: BuildScriptOutput) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         write_to_stream(&Request::BuildScriptComplete(info), &mut ipc)?;
         read_from_stream(&mut ipc)

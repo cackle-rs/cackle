@@ -9,10 +9,10 @@ use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
 use crate::events::AppEvent;
+use crate::outcome::Outcome;
 use crate::problem::Problem;
 use crate::problem_store::ProblemStoreRef;
 use crate::sandbox;
-use crate::ui::FixOutcome;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -53,10 +53,10 @@ impl super::UserInterface for BasicTermUi {
                 if matches!(problem, Problem::MissingConfiguration(_)) {
                     drop(pstore_lock);
                     match self.create_initial_config() {
-                        Ok(FixOutcome::Continue) => {
+                        Ok(Outcome::Continue) => {
                             problem_store.lock().resolve(problem_index);
                         }
-                        Ok(FixOutcome::GiveUp) => {}
+                        Ok(Outcome::GiveUp) => {}
                         Err(_) => todo!(),
                     }
                     continue;
@@ -77,10 +77,10 @@ impl super::UserInterface for BasicTermUi {
                     println!("dN) Diff for fix N. e.g 'd1'");
                 }
                 match self.prompt_for_fix(&fixes)? {
-                    FixOutcome::Continue => {
+                    Outcome::Continue => {
                         problem_store.lock().resolve(problem_index);
                     }
-                    FixOutcome::GiveUp => {}
+                    Outcome::GiveUp => {}
                 }
             }
         }
@@ -97,7 +97,7 @@ impl BasicTermUi {
         }
     }
 
-    fn create_initial_config(&mut self) -> Result<FixOutcome> {
+    fn create_initial_config(&mut self) -> Result<Outcome> {
         println!("Creating initial cackle.toml");
         let mut editor = config_editor::ConfigEditor::initial();
         editor.set_version(MAX_VERSION);
@@ -144,10 +144,10 @@ impl BasicTermUi {
         std::fs::write(&self.config_path, initial_toml)
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         self.config_last_modified = config_modification_time(&self.config_path);
-        Ok(FixOutcome::Continue)
+        Ok(Outcome::Continue)
     }
 
-    fn prompt_for_fix(&mut self, fixes: &[Box<dyn Edit>]) -> Result<FixOutcome> {
+    fn prompt_for_fix(&mut self, fixes: &[Box<dyn Edit>]) -> Result<Outcome> {
         loop {
             match self.get_action(fixes.len()) {
                 Ok(Action::ApplyFix(n)) => {
@@ -155,7 +155,7 @@ impl BasicTermUi {
                     fixes[n].apply(&mut editor)?;
                     editor.write(&self.config_path)?;
                     self.config_last_modified = config_modification_time(&self.config_path);
-                    return Ok(FixOutcome::Continue);
+                    return Ok(Outcome::Continue);
                 }
                 Ok(Action::ShowDiff(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
@@ -167,8 +167,8 @@ impl BasicTermUi {
                         &editor.to_toml(),
                     );
                 }
-                Ok(Action::GiveUp) => return Ok(FixOutcome::GiveUp),
-                Ok(Action::Retry) => return Ok(FixOutcome::Continue),
+                Ok(Action::GiveUp) => return Ok(Outcome::GiveUp),
+                Ok(Action::Retry) => return Ok(Outcome::Continue),
                 Err(error) => {
                     println!("{error}")
                 }
