@@ -1,16 +1,21 @@
 //! A user-interface that never prompts. This is used when non-interactive mode is selected.
 
 use crate::events::AppEvent;
+use crate::problem::Severity;
 use crate::problem_store::ProblemStoreRef;
+use crate::Args;
 use anyhow::Result;
 use colored::Colorize;
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
 
-pub(crate) struct NullUi;
+pub(crate) struct NullUi {
+    args: Arc<Args>,
+}
 
 impl NullUi {
-    pub(crate) fn new() -> Self {
-        Self
+    pub(crate) fn new(args: &Arc<Args>) -> Self {
+        Self { args: args.clone() }
     }
 }
 
@@ -26,10 +31,30 @@ impl super::UserInterface for NullUi {
                 AppEvent::ProblemsAdded => {
                     let mut pstore = problem_store.lock();
                     pstore.group_by_crate();
+                    let mut has_errors = false;
                     for (_, problem) in pstore.into_iter() {
-                        println!("{} {problem}", "ERROR:".red());
+                        let severity = if self.args.fail_on_warnings {
+                            Severity::Error
+                        } else {
+                            problem.severity()
+                        };
+                        match severity {
+                            Severity::Warning => {
+                                println!("{} {problem}", "WARNING:".yellow())
+                            }
+                            Severity::Error => {
+                                has_errors = true;
+                                println!("{} {problem}", "ERROR:".red())
+                            }
+                        }
                     }
-                    pstore.abort();
+                    if has_errors {
+                        pstore.abort();
+                    } else {
+                        while let Some((index, _)) = pstore.into_iter().next() {
+                            pstore.resolve(index);
+                        }
+                    }
                 }
             }
         }

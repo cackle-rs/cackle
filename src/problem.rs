@@ -161,9 +161,22 @@ impl<'a> IntoIterator for &'a ProblemList {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Severity {
+    Warning,
+    Error,
+}
+
 impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
+    }
+
+    pub(crate) fn severity(&self) -> Severity {
+        match self {
+            Problem::UnusedAllowApi(..) | Problem::UnusedPackageConfig(..) => Severity::Warning,
+            _ => Severity::Error,
+        }
     }
 
     pub(crate) fn short_description(&self) -> String {

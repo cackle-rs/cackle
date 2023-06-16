@@ -37,7 +37,7 @@ pub(crate) struct Checker {
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
-    args: Args,
+    args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
 }
 
@@ -114,7 +114,7 @@ pub(crate) struct UnusedConfig {
 impl Checker {
     pub(crate) fn new(
         target_dir: PathBuf,
-        args: Args,
+        args: Arc<Args>,
         crate_index: Arc<CrateIndex>,
         config_path: PathBuf,
     ) -> Self {

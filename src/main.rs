@@ -154,13 +154,14 @@ struct Cackle {
     config_path: PathBuf,
     checker: Arc<Mutex<Checker>>,
     target_dir: PathBuf,
-    args: Args,
+    args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
 }
 
 impl Cackle {
     fn new(args: Args) -> Result<Self> {
+        let args = Arc::new(args);
         let root_path = args
             .path
             .clone()
@@ -200,12 +201,8 @@ impl Cackle {
         }
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
         let problem_store = crate::problem_store::create(event_sender.clone());
-        let ui_join_handle = ui::start_ui(
-            args.ui_kind(),
-            &config_path,
-            problem_store.clone(),
-            event_receiver,
-        )?;
+        let ui_join_handle =
+            ui::start_ui(&args, &config_path, problem_store.clone(), event_receiver)?;
         Ok(Self {
             problem_store,
             root_path,
