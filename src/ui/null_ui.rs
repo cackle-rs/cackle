@@ -40,11 +40,11 @@ impl super::UserInterface for NullUi {
                         };
                         match severity {
                             Severity::Warning => {
-                                println!("{} {problem}", "WARNING:".yellow())
+                                println!("{} {problem:#}", "WARNING:".yellow())
                             }
                             Severity::Error => {
                                 has_errors = true;
-                                println!("{} {problem}", "ERROR:".red())
+                                println!("{} {problem:#}", "ERROR:".red())
                             }
                         }
                     }

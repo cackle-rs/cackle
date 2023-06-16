@@ -179,32 +179,6 @@ impl Problem {
         }
     }
 
-    pub(crate) fn short_description(&self) -> String {
-        match self {
-            Problem::DisallowedApiUsage(info) => {
-                if info.usages.len() == 1 {
-                    if let Some((perm, _)) = info.usages.first_key_value() {
-                        return format!("Crate `{}` uses API `{perm}`", info.pkg_name);
-                    }
-                }
-            }
-            Problem::BuildScriptFailed(info) => {
-                return format!(
-                    "Build script for package `{}` failed",
-                    info.output.package_name
-                );
-            }
-            Problem::UnusedAllowApi(info) => {
-                return format!(
-                    "Config for `{}` allows APIs that it doesn't use",
-                    info.pkg_name
-                );
-            }
-            _ => (),
-        }
-        self.to_string()
-    }
-
     pub(crate) fn details(&self) -> String {
         self.to_string()
     }
@@ -237,11 +211,7 @@ impl Display for Problem {
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
             )?,
             Problem::DisallowedApiUsage(info) => {
-                writeln!(f, "Crate '{}' uses disallowed APIs:", info.pkg_name)?;
-                for (perm_name, usages) in &info.usages {
-                    writeln!(f, "  {perm_name}:")?;
-                    display_usages(f, usages)?;
-                }
+                info.fmt(f)?;
             },
             Problem::MultipleSymbolsInSection(info) => {
                 writeln!(f, "The section `{}` in `{}` defines multiple symbols:",
@@ -251,31 +221,93 @@ impl Display for Problem {
                 }
             },
             Problem::BuildScriptFailed(info) => {
-                writeln!(f, "Build script for package `{}` failed\n{}{}",
-                    info.output.package_name,
-                    String::from_utf8_lossy(&info.output.stderr),
-                    String::from_utf8_lossy(&info.output.stdout))?;
-                if let Ok(Some(sandbox)) = crate::sandbox::from_config(&info.output.sandbox_config) {
-                    writeln!(f, "Sandbox config:\n{}", sandbox.display_to_run(&info.output.build_script))?;
-                }
+                info.fmt(f)?;
             }
             Problem::DisallowedBuildInstruction(info) => {
-                writeln!(f, "{}'s build script emitted disallowed instruction `{}`",
+                write!(f, "{}'s build script emitted disallowed instruction `{}`",
                     info.pkg_name, info.instruction)?;
             }
-            Problem::UnusedPackageConfig(pkg_name) => writeln!(f, "Config supplied for package `{pkg_name}` not in dependency tree")?,
+            Problem::UnusedPackageConfig(pkg_name) => write!(f, "Config supplied for package `{pkg_name}` not in dependency tree")?,
             Problem::UnusedAllowApi(info) => {
-                writeln!(
-                    f,
-                    "The config for package '{}' allows the following APIs that aren't used:",
-                    info.pkg_name
-                )?;
-                for api in &info.permissions {
-                    writeln!(f, "    {api}")?;
-                }
+                info.fmt(f)?;
             },
             Problem::MissingConfiguration(path) => {
                 writeln!(f, "Config file `{}` not found", path.display())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for DisallowedApiUsage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            writeln!(f, "Crate '{}' uses disallowed APIs:", self.pkg_name)?;
+            for (perm_name, usages) in &self.usages {
+                writeln!(f, "  {perm_name}:")?;
+                display_usages(f, usages)?;
+            }
+        } else if self.usages.len() == 1 {
+            let (perm, _) = self.usages.first_key_value().unwrap();
+            write!(f, "Crate `{}` uses API `{perm}`", self.pkg_name)?;
+        } else {
+            write!(f, "Crate '{}' uses disallowed APIs: ", self.pkg_name)?;
+            let mut first = true;
+            for perm_name in self.usages.keys() {
+                if first {
+                    first = false;
+                } else {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{perm_name}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Display for UnusedAllowApi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            writeln!(
+                f,
+                "The config for package '{}' allows the following APIs that aren't used:",
+                self.pkg_name
+            )?;
+            for api in &self.permissions {
+                writeln!(f, "    {api}")?;
+            }
+        } else {
+            write!(
+                f,
+                "Config for `{}` allows APIs that it doesn't use",
+                self.pkg_name
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for BuildScriptFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Build script for package `{}` failed",
+            self.output.package_name
+        )?;
+        if f.alternate() {
+            write!(
+                f,
+                "\n{}{}",
+                String::from_utf8_lossy(&self.output.stderr),
+                String::from_utf8_lossy(&self.output.stdout)
+            )?;
+            if let Ok(Some(sandbox)) = crate::sandbox::from_config(&self.output.sandbox_config) {
+                writeln!(
+                    f,
+                    "Sandbox config:\n{}",
+                    sandbox.display_to_run(&self.output.build_script)
+                )?;
             }
         }
         Ok(())
@@ -308,7 +340,7 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
         for (from, symbols) in &by_from {
             writeln!(f, "      {from}")?;
             for sym in symbols {
-                writeln!(f, "        {sym}")?;
+                writeln!(f, "        -> {sym}")?;
             }
         }
     }

@@ -126,7 +126,7 @@ impl ProblemsUi {
         let pstore_lock = &self.problem_store.lock();
         let items = pstore_lock
             .into_iter()
-            .map(|(_, problem)| ListItem::new(problem.short_description()));
+            .map(|(_, problem)| ListItem::new(format!("{problem}")));
         render_list(
             f,
             "Problems",

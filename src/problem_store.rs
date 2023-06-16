@@ -70,7 +70,7 @@ impl ProblemStore {
     /// problem list must not be empty.
     fn add(&mut self, problems: ProblemList) -> Receiver<Outcome> {
         for problem in &problems {
-            info!("Reported problem: {}", problem.short_description());
+            info!("Reported problem: {problem}");
         }
         assert!(!problems.is_empty());
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -107,7 +107,7 @@ impl ProblemStore {
     pub(crate) fn resolve(&mut self, index: ProblemStoreIndex) {
         let entry = &mut self.entries[index.a];
         let problem = entry.problems.remove(index.b);
-        info!("Resolved problem: {}", problem.short_description());
+        info!("Resolved problem: {problem}");
         if entry.problems.is_empty() {
             if let Some(sender) = entry.sender.take() {
                 let _ = sender.send(Outcome::Continue);
