@@ -52,6 +52,10 @@ impl Screen for ProblemsUi {
     }
 
     fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
+        if self.problem_store.lock().is_empty() {
+            super::render_build_progress(f);
+            return Ok(());
+        }
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
             .margin(1)

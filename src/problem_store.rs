@@ -96,6 +96,10 @@ impl ProblemStore {
         self.add(Problem::new(error.to_string()).into())
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.iter().all(|entry| entry.problems.is_empty())
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.entries.iter().map(|entry| entry.problems.len()).sum()
     }
