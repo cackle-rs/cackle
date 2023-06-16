@@ -35,7 +35,7 @@ pub(crate) struct Checker {
     pub(crate) crate_infos: Vec<CrateInfo>,
     crate_name_to_index: HashMap<String, CrateId>,
     config_path: PathBuf,
-    config: Arc<Config>,
+    pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
     args: Args,
     pub(crate) crate_index: Arc<CrateIndex>,

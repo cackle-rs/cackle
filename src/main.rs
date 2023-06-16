@@ -31,7 +31,6 @@ use checker::Checker;
 use clap::Parser;
 use clap::Subcommand;
 use colored::Colorize;
-use config::Config;
 use crate_index::CrateIndex;
 use events::AppEvent;
 use problem::Problem;
@@ -150,7 +149,6 @@ struct Cackle {
     problem_store: ProblemStoreRef,
     root_path: PathBuf,
     config_path: PathBuf,
-    config: Arc<Config>,
     checker: Arc<Mutex<Checker>>,
     target_dir: PathBuf,
     args: Args,
@@ -209,7 +207,6 @@ impl Cackle {
             problem_store,
             root_path,
             config_path,
-            config: Arc::new(Config::default()),
             checker: Arc::new(Mutex::new(checker)),
             target_dir,
             args,
@@ -261,7 +258,7 @@ impl Cackle {
 
         let initial_outcome = self.new_request_handler(None).handle_request()?;
         let config_path = crate::config::flattened_config_path(&self.target_dir);
-        let config = self.config.clone();
+        let config = self.checker.lock().unwrap().config.clone();
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result = if initial_outcome == CanContinueResponse::Proceed {
