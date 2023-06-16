@@ -2,6 +2,7 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::Usage;
+use crate::checker::UsageLocation;
 use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
@@ -11,6 +12,7 @@ use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Default, Debug, PartialEq, Clone)]
@@ -225,9 +227,7 @@ impl Display for Problem {
                 writeln!(f, "Crate '{}' uses disallowed APIs:", info.pkg_name)?;
                 for (perm_name, usages) in &info.usages {
                     writeln!(f, "  {perm_name}:")?;
-                    for usage in usages {
-                        writeln!(f, "    {usage}")?;
-                    }
+                    display_usages(f, usages)?;
                 }
             },
             Problem::MultipleSymbolsInSection(info) => {
@@ -269,12 +269,55 @@ impl Display for Problem {
     }
 }
 
+fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<(), std::fmt::Error> {
+    let mut by_location: BTreeMap<&UsageLocation, Vec<&Usage>> = BTreeMap::new();
+    for u in usages {
+        by_location.entry(&u.location).or_default().push(u);
+    }
+    let mut by_from: BTreeMap<&crate::checker::Referee, Vec<&Symbol>> = BTreeMap::new();
+    for (location, usages_for_location) in by_location {
+        match location {
+            UsageLocation::Source(location) => {
+                writeln!(f, "    {}", location.filename.display())?;
+            }
+            UsageLocation::Unknown(location) => {
+                write!(
+                    f,
+                    "[Unknown source location in `{}`]",
+                    to_relative_path(&location.object_path).display()
+                )?;
+            }
+        }
+        by_from.clear();
+        for usage in usages_for_location {
+            by_from.entry(&usage.from).or_default().push(&usage.to);
+        }
+        for (from, symbols) in &by_from {
+            writeln!(f, "      {from}")?;
+            for sym in symbols {
+                writeln!(f, "        {sym}")?;
+            }
+        }
+    }
+    Ok(())
+}
+
 impl From<Problem> for ProblemList {
     fn from(value: Problem) -> Self {
         Self {
             problems: vec![value],
         }
     }
+}
+
+/// Returns `input_path` relative to the current directory, or if that fails, falls back to
+/// `input_path`. Only works if `input_path` is absolute and is a subdirectory of the current
+/// directory - i.e. it won't use "..".
+fn to_relative_path(input_path: &Path) -> &std::path::Path {
+    std::env::current_dir()
+        .ok()
+        .and_then(|current_dir| input_path.strip_prefix(current_dir).ok())
+        .unwrap_or(input_path)
 }
 
 #[cfg(test)]

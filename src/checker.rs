@@ -83,24 +83,24 @@ pub(crate) struct Usage {
     pub(crate) to: Symbol,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Referee {
     Symbol(Symbol),
     Section(SectionName),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum UsageLocation {
     Source(SourceLocation),
     Unknown(UnknownLocation),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct UnknownLocation {
     pub(crate) object_path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
 }
@@ -446,35 +446,6 @@ impl Checker {
             }
         }
         problems
-    }
-}
-
-/// Returns `input_path` relative to the current directory, or if that fails, falls back to
-/// `input_path`. Only works if `input_path` is absolute and is a subdirectory of the current
-/// directory - i.e. it won't use "..".
-fn to_relative_path(input_path: &Path) -> &std::path::Path {
-    std::env::current_dir()
-        .ok()
-        .and_then(|current_dir| input_path.strip_prefix(current_dir).ok())
-        .unwrap_or(input_path)
-}
-
-impl Display for Usage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} -> {} ", self.from, self.to)?;
-        match &self.location {
-            UsageLocation::Source(location) => {
-                write!(f, "[{}]", location.filename.display())?;
-            }
-            UsageLocation::Unknown(location) => {
-                write!(
-                    f,
-                    "[Unknown source location in `{}`]",
-                    to_relative_path(&location.object_path).display()
-                )?;
-            }
-        }
-        Ok(())
     }
 }
 

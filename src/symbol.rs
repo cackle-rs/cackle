@@ -3,7 +3,7 @@ use rustc_demangle::demangle;
 use std::fmt::Debug;
 use std::fmt::Display;
 
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub(crate) struct Symbol {
     bytes: Vec<u8>,
 }
