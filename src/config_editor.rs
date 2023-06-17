@@ -1,11 +1,14 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::config::PermissionName;
 use crate::config::SandboxKind;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
+use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use anyhow::anyhow;
 use anyhow::Result;
+use std::borrow::Borrow;
 use std::path::Path;
 use toml_edit::Array;
 use toml_edit::Document;
@@ -23,12 +26,31 @@ pub(crate) trait Edit {
 
     /// Applies the edit to the editor.
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()>;
+
+    /// Returns a list of problems that should replace the current problem after this edit is
+    /// applied. This can be used for follow-up actions that need to be performed in order to solve
+    /// the original problem.
+    fn replacement_problems(&self) -> ProblemList {
+        ProblemList::default()
+    }
 }
 
 /// Returns possible fixes for `problem`.
 pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
     let mut edits: Vec<Box<dyn Edit>> = Vec::new();
     match problem {
+        Problem::MissingConfiguration(_) => {
+            edits.push(Box::new(CreateInitialConfig {}));
+        }
+        Problem::SelectSandbox => {
+            for kind in crate::config::SANDBOX_KINDS {
+                edits.push(Box::new(SelectSandbox(*kind)));
+            }
+        }
+        Problem::ImportStdApi(api) => {
+            edits.push(Box::new(ImportStdApi(api.clone())));
+            edits.push(Box::new(IgnoreStdApi(api.clone())));
+        }
         Problem::DisallowedApiUsage(usage) => {
             edits.push(Box::new(AllowApiUsage {
                 usage: usage.clone(),
@@ -67,7 +89,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
 
 impl ConfigEditor {
     pub(crate) fn from_file(filename: &Path) -> Result<Self> {
-        let toml = std::fs::read_to_string(filename)?;
+        let toml = std::fs::read_to_string(filename).unwrap_or_default();
         Self::from_toml_string(&toml)
     }
 
@@ -75,7 +97,7 @@ impl ConfigEditor {
         Self::from_toml_string(r#""#).unwrap()
     }
 
-    fn from_toml_string(toml: &str) -> Result<Self> {
+    pub(crate) fn from_toml_string(toml: &str) -> Result<Self> {
         let document = toml.parse()?;
         Ok(Self { document })
     }
@@ -118,17 +140,6 @@ impl ConfigEditor {
             .as_table_mut()
             .entry("version")
             .or_insert_with(|| toml_edit::value(version));
-    }
-
-    pub(crate) fn std_imports(&self) -> Option<impl Iterator<Item = &str>> {
-        Some(
-            self.document
-                .as_table()
-                .get("import_std")?
-                .as_array()?
-                .iter()
-                .filter_map(|imp| imp.as_str()),
-        )
     }
 
     pub(crate) fn toggle_std_import(&mut self, api: &str) -> Result<()> {
@@ -214,6 +225,64 @@ fn create_implicit_table() -> Item {
     let mut table = toml_edit::Table::new();
     table.set_implicit(true);
     Item::Table(table)
+}
+
+struct CreateInitialConfig {}
+
+impl Edit for CreateInitialConfig {
+    fn title(&self) -> String {
+        "Create initial config".to_owned()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        editor.set_version(crate::config::MAX_VERSION);
+        Ok(())
+    }
+
+    fn replacement_problems(&self) -> ProblemList {
+        let mut problems = ProblemList::default();
+        problems.push(Problem::SelectSandbox);
+        for api in crate::config::built_in::get_built_ins().keys() {
+            problems.push(Problem::ImportStdApi(api.clone()));
+        }
+        problems
+    }
+}
+
+struct SelectSandbox(SandboxKind);
+
+impl Edit for SelectSandbox {
+    fn title(&self) -> String {
+        format!("{:?}", self.0)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        editor.set_sandbox_kind(self.0)
+    }
+}
+
+struct ImportStdApi(PermissionName);
+
+impl Edit for ImportStdApi {
+    fn title(&self) -> String {
+        format!("Import std API `{}`", self.0)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        editor.toggle_std_import(self.0.name.borrow())
+    }
+}
+
+struct IgnoreStdApi(PermissionName);
+
+impl Edit for IgnoreStdApi {
+    fn title(&self) -> String {
+        format!("Ignore std API `{}`", self.0)
+    }
+
+    fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
+        Ok(())
+    }
 }
 
 struct AllowApiUsage {

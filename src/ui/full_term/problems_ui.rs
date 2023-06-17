@@ -7,6 +7,7 @@ use super::Screen;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
+use crate::problem::ProblemList;
 use crate::problem_store::ProblemStoreRef;
 use anyhow::Context;
 use anyhow::Result;
@@ -94,10 +95,10 @@ impl Screen for ProblemsUi {
                 self.edit_index = 0;
             }
             (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
-                self.apply_selected_edit()?;
+                let replacement_problems = self.apply_selected_edit()?;
                 let mut pstore_lock = self.problem_store.lock();
                 if let Some((index, _)) = pstore_lock.into_iter().nth(self.problem_index) {
-                    pstore_lock.resolve(index);
+                    pstore_lock.replace(index, replacement_problems);
                 }
                 if self.problem_index >= pstore_lock.len() {
                     self.problem_index = 0;
@@ -207,9 +208,9 @@ impl ProblemsUi {
             return Ok(());
         };
 
-        let mut editor = ConfigEditor::from_file(&self.config_path)?;
+        let original = std::fs::read_to_string(&self.config_path).unwrap_or_default();
+        let mut editor = ConfigEditor::from_toml_string(&original)?;
         edit.apply(&mut editor)?;
-        let original = std::fs::read_to_string(&self.config_path)?;
         let updated = editor.to_toml();
 
         const CONTEXT: usize = 2;
@@ -266,14 +267,15 @@ impl ProblemsUi {
         Ok(())
     }
 
-    fn apply_selected_edit(&self) -> Result<()> {
+    fn apply_selected_edit(&self) -> Result<ProblemList> {
         let edits = &self.edits();
         let Some(edit) = edits.get(self.edit_index) else {
-            return Ok(());
+            return Ok(ProblemList::default());
         };
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
         edit.apply(&mut editor)?;
         std::fs::write(&self.config_path, editor.to_toml())
-            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))
+            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
+        Ok(edit.replacement_problems())
     }
 }

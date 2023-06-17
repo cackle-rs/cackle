@@ -163,7 +163,9 @@ impl BasicTermUi {
                     fix.apply(&mut editor)?;
                     println!("Diff for {}:", fix.title());
                     show_diff(
-                        &std::fs::read_to_string(&self.config_path)?,
+                        &std::fs::read_to_string(&self.config_path).with_context(|| {
+                            format!("Failed to read `{}`", self.config_path.display())
+                        })?,
                         &editor.to_toml(),
                     );
                 }

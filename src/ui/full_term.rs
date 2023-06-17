@@ -31,7 +31,6 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
-mod edit_config_ui;
 mod problems_ui;
 
 pub(crate) struct FullTermUi {
@@ -59,17 +58,11 @@ impl super::UserInterface for FullTermUi {
         problem_store: ProblemStoreRef,
         event_receiver: Receiver<AppEvent>,
     ) -> Result<()> {
-        let mut problems_ui =
+        let mut screen =
             problems_ui::ProblemsUi::new(problem_store.clone(), self.config_path.clone());
-        let mut edit_ui =
-            edit_config_ui::EditConfigUi::new(problem_store.clone(), self.config_path.clone());
         let mut needs_redraw = true;
         let mut error = None;
         loop {
-            let mut screen: &mut dyn Screen = &mut problems_ui;
-            if edit_ui.is_active() {
-                screen = &mut edit_ui;
-            }
             if screen.quit_requested() {
                 // When quit has been requested, we abort all problems in the store. New problems
                 // may be added afterwards, in which case we'll go around the loop again and abort

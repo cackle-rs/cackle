@@ -105,8 +105,12 @@ impl ProblemStore {
     }
 
     pub(crate) fn resolve(&mut self, index: ProblemStoreIndex) {
+        self.replace(index, ProblemList::default());
+    }
+
+    pub(crate) fn replace(&mut self, index: ProblemStoreIndex, replacement: ProblemList) {
         let entry = &mut self.entries[index.a];
-        let problem = entry.problems.remove(index.b);
+        let problem = entry.problems.replace(index.b, replacement);
         info!("Resolved problem: {problem}");
         if entry.problems.is_empty() {
             if let Some(sender) = entry.sender.take() {

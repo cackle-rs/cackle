@@ -34,6 +34,8 @@ pub(crate) enum Problem {
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(String),
     UnusedAllowApi(UnusedAllowApi),
+    SelectSandbox,
+    ImportStdApi(PermissionName),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,8 +89,11 @@ impl ProblemList {
         self.problems.len()
     }
 
-    pub(crate) fn remove(&mut self, index: usize) -> Problem {
-        self.problems.remove(index)
+    pub(crate) fn replace(&mut self, index: usize, replacement: ProblemList) -> Problem {
+        self.problems
+            .splice(index..index + 1, replacement.problems.into_iter())
+            .next()
+            .unwrap()
     }
 
     pub(crate) fn should_send_retry_to_subprocess(&self) -> bool {
@@ -210,9 +215,7 @@ impl Display for Problem {
             Problem::IsProcMacro(pkg_name) =>  write!(f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
             )?,
-            Problem::DisallowedApiUsage(info) => {
-                info.fmt(f)?;
-            },
+            Problem::DisallowedApiUsage(info) => info.fmt(f)?,
             Problem::MultipleSymbolsInSection(info) => {
                 writeln!(f, "The section `{}` in `{}` defines multiple symbols:",
                     info.section_name, info.defined_in.display())?;
@@ -220,20 +223,18 @@ impl Display for Problem {
                     writeln!(f, "  {sym}")?;
                 }
             },
-            Problem::BuildScriptFailed(info) => {
-                info.fmt(f)?;
-            }
+            Problem::BuildScriptFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
                 write!(f, "{}'s build script emitted disallowed instruction `{}`",
                     info.pkg_name, info.instruction)?;
             }
             Problem::UnusedPackageConfig(pkg_name) => write!(f, "Config supplied for package `{pkg_name}` not in dependency tree")?,
-            Problem::UnusedAllowApi(info) => {
-                info.fmt(f)?;
-            },
+            Problem::UnusedAllowApi(info) => info.fmt(f)?,
             Problem::MissingConfiguration(path) => {
-                writeln!(f, "Config file `{}` not found", path.display())?;
+                write!(f, "Config file `{}` not found", path.display())?;
             }
+            Problem::SelectSandbox => write!(f, "Select sandbox kind")?,
+            Problem::ImportStdApi(api) => write!(f, "Optionally import std API `{api}`")?,
         }
         Ok(())
     }

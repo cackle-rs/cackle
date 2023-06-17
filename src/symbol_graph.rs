@@ -105,7 +105,8 @@ impl SymGraph {
                 }
             }
             Filetype::Other => {
-                let file_bytes = std::fs::read(filename)?;
+                let file_bytes = std::fs::read(filename)
+                    .with_context(|| format!("Failed to read `{}`", filename.display()))?;
                 self.process_file_bytes(filename, &file_bytes)?;
             }
         }
