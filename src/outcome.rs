@@ -11,6 +11,16 @@ pub(crate) enum Outcome {
     GiveUp,
 }
 
+impl Outcome {
+    pub(crate) fn and(self, other: Outcome) -> Outcome {
+        if matches!((self, other), (Outcome::Continue, Outcome::Continue)) {
+            Outcome::Continue
+        } else {
+            Outcome::GiveUp
+        }
+    }
+}
+
 /// Our own representation for an ExitCode. We don't use ExitStatus from the standard library
 /// because sometimes we need to construct an ExitCode ourselves.
 pub(crate) struct ExitCode(pub(crate) i32);

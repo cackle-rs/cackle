@@ -1,4 +1,7 @@
 use crate::crate_index::CrateIndex;
+use crate::problem::AvailableApi;
+use crate::problem::Problem;
+use crate::problem::ProblemList;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -103,7 +106,7 @@ pub(crate) struct PackageConfig {
     pub(crate) sandbox: Option<SandboxConfig>,
 
     #[serde(default)]
-    pub(crate) import: Vec<String>,
+    pub(crate) import: Option<Vec<String>>,
 
     #[serde(default)]
     pub(crate) ignore_unreachable: bool,
@@ -146,23 +149,22 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
 
 impl Config {
     fn load_imports(&mut self, crate_index: &CrateIndex) -> Result<()> {
-        for (pkg_name, pkg_config) in &self.packages {
-            if pkg_config.import.is_empty() {
+        for (pkg_name, pkg_config) in &mut self.packages {
+            // If imports are specified, then we leave an empty list of imports. This ensures that
+            // later in unused_imports, we can determine whether each package specified imports or
+            // not. Although we leave an empty Vec, we can't leave a non-empty Vec, because then
+            // that would get written into the flattened config that gets read by subprocesses and
+            // those can't handle loading imports because they don't run `cargo metadata`.
+            let mut imports = Vec::new();
+            if let Some(i) = pkg_config.import.as_mut() {
+                std::mem::swap(i, &mut imports);
+            }
+            if imports.is_empty() {
                 continue;
             }
-            let Some(pkg_dir) = crate_index.pkg_dir(pkg_name) else {
-                continue;
-            };
-            let pkg_exports = parse_file(
-                pkg_dir.join("cackle").join("export.toml").as_std_path(),
-                crate_index,
-            )?;
+            let pkg_exports = exported_config_for_package(pkg_name, crate_index)?;
             for (api_name, api_def) in &pkg_exports.apis {
-                if !pkg_config
-                    .import
-                    .iter()
-                    .any(|imp| imp == api_name.name.as_ref())
-                {
+                if !imports.iter().any(|imp| imp == api_name.name.as_ref()) {
                     // The user didn't request importing this API, so skip it.
                     continue;
                 }
@@ -188,6 +190,40 @@ impl Config {
     pub(crate) fn flattened_toml(&self) -> Result<String> {
         Ok(toml::to_string(self)?)
     }
+
+    /// Return warnings for all packages that export APIs but where we have no import for that
+    /// package. Users can suppress this warning by either importing an API, or if they don't want
+    /// to import any APIs from this package, by listing `import = []`.
+    pub(crate) fn unused_imports(&self, crate_index: &CrateIndex) -> ProblemList {
+        let mut problems = ProblemList::default();
+        for (pkg_name, pkg_config) in &self.packages {
+            // If our config lists any import for this package, even empty, then we skip this.
+            if pkg_config.import.is_some() {
+                continue;
+            }
+            let Ok(pkg_exports) = exported_config_for_package(pkg_name, crate_index) else {
+                continue;
+            };
+            for (api, config) in &pkg_exports.apis {
+                problems.push(Problem::AvailableApi(AvailableApi {
+                    pkg_name: pkg_name.to_owned(),
+                    api: api.clone(),
+                    config: config.clone(),
+                }))
+            }
+        }
+        problems
+    }
+}
+
+fn exported_config_for_package(pkg_name: &str, crate_index: &CrateIndex) -> Result<Arc<Config>> {
+    let pkg_dir = crate_index
+        .pkg_dir(pkg_name)
+        .ok_or_else(|| anyhow!("Missing pkg_dir for package `{pkg_name}`"))?;
+    parse_file(
+        pkg_dir.join("cackle").join("export.toml").as_std_path(),
+        crate_index,
+    )
 }
 
 fn flatten(config: &mut Config) {

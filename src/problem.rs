@@ -3,6 +3,7 @@
 
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
+use crate::config::PermConfig;
 use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
@@ -36,6 +37,7 @@ pub(crate) enum Problem {
     UnusedAllowApi(UnusedAllowApi),
     SelectSandbox,
     ImportStdApi(PermissionName),
+    AvailableApi(AvailableApi),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +61,13 @@ pub(crate) struct UnusedAllowApi {
 pub(crate) struct DisallowedBuildInstruction {
     pub(crate) pkg_name: String,
     pub(crate) instruction: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AvailableApi {
+    pub(crate) pkg_name: String,
+    pub(crate) api: PermissionName,
+    pub(crate) config: PermConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,7 +188,9 @@ impl Problem {
 
     pub(crate) fn severity(&self) -> Severity {
         match self {
-            Problem::UnusedAllowApi(..) | Problem::UnusedPackageConfig(..) => Severity::Warning,
+            Problem::UnusedAllowApi(..)
+            | Problem::UnusedPackageConfig(..)
+            | Problem::AvailableApi(..) => Severity::Warning,
             _ => Severity::Error,
         }
     }
@@ -210,31 +221,56 @@ impl Display for Problem {
             Problem::DisallowedUnsafe(usage) => write!(
                 f,
                 "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-                usage.crate_name, usage.error_info.file_name.display(), usage.error_info.start_line)?,
-            Problem::UsesBuildScript(pkg_name) => write!(f, "Package {pkg_name} has a build script, but config file doesn't have [pkg.{pkg_name}.build]")?,
-            Problem::IsProcMacro(pkg_name) =>  write!(f,
+                usage.crate_name,
+                usage.error_info.file_name.display(),
+                usage.error_info.start_line
+            )?,
+            Problem::UsesBuildScript(pkg_name) => {
+                write!(
+                    f,
+                    "Package {} has a build script, but config file doesn't have [pkg.{}.build]",
+                    pkg_name, pkg_name
+                )?;
+            }
+            Problem::IsProcMacro(pkg_name) => write!(
+                f,
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
             Problem::MultipleSymbolsInSection(info) => {
-                writeln!(f, "The section `{}` in `{}` defines multiple symbols:",
-                    info.section_name, info.defined_in.display())?;
+                writeln!(
+                    f,
+                    "The section `{}` in `{}` defines multiple symbols:",
+                    info.section_name,
+                    info.defined_in.display()
+                )?;
                 for sym in &info.symbols {
                     writeln!(f, "  {sym}")?;
                 }
-            },
+            }
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
-                write!(f, "{}'s build script emitted disallowed instruction `{}`",
-                    info.pkg_name, info.instruction)?;
+                write!(
+                    f,
+                    "{}'s build script emitted disallowed instruction `{}`",
+                    info.pkg_name, info.instruction
+                )?;
             }
-            Problem::UnusedPackageConfig(pkg_name) => write!(f, "Config supplied for package `{pkg_name}` not in dependency tree")?,
+            Problem::UnusedPackageConfig(pkg_name) => {
+                write!(
+                    f,
+                    "Config supplied for package `{pkg_name}` not in dependency tree"
+                )?;
+            }
             Problem::UnusedAllowApi(info) => info.fmt(f)?,
             Problem::MissingConfiguration(path) => {
                 write!(f, "Config file `{}` not found", path.display())?;
             }
             Problem::SelectSandbox => write!(f, "Select sandbox kind")?,
             Problem::ImportStdApi(api) => write!(f, "Optionally import std API `{api}`")?,
+            Problem::AvailableApi(info) => {
+                write!(f, "Package `{}` exports API `{}`", info.pkg_name, info.api)?;
+            }
         }
         Ok(())
     }

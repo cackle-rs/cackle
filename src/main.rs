@@ -254,9 +254,18 @@ impl Cackle {
             return Ok(outcome::SUCCESS);
         }
 
-        let initial_outcome = self.new_request_handler(None).handle_request()?;
+        let mut initial_outcome = self.new_request_handler(None).handle_request()?;
         let config_path = crate::config::flattened_config_path(&self.target_dir);
         let config = self.checker.lock().unwrap().config.clone();
+        let crate_index = self.checker.lock().unwrap().crate_index.clone();
+        initial_outcome = initial_outcome.and(
+            self.problem_store
+                .fix_problems(config.unused_imports(&crate_index)),
+        );
+        // The following call to load_config is only really necessary if we fixed unused-import
+        // problems above. It might be worthwhile at some point refactoring so that we don't do an
+        // unnecessary reload here.
+        self.checker.lock().unwrap().load_config()?;
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result = if initial_outcome == Outcome::Continue {

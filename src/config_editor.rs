@@ -2,6 +2,7 @@
 
 use crate::config::PermissionName;
 use crate::config::SandboxKind;
+use crate::problem::AvailableApi;
 use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -51,6 +52,11 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             edits.push(Box::new(ImportStdApi(api.clone())));
             edits.push(Box::new(InlineStdApi(api.clone())));
             edits.push(Box::new(IgnoreStdApi(api.clone())));
+        }
+        Problem::AvailableApi(available) => {
+            edits.push(Box::new(ImportApi(available.clone())));
+            edits.push(Box::new(InlineApi(available.clone())));
+            edits.push(Box::new(IgnoreApi(available.clone())));
         }
         Problem::DisallowedApiUsage(usage) => {
             edits.push(Box::new(AllowApiUsage {
@@ -280,6 +286,22 @@ impl Edit for ImportStdApi {
     }
 }
 
+struct ImportApi(AvailableApi);
+
+impl Edit for ImportApi {
+    fn title(&self) -> String {
+        format!(
+            "Import API `{}` from package `{}`",
+            self.0.api, self.0.pkg_name
+        )
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.pkg_table(&self.0.pkg_name)?;
+        add_to_array(table, "import", &[&self.0.api.name])
+    }
+}
+
 struct InlineStdApi(PermissionName);
 
 impl Edit for InlineStdApi {
@@ -293,26 +315,44 @@ impl Edit for InlineStdApi {
         let perm_config = built_ins
             .get(&self.0)
             .ok_or_else(|| anyhow!("Attempted to inline unknown API `{}`", self.0))?;
-
-        fn add_to_array(
-            table: &mut toml_edit::Table,
-            array_name: &str,
-            values: &[String],
-        ) -> Result<()> {
-            if values.is_empty() {
-                return Ok(());
-            }
-            let array = get_or_create_array(table, array_name)?;
-            for v in values {
-                array.push_formatted(create_string(v.to_owned()));
-            }
-            Ok(())
-        }
-
         add_to_array(table, "include", &perm_config.include)?;
         add_to_array(table, "exclude", &perm_config.exclude)?;
         Ok(())
     }
+}
+
+struct InlineApi(AvailableApi);
+
+impl Edit for InlineApi {
+    fn title(&self) -> String {
+        format!(
+            "Inline API `{}` from package `{}`",
+            self.0.api, self.0.pkg_name
+        )
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
+        add_to_array(table, "include", &self.0.config.include)?;
+        add_to_array(table, "exclude", &self.0.config.exclude)?;
+        // We also need to ignore it, otherwise we'll keep warning about it.
+        IgnoreApi(self.0.clone()).apply(editor)
+    }
+}
+
+fn add_to_array<S: AsRef<str>>(
+    table: &mut toml_edit::Table,
+    array_name: &str,
+    values: &[S],
+) -> Result<()> {
+    if values.is_empty() {
+        return Ok(());
+    }
+    let array = get_or_create_array(table, array_name)?;
+    for v in values {
+        array.push_formatted(create_string(v.as_ref().to_owned()));
+    }
+    Ok(())
 }
 
 struct IgnoreStdApi(PermissionName);
@@ -323,6 +363,23 @@ impl Edit for IgnoreStdApi {
     }
 
     fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
+        Ok(())
+    }
+}
+
+struct IgnoreApi(AvailableApi);
+
+impl Edit for IgnoreApi {
+    fn title(&self) -> String {
+        format!(
+            "Ignore API `{}` provided by package `{}`",
+            self.0.api, self.0.pkg_name
+        )
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.pkg_table(&self.0.pkg_name)?;
+        get_or_create_array(table, "import")?;
         Ok(())
     }
 }
