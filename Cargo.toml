@@ -34,3 +34,6 @@ log = { version = "0.4.19", features = [ "std" ] }
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working
 # on porting.
 unsupported-os = []
+
+[dev-dependencies]
+tempfile = "3.6.0"

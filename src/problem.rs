@@ -25,6 +25,7 @@ pub(crate) struct ProblemList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Problem {
     Message(String),
+    Error(ErrorDetails),
     MissingConfiguration(PathBuf),
     UsesBuildScript(String),
     DisallowedUnsafe(UnsafeUsage),
@@ -38,6 +39,12 @@ pub(crate) enum Problem {
     SelectSandbox,
     ImportStdApi(PermissionName),
     AvailableApi(AvailableApi),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ErrorDetails {
+    pub(crate) short: String,
+    pub(crate) detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,7 +203,7 @@ impl Problem {
     }
 
     pub(crate) fn details(&self) -> String {
-        self.to_string()
+        format!("{self:#}")
     }
 
     /// Returns whether a retry on this problem needs to be sent to a subprocess.
@@ -270,6 +277,13 @@ impl Display for Problem {
             Problem::ImportStdApi(api) => write!(f, "Optionally import std API `{api}`")?,
             Problem::AvailableApi(info) => {
                 write!(f, "Package `{}` exports API `{}`", info.pkg_name, info.api)?;
+            }
+            Problem::Error(info) => {
+                if f.alternate() {
+                    write!(f, "{}", info.detail)?;
+                } else {
+                    write!(f, "{}", info.short)?;
+                }
             }
         }
         Ok(())

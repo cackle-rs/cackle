@@ -2,6 +2,7 @@ use log::info;
 
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
+use crate::problem::ErrorDetails;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use std::sync::mpsc::Receiver;
@@ -93,7 +94,13 @@ impl ProblemStore {
     }
 
     pub(crate) fn report_error(&mut self, error: anyhow::Error) -> Receiver<Outcome> {
-        self.add(Problem::new(error.to_string()).into())
+        self.add(
+            Problem::Error(ErrorDetails {
+                short: format!("{error}"),
+                detail: format!("{error:#}"),
+            })
+            .into(),
+        )
     }
 
     pub(crate) fn is_empty(&self) -> bool {
