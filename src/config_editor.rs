@@ -49,6 +49,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         }
         Problem::ImportStdApi(api) => {
             edits.push(Box::new(ImportStdApi(api.clone())));
+            edits.push(Box::new(InlineStdApi(api.clone())));
             edits.push(Box::new(IgnoreStdApi(api.clone())));
         }
         Problem::DisallowedApiUsage(usage) => {
@@ -111,18 +112,19 @@ impl ConfigEditor {
         self.document.to_string()
     }
 
-    fn table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
-        let mut pkg = self
-            .document
-            .as_table_mut()
-            .entry("pkg")
-            .or_insert_with(create_implicit_table)
-            .as_table_mut()
-            .ok_or_else(|| anyhow!("[pkg] should be a table"))?;
-        let mut parts = pkg_name.split('.').peekable();
-        while let Some(part) = parts.next() {
-            let is_last = parts.peek().is_none();
-            pkg = pkg
+    fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
+        self.table(std::iter::once("pkg").chain(pkg_name.split('.')))
+    }
+
+    fn table<'a>(
+        &mut self,
+        path: impl Iterator<Item = &'a str> + Clone,
+    ) -> Result<&mut toml_edit::Table> {
+        let mut table = self.document.as_table_mut();
+        let mut it = path.clone();
+        while let Some(part) = it.next() {
+            let is_last = it.clone().next().is_none();
+            table = table
                 .entry(part)
                 .or_insert_with(if is_last {
                     toml_edit::table
@@ -130,9 +132,14 @@ impl ConfigEditor {
                     create_implicit_table
                 })
                 .as_table_mut()
-                .ok_or_else(|| anyhow!("[pkg.{pkg_name}] should be a table"))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "[{}] should be a table",
+                        path.clone().collect::<Vec<_>>().join(".")
+                    )
+                })?;
         }
-        Ok(pkg)
+        Ok(table)
     }
 
     pub(crate) fn set_version(&mut self, version: i64) {
@@ -273,6 +280,41 @@ impl Edit for ImportStdApi {
     }
 }
 
+struct InlineStdApi(PermissionName);
+
+impl Edit for InlineStdApi {
+    fn title(&self) -> String {
+        format!("Inline std API `{}`", self.0)
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(["api", self.0.name.as_ref()].into_iter())?;
+        let built_ins = crate::config::built_in::get_built_ins();
+        let perm_config = built_ins
+            .get(&self.0)
+            .ok_or_else(|| anyhow!("Attempted to inline unknown API `{}`", self.0))?;
+
+        fn add_to_array(
+            table: &mut toml_edit::Table,
+            array_name: &str,
+            values: &[String],
+        ) -> Result<()> {
+            if values.is_empty() {
+                return Ok(());
+            }
+            let array = get_or_create_array(table, array_name)?;
+            for v in values {
+                array.push_formatted(create_string(v.to_owned()));
+            }
+            Ok(())
+        }
+
+        add_to_array(table, "include", &perm_config.include)?;
+        add_to_array(table, "exclude", &perm_config.exclude)?;
+        Ok(())
+    }
+}
+
 struct IgnoreStdApi(PermissionName);
 
 impl Edit for IgnoreStdApi {
@@ -301,7 +343,7 @@ impl Edit for AllowApiUsage {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&self.usage.pkg_name)?;
+        let table = editor.pkg_table(&self.usage.pkg_name)?;
         let allow_apis = get_or_create_array(table, "allow_apis")?;
         let mut sorted_keys: Vec<_> = self.usage.usages.keys().collect();
         sorted_keys.sort();
@@ -323,7 +365,7 @@ impl Edit for RemoveUnusedAllowApis {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&self.unused.pkg_name)?;
+        let table = editor.pkg_table(&self.unused.pkg_name)?;
         let allow_apis = get_or_create_array(table, "allow_apis")?;
         for api in &self.unused.permissions {
             let index_and_entry = allow_apis
@@ -367,7 +409,7 @@ impl Edit for AllowProcMacro {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&self.pkg_name)?;
+        let table = editor.pkg_table(&self.pkg_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
         Ok(())
     }
@@ -387,7 +429,7 @@ impl Edit for AllowBuildInstruction {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&format!("{}.build", self.pkg_name))?;
+        let table = editor.pkg_table(&format!("{}.build", self.pkg_name))?;
         let allowed = get_or_create_array(table, "allow_build_instructions")?;
         allowed.push_formatted(create_string(self.instruction.clone()));
         Ok(())
@@ -404,7 +446,7 @@ impl Edit for DisableSandbox {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&format!("{}.build.sandbox", self.pkg_name))?;
+        let table = editor.pkg_table(&format!("{}.build.sandbox", self.pkg_name))?;
         table["kind"] = toml_edit::value("Disabled");
         Ok(())
     }
@@ -420,7 +462,7 @@ impl Edit for AllowUnsafe {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&self.pkg_name)?;
+        let table = editor.pkg_table(&self.pkg_name)?;
         table["allow_unsafe"] = toml_edit::value(true);
         Ok(())
     }
@@ -436,7 +478,7 @@ impl Edit for SandboxAllowNetwork {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(&format!("{}.build.sandbox", self.pkg_name))?;
+        let table = editor.pkg_table(&format!("{}.build.sandbox", self.pkg_name))?;
         table["allow_network"] = toml_edit::value(true);
         Ok(())
     }
@@ -445,8 +487,12 @@ impl Edit for SandboxAllowNetwork {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     use super::ConfigEditor;
+    use super::Edit;
+    use super::InlineStdApi;
+    use crate::config::Config;
     use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
@@ -666,5 +712,20 @@ mod tests {
             "#,
             },
         );
+    }
+
+    fn apply_edit_and_parse(toml: &str, edit: &InlineStdApi) -> Arc<Config> {
+        let mut editor = ConfigEditor::from_toml_string(toml).unwrap();
+        edit.apply(&mut editor).unwrap();
+        crate::config::testing::parse(&editor.to_toml()).unwrap()
+    }
+
+    #[test]
+    fn inline_std_api() {
+        let fs_perm = PermissionName::new("fs");
+        let edit = &InlineStdApi(fs_perm.clone());
+        let config = apply_edit_and_parse("", edit);
+        let built_ins = crate::config::built_in::get_built_ins();
+        assert_eq!(built_ins.get(&fs_perm), config.apis.get(&fs_perm));
     }
 }
