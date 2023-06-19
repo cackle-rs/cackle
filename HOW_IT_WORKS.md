@@ -17,6 +17,10 @@ to the `rustc` command line are:
 * We add `-Funsafe-code` unless `cackle.toml` says that the crate is allowed to use unsafe.
 * We override the linker used by rustc so that we can wrap that as well.
 
+Once `rustc` finishes, we parse the `deps` file to locate all source files read by `rustc`. We then
+scan these for the `unsafe` token. This is an additional layer of unsafe detection besides adding
+`-Funsafe-code` since `-Funsafe-code` is insufficient to prevent some uses of unsafe.
+
 ## Wrapping the linker
 
 The code for this is `proxy_linker` in src/proxy/subprocess.rs.

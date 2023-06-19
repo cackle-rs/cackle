@@ -1,6 +1,6 @@
 # Configuration format
 
-Cackle is configured via a cackle.toml, which by default is located in the package or workspace
+Cackle is configured via a `cackle.toml`, which by default is located in the package or workspace
 root.
 
 ## API definitions
@@ -24,6 +24,20 @@ considered to use this API except if the symbol referenced is `std::process::abo
 
 We can define as many APIs as we like. If an API is declared, then packages need permission in order
 to use those APIs.
+
+## Importing standard library API definitions
+
+Cackle has some built-in API definitions for the Rust standard library that can optionally be used.
+
+```toml
+import_std = [
+    "fs",
+    "net",
+    "process",
+    "env",
+    "terminate",
+]
+```
 
 ## Package permissions
 
