@@ -115,6 +115,8 @@ impl super::UserInterface for FullTermUi {
     }
 }
 
+// TODO: We're no longer really using this abstraction, since we now only have one implementation of
+// this trait. Consider getting rid of it.
 trait Screen {
     fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()>;
     fn handle_key(&mut self, key: KeyEvent) -> Result<()>;

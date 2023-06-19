@@ -11,6 +11,7 @@ use crate::problem::ProblemList;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -95,6 +96,9 @@ impl Screen for ProblemsUi {
                 update_counter(&mut self.edit_index, key.code, num_edits);
             }
             (Mode::SelectProblem, KeyCode::Char(' ') | KeyCode::Enter) => {
+                if self.edits().is_empty() {
+                    bail!("Sorry. No automatic edits exist for this problem");
+                }
                 self.mode = Mode::SelectEdit;
                 self.edit_index = 0;
             }
@@ -166,16 +170,30 @@ impl ProblemsUi {
 
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let pstore_lock = &self.problem_store.lock();
-        let items = pstore_lock
-            .into_iter()
-            .map(|(_, problem)| ListItem::new(format!("{problem}")));
+        let mut items = Vec::new();
+        for (index, (_, problem)) in pstore_lock.into_iter().enumerate() {
+            items.push(ListItem::new(format!("{problem}")));
+            if self.mode == Mode::SelectEdit && index == self.problem_index {
+                let edits = edits_for_problem(pstore_lock, self.problem_index);
+                items.extend(
+                    edits
+                        .iter()
+                        .map(|fix| ListItem::new(format!("  {}", fix.title()))),
+                );
+            }
+        }
+        let mut index = self.problem_index;
+        if self.mode == Mode::SelectEdit {
+            index += self.edit_index + 1
+        }
+
         render_list(
             f,
             "Problems",
-            items,
-            self.mode == Mode::SelectProblem,
+            items.into_iter(),
+            matches!(self.mode, Mode::SelectProblem | Mode::SelectEdit),
             area,
-            self.problem_index,
+            index,
         );
     }
 
@@ -202,41 +220,12 @@ impl ProblemsUi {
             .split(area);
 
         let edits = self.edits();
-        self.render_edit_selector(&edits, f, chunks[0]);
         self.render_diff(&edits, f, chunks[1])?;
         Ok(())
     }
 
     fn edits(&self) -> Vec<Box<dyn Edit>> {
-        let pstore_lock = &self.problem_store.lock();
-        let Some((_, problem)) = pstore_lock.into_iter().nth(self.problem_index) else {
-            return Vec::new();
-        };
-        config_editor::fixes_for_problem(problem)
-    }
-
-    fn render_edit_selector(
-        &self,
-        edits: &[Box<dyn Edit>],
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-        area: Rect,
-    ) {
-        if edits.is_empty() {
-            let block = Block::default().title("Edits").borders(Borders::ALL);
-            let paragraph = Paragraph::new("No automatic edits are available for this problem")
-                .block(block)
-                .wrap(Wrap { trim: false });
-            f.render_widget(paragraph, area);
-        }
-        let items = edits.iter().map(|fix| ListItem::new(fix.title()));
-        render_list(
-            f,
-            "Edits",
-            items,
-            self.mode == Mode::SelectEdit,
-            area,
-            self.edit_index,
-        );
+        edits_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
     fn render_diff(
@@ -319,4 +308,14 @@ impl ProblemsUi {
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         Ok(edit.replacement_problems())
     }
+}
+
+fn edits_for_problem(
+    pstore_lock: &MutexGuard<ProblemStore>,
+    problem_index: usize,
+) -> Vec<Box<dyn Edit>> {
+    let Some((_, problem)) = pstore_lock.into_iter().nth(problem_index) else {
+        return Vec::new();
+    };
+    config_editor::fixes_for_problem(problem)
 }
