@@ -3,6 +3,8 @@ members = [
     "crab1",
     "crab2",
     "crab3",
+    "crab4",
+    "crab5",
     "crab-bin",
     "pmacro1",
 ]

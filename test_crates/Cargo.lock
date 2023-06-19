@@ -15,6 +15,9 @@ dependencies = [
 [[package]]
 name = "crab1"
 version = "0.1.0"
+dependencies = [
+ "crab5",
+]
 
 [[package]]
 name = "crab2"
@@ -32,6 +35,13 @@ dependencies = [
 
 [[package]]
 name = "crab4"
+version = "0.1.0"
+dependencies = [
+ "crab5",
+]
+
+[[package]]
+name = "crab5"
 version = "0.1.0"
 
 [[package]]
