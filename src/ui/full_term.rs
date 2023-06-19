@@ -84,6 +84,9 @@ impl super::UserInterface for FullTermUi {
             match event_receiver.try_recv() {
                 Ok(AppEvent::ProblemsAdded) => {
                     needs_redraw = true;
+                    if let Err(e) = screen.problems_added() {
+                        error = Some(e);
+                    }
                 }
                 Ok(AppEvent::Shutdown) => {
                     return Ok(());

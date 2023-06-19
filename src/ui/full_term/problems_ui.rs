@@ -8,6 +8,8 @@ use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
 use crate::problem::ProblemList;
+use crate::problem_store::ProblemStore;
+use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
 use anyhow::Context;
 use anyhow::Result;
@@ -31,6 +33,7 @@ use ratatui::Frame;
 use std::collections::VecDeque;
 use std::io::Stdout;
 use std::path::PathBuf;
+use std::sync::MutexGuard;
 
 pub(super) struct ProblemsUi {
     problem_store: ProblemStoreRef,
@@ -38,6 +41,7 @@ pub(super) struct ProblemsUi {
     problem_index: usize,
     edit_index: usize,
     config_path: PathBuf,
+    accept_single_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +109,10 @@ impl Screen for ProblemsUi {
                 }
                 self.mode = Mode::SelectProblem;
             }
+            (Mode::SelectProblem, KeyCode::Char('a')) => {
+                self.accept_single_enabled = true;
+                self.accept_all_single_edits()?;
+            }
             (_, KeyCode::Esc) => self.mode = Mode::SelectProblem,
             _ => {}
         }
@@ -120,7 +128,40 @@ impl ProblemsUi {
             problem_index: 0,
             edit_index: 0,
             config_path,
+            accept_single_enabled: false,
         }
+    }
+
+    pub(super) fn problems_added(&mut self) -> Result<()> {
+        if self.accept_single_enabled {
+            self.accept_all_single_edits()?;
+        }
+        Ok(())
+    }
+
+    fn accept_all_single_edits(&mut self) -> Result<()> {
+        fn first_single_edit(
+            pstore: &MutexGuard<ProblemStore>,
+        ) -> Option<(ProblemStoreIndex, Box<dyn Edit>)> {
+            pstore.into_iter().find_map(|(index, problem)| {
+                let mut edits = config_editor::fixes_for_problem(problem);
+                if edits.len() == 1 {
+                    Some((index, edits.pop().unwrap()))
+                } else {
+                    None
+                }
+            })
+        }
+
+        let mut pstore = self.problem_store.lock();
+        let mut editor = ConfigEditor::from_file(&self.config_path)?;
+        while let Some((index, edit)) = first_single_edit(&pstore) {
+            edit.apply(&mut editor)?;
+            pstore.resolve(index);
+        }
+        std::fs::write(&self.config_path, editor.to_toml())
+            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
+        Ok(())
     }
 
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
