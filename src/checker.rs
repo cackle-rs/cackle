@@ -274,7 +274,11 @@ impl Checker {
         if self.args.print_all_references {
             println!("{graph}");
         }
-        if self.config.needs_reachability() {
+        // In order to save some computation, we skip computing reachabilty unless we actually need
+        // it. The two cases where we need it are (1) if any package sets ignore_unreachable and (2)
+        // if the user interface is active, since in that case we might want to suggest
+        // ignore_unreachable as an edit.
+        if self.config.needs_reachability() || matches!(self.args.command, crate::Command::Ui(..)) {
             let result = graph.compute_reachability(&self.args);
             if result.is_err() && self.args.verbose_errors {
                 println!("Object paths:");
@@ -374,12 +378,19 @@ impl Checker {
         crate_id: CrateId,
         name_parts: &[String],
         problems: &mut ProblemList,
+        reachable: Option<bool>,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         // TODO: If compute_usage_fn is not expensive, then just pass it in instead of using a
         // closure.
         for perm_id in self.apis_for_path(name_parts) {
-            self.permission_id_used(crate_id, perm_id, problems, &mut compute_usage_fn);
+            self.permission_id_used(
+                crate_id,
+                perm_id,
+                problems,
+                reachable,
+                &mut compute_usage_fn,
+            );
         }
     }
 
@@ -407,6 +418,7 @@ impl Checker {
         crate_id: CrateId,
         perm_id: PermId,
         problems: &mut ProblemList,
+        reachable: Option<bool>,
         mut compute_usage_fn: impl FnMut() -> Usage,
     ) {
         let crate_info = &mut self.crate_infos[crate_id.0];
@@ -423,6 +435,7 @@ impl Checker {
             problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
                 pkg_name,
                 usages,
+                reachable,
             }));
         }
     }
@@ -543,6 +556,7 @@ mod tests {
                 "read_to_string".to_owned(),
             ],
             &mut problems,
+            None,
             || Usage {
                 location: crate::checker::UsageLocation::Source(SourceLocation {
                     filename: "lib.rs".into(),

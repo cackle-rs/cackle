@@ -222,6 +222,11 @@ impl SymGraph {
                 assert!(self.reachabilty_computed);
                 continue;
             }
+            let reachable = if self.reachabilty_computed {
+                Some(section.reachable)
+            } else {
+                None
+            };
             for reference in &section.references {
                 if let Some(ref_name) = self.referenced_symbol(reference) {
                     for name_parts in ref_name.parts()? {
@@ -234,7 +239,7 @@ impl SymGraph {
                         {
                             continue;
                         }
-                        checker.path_used(crate_id, &name_parts, &mut problems, || {
+                        checker.path_used(crate_id, &name_parts, &mut problems, reachable, || {
                             let location = if let Some(filename) = section.source_filename.clone() {
                                 UsageLocation::Source(SourceLocation { filename })
                             } else {

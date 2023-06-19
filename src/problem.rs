@@ -56,6 +56,7 @@ pub(crate) struct BuildScriptFailed {
 pub(crate) struct DisallowedApiUsage {
     pub(crate) pkg_name: String,
     pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
+    pub(crate) reachable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -472,6 +473,7 @@ mod tests {
         Problem::DisallowedApiUsage(super::DisallowedApiUsage {
             pkg_name: package.to_owned(),
             usages,
+            reachable: None,
         })
     }
 
