@@ -25,6 +25,8 @@ pub(crate) trait Edit {
     /// Returns a short name for this edit, suitable for display in a menu.
     fn title(&self) -> String;
 
+    fn help(&self) -> &'static str;
+
     /// Applies the edit to the editor.
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()>;
 
@@ -252,6 +254,12 @@ impl Edit for CreateInitialConfig {
         "Create initial config".to_owned()
     }
 
+    fn help(&self) -> &'static str {
+        "Writes a cackle.toml into your workspace / crate root. This will initially only set the \
+        configuration version. Subsequent action items will prompt you to select a sandbox kind, \
+        select what APIs you care about etc."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         editor.set_version(crate::config::MAX_VERSION);
         Ok(())
@@ -274,6 +282,13 @@ impl Edit for SelectSandbox {
         format!("{:?}", self.0)
     }
 
+    fn help(&self) -> &'static str {
+        "Select what kind of sandbox you'd like to use. At the moment the sandbox is only used \
+         for running build scripts (build.rs). Hopefully eventually we'll also run proc-macros \
+         in the sandbox. To use Bubblewrap, it must be installed. On Debian-based systems you can \
+         `sudo apt install bubblewrap`"
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         editor.set_sandbox_kind(self.0)
     }
@@ -284,6 +299,11 @@ struct ImportStdApi(PermissionName);
 impl Edit for ImportStdApi {
     fn title(&self) -> String {
         format!("Import std API `{}`", self.0)
+    }
+
+    fn help(&self) -> &'static str {
+        "This imports an std API that's built into Cackle. Subsequent versions of Cackle may \
+         add/remove paths from this API if it turns out that there were inaccuracies."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -301,6 +321,12 @@ impl Edit for ImportApi {
         )
     }
 
+    fn help(&self) -> &'static str {
+        "Imports an API definition that was provided by a third-party crate. Future versions of \
+         that crate may adjust these API definitions, hopefully to make them more accurate or \
+         complete."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.0.pkg_name)?;
         add_to_array(table, "import", &[&self.0.api.name])
@@ -312,6 +338,13 @@ struct InlineStdApi(PermissionName);
 impl Edit for InlineStdApi {
     fn title(&self) -> String {
         format!("Inline std API `{}`", self.0)
+    }
+
+    fn help(&self) -> &'static str {
+        "This copies the built-in API definition into your cackle.toml. Changes to the API \
+         definition in future versions of cackle will not affect your configuration. Selecting \
+         this option gives you the ability to adjust the API definitions from those that are \
+         built-in."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -334,6 +367,14 @@ impl Edit for InlineApi {
             "Inline API `{}` from package `{}`",
             self.0.api, self.0.pkg_name
         )
+    }
+
+    fn help(&self) -> &'static str {
+        "Inlines an API definition from a third-party crate. This lets you adjust this API \
+         definition. It does however mean that any changes made to the API definition by the \
+         third-party crate will not be used, so for example if a crate, `foo` exported network \
+         APIs under `foo::net` and later started also exporting them under `foo::network`, then \
+         you might miss these. So care should be taken if selecting this option."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -367,6 +408,11 @@ impl Edit for IgnoreStdApi {
         format!("Ignore std API `{}`", self.0)
     }
 
+    fn help(&self) -> &'static str {
+        "Don't import or inline this API definition. Select this if you don't care if crates use \
+        this category of API."
+    }
+
     fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
         Ok(())
     }
@@ -380,6 +426,11 @@ impl Edit for IgnoreApi {
             "Ignore API `{}` provided by package `{}`",
             self.0.api, self.0.pkg_name
         )
+    }
+
+    fn help(&self) -> &'static str {
+        "Don't import or inline this API definition. Select this if you don't care if crates use \
+        this category of API."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -404,6 +455,10 @@ impl Edit for AllowApiUsage {
         )
     }
 
+    fn help(&self) -> &'static str {
+        "Allow this package to use the specified category of API."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.usage.pkg_name)?;
         let allow_apis = get_or_create_array(table, "allow_apis")?;
@@ -424,6 +479,10 @@ struct RemoveUnusedAllowApis {
 impl Edit for RemoveUnusedAllowApis {
     fn title(&self) -> String {
         "Remove unused allowed APIs".to_owned()
+    }
+
+    fn help(&self) -> &'static str {
+        "Remove these APIs from the list of APIs that this package is allowed to used."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -470,6 +529,14 @@ impl Edit for IgnoreUnreachable {
         format!("Ignore unreachable code in package `{}`", self.pkg_name)
     }
 
+    fn help(&self) -> &'static str {
+        "Allow this package to use any APIs provided they're not used in code that is reachable \
+         from the entry point of your binary (e.g. main). This can be a good option if one of \
+         your dependencies has APIs that read or write files, but you don't use those particular \
+         APIs. It does slightly increase the risk of missing API usage, since if we get \
+         reachability incorrect then we may think that code isn't reachable when it actually is."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.pkg_name)?;
         table["ignore_unreachable"] = toml_edit::value(true);
@@ -484,6 +551,11 @@ struct AllowProcMacro {
 impl Edit for AllowProcMacro {
     fn title(&self) -> String {
         format!("Allow proc macro `{}`", self.pkg_name)
+    }
+
+    fn help(&self) -> &'static str {
+        "Allow this crate to be a proc macro. Proc macros can generate arbitrary code. They're \
+         also not currently run in a sandbox."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -506,6 +578,12 @@ impl Edit for AllowBuildInstruction {
         )
     }
 
+    fn help(&self) -> &'static str {
+        "Allow this crate's build.rs to emit build instructions that match the specified pattern. \
+         Some build instructions can be used to add arguments to the linker, which can then be \
+         used to do just about anything."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&format!("{}.build", self.pkg_name))?;
         let allowed = get_or_create_array(table, "allow_build_instructions")?;
@@ -521,6 +599,12 @@ struct DisableSandbox {
 impl Edit for DisableSandbox {
     fn title(&self) -> String {
         format!("Disable sandbox for `{}`", self.pkg_name)
+    }
+
+    fn help(&self) -> &'static str {
+        "Don't run this crate's build script (build.rs) in a sandbox. You might select this \
+         option if the build script is doing something weird like writing to the source \
+         directory, but you've checked it over and you trust it."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -539,6 +623,14 @@ impl Edit for AllowUnsafe {
         format!("Allow package `{}` to use unsafe code", self.pkg_name)
     }
 
+    fn help(&self) -> &'static str {
+        "Allow this crate to use unsafe code. With unsafe code, this crate could do just about \
+         anything, so this is like a bit like a wildcard permssion. Crates that use unsafe \
+         sometimes export APIs that you might want to restrict - e.g. network or filesystem APIs. \
+         so you should have a think about if this crate falls into that category and if it does, \
+         add some API definitions for it."
+    }
+
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.pkg_name)?;
         table["allow_unsafe"] = toml_edit::value(true);
@@ -553,6 +645,11 @@ struct SandboxAllowNetwork {
 impl Edit for SandboxAllowNetwork {
     fn title(&self) -> String {
         format!("Permit network from sandbox for `{}`", self.pkg_name)
+    }
+
+    fn help(&self) -> &'static str {
+        "Allow this crate's build script (build.rs) to access the network. This might be necessary \
+         if the build script is downloading stuff from the Internet."
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {

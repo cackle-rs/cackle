@@ -71,11 +71,13 @@ impl Screen for ProblemsUi {
         let (top_left, bottom_left) = split_vertical(horizontal[0]);
 
         self.render_problems(f, top_left);
-        self.render_details(f, bottom_left);
 
         match self.mode {
-            Mode::SelectProblem => {}
-            Mode::SelectEdit => self.render_edits_and_diff(f, horizontal[1])?,
+            Mode::SelectProblem => self.render_details(f, bottom_left),
+            Mode::SelectEdit => {
+                self.render_edits_and_diff(f, horizontal[1])?;
+                self.render_edit_help(f, bottom_left);
+            }
             Mode::Quit => {}
         }
         Ok(())
@@ -226,6 +228,18 @@ impl ProblemsUi {
 
     fn edits(&self) -> Vec<Box<dyn Edit>> {
         edits_for_problem(&self.problem_store.lock(), self.problem_index)
+    }
+
+    fn render_edit_help(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+        let edits = self.edits();
+        let Some(edit) = edits.get(self.edit_index) else {
+            return;
+        };
+        let block = Block::default().title("Edit notes").borders(Borders::ALL);
+        let paragraph = Paragraph::new(edit.help())
+            .block(block)
+            .wrap(Wrap { trim: false });
+        f.render_widget(paragraph, area);
     }
 
     fn render_diff(
