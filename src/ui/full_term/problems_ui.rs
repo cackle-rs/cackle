@@ -17,9 +17,6 @@ use anyhow::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::Constraint;
-use ratatui::layout::Direction;
-use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -62,21 +59,15 @@ impl Screen for ProblemsUi {
             super::render_build_progress(f);
             return Ok(());
         }
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .margin(1)
-            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(f.size());
 
-        let (top_left, bottom_left) = split_vertical(horizontal[0]);
+        let (top_left, bottom_left) = split_vertical(f.size());
 
         self.render_problems(f, top_left);
 
         match self.mode {
             Mode::SelectProblem => self.render_details(f, bottom_left),
             Mode::SelectEdit => {
-                self.render_edits_and_diff(f, horizontal[1])?;
-                self.render_edit_help(f, bottom_left);
+                self.render_edit_help_and_diff(f, bottom_left)?;
             }
             Mode::Quit => {}
         }
@@ -211,43 +202,16 @@ impl ProblemsUi {
         f.render_widget(paragraph, area);
     }
 
-    fn render_edits_and_diff(
-        &self,
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-        area: Rect,
-    ) -> Result<()> {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
-
-        let edits = self.edits();
-        self.render_diff(&edits, f, chunks[1])?;
-        Ok(())
-    }
-
     fn edits(&self) -> Vec<Box<dyn Edit>> {
         edits_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
-    fn render_edit_help(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-        let edits = self.edits();
-        let Some(edit) = edits.get(self.edit_index) else {
-            return;
-        };
-        let block = Block::default().title("Edit notes").borders(Borders::ALL);
-        let paragraph = Paragraph::new(edit.help())
-            .block(block)
-            .wrap(Wrap { trim: false });
-        f.render_widget(paragraph, area);
-    }
-
-    fn render_diff(
+    fn render_edit_help_and_diff(
         &self,
-        edits: &[Box<dyn Edit>],
         f: &mut Frame<CrosstermBackend<Stdout>>,
         area: Rect,
     ) -> Result<()> {
+        let edits = self.edits();
         let Some(edit) = edits.get(self.edit_index) else {
             return Ok(());
         };
@@ -257,10 +221,21 @@ impl ProblemsUi {
         edit.apply(&mut editor)?;
         let updated = editor.to_toml();
 
+        let mut lines = Vec::new();
+
+        lines.push(Line::from(edit.help()));
+
+        let mut first = true;
         const CONTEXT: usize = 2;
         let mut common = VecDeque::new();
         let mut after_context = 0;
-        let mut lines = Vec::new();
+        let mut add_header = |lines: &mut Vec<Line>| {
+            if first {
+                lines.push(Line::from(""));
+                lines.push(Line::from("=== Diff of cackle.toml ==="));
+                first = false;
+            }
+        };
         for diff in diff::lines(&original, &updated) {
             match diff {
                 diff::Result::Both(s, _) => {
@@ -275,6 +250,7 @@ impl ProblemsUi {
                     }
                 }
                 diff::Result::Left(s) => {
+                    add_header(&mut lines);
                     {
                         let common: &mut VecDeque<&str> = &mut common;
                         for line in common.drain(..) {
@@ -288,6 +264,7 @@ impl ProblemsUi {
                     after_context = CONTEXT;
                 }
                 diff::Result::Right(s) => {
+                    add_header(&mut lines);
                     {
                         let common: &mut VecDeque<&str> = &mut common;
                         for line in common.drain(..) {
@@ -303,7 +280,7 @@ impl ProblemsUi {
             }
         }
 
-        let block = Block::default().title("Config diff").borders(Borders::ALL);
+        let block = Block::default().title("Edit details").borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false });
