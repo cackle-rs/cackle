@@ -458,4 +458,23 @@ mod tests {
             Arc::new(super::parse(&config.flattened_toml().unwrap()).unwrap());
         assert_eq!(config, roundtripped_config);
     }
+
+    #[test]
+    fn duplicate_allow_api() {
+        let result = parse(
+            r#"
+            [api.terminate]
+            include = ["std::process::exit"]
+
+            [pkg.foo]
+            allow_apis = [
+                "terminate",
+                "terminate",
+            ]
+            "#,
+        );
+        assert!(result.is_err());
+        println!("{}", result.as_ref().unwrap_err());
+        assert!(result.unwrap_err().to_string().contains("terminate"));
+    }
 }

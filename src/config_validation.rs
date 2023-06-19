@@ -15,6 +15,7 @@ pub(crate) struct InvalidConfig {
 #[derive(Debug)]
 enum Problem {
     UnknownPermission(PermissionName),
+    DuplicateAllowedApi(PermissionName),
     DisallowedSandboxConfig(String),
     UnsupportedVersion(i64),
 }
@@ -26,9 +27,13 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
     }
     let permission_names: HashSet<_> = config.apis.keys().collect();
     for (name, crate_config) in &config.packages {
+        let mut used = HashSet::new();
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
                 problems.push(Problem::UnknownPermission(permission_name.clone()));
+            }
+            if !used.insert(permission_name) {
+                problems.push(Problem::DuplicateAllowedApi(permission_name.clone()))
             }
         }
         if crate_config.sandbox.is_some() && !name.ends_with(".build") {
@@ -51,6 +56,9 @@ impl Display for InvalidConfig {
         for problem in &self.problems {
             match problem {
                 Problem::UnknownPermission(x) => write!(f, "  Unknown permission '{}'", x.name)?,
+                Problem::DuplicateAllowedApi(x) => {
+                    write!(f, "  API allowed more than once '{}'", x.name)?
+                }
                 Problem::UnsupportedVersion(version) => {
                     write!(f, "  Unsupported version '{version}'")?
                 }
