@@ -396,7 +396,21 @@ fn add_to_array<S: AsRef<str>>(
     }
     let array = get_or_create_array(table, array_name)?;
     for v in values {
-        array.push_formatted(create_string(v.as_ref().to_owned()));
+        let value = v.as_ref().to_owned();
+        // Insert our new value before the first element greater than our new value. This will
+        // maintain alphabetical order if the list is currently sorted.
+        let index = array
+            .iter()
+            .enumerate()
+            .find(|(_, existing)| {
+                existing
+                    .as_str()
+                    .map(|e| e > value.as_str())
+                    .unwrap_or(false)
+            })
+            .map(|(index, _)| index)
+            .unwrap_or_else(|| array.len());
+        array.insert_formatted(index, create_string(value));
     }
     Ok(())
 }
@@ -434,6 +448,8 @@ impl Edit for IgnoreApi {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        // Make sure the `import` table exists, otherwise we'll continue to warn about unused
+        // imports.
         let table = editor.pkg_table(&self.0.pkg_name)?;
         get_or_create_array(table, "import")?;
         Ok(())
@@ -461,14 +477,8 @@ impl Edit for AllowApiUsage {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.usage.pkg_name)?;
-        let allow_apis = get_or_create_array(table, "allow_apis")?;
-        let mut sorted_keys: Vec<_> = self.usage.usages.keys().collect();
-        sorted_keys.sort();
-        for api in sorted_keys {
-            allow_apis.push_formatted(create_string(api.to_string()));
-        }
-        allow_apis.set_trailing("\n");
-        Ok(())
+        let keys: Vec<_> = self.usage.usages.keys().map(|perm| &perm.name).collect();
+        add_to_array(table, "allow_apis", &keys)
     }
 }
 

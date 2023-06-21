@@ -8,8 +8,10 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
         PermissionName::from("fs"),
         perm(
             &[
+                // std::env provides quite a few functions that return paths, which can in turn
+                // allow filesystem access.
+                "std::env",
                 "std::fs",
-                "std::path",
                 "std::io",
                 "std::os::linux::fs",
                 "std::os::unix::fs",
@@ -18,17 +20,15 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
                 "std::os::wasi::io",
                 "std::os::windows::fs",
                 "std::os::windows::io",
-                // std::env provides quite a few functions that return paths, which can in turn
-                // allow filesystem access.
-                "std::env",
+                "std::path",
             ],
             &[
-                "std::io::stdio",
+                "std::env::args",
                 "std::env::var",
                 "std::env::var_os",
                 "std::env::vars",
                 "std::env::vars_os",
-                "std::env::args",
+                "std::io::stdio",
             ],
         ),
     );
