@@ -7,7 +7,6 @@ use super::Screen;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
-use crate::problem::ProblemList;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
@@ -96,12 +95,8 @@ impl Screen for ProblemsUi {
                 self.edit_index = 0;
             }
             (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
-                let replacement_problems = self.apply_selected_edit()?;
-                let mut pstore_lock = self.problem_store.lock();
-                if let Some((index, _)) = pstore_lock.into_iter().nth(self.problem_index) {
-                    pstore_lock.replace(index, replacement_problems);
-                }
-                if self.problem_index >= pstore_lock.len() {
+                self.apply_selected_edit()?;
+                if self.problem_index >= self.problem_store.lock().len() {
                     self.problem_index = 0;
                 }
                 self.mode = Mode::SelectProblem;
@@ -156,6 +151,11 @@ impl ProblemsUi {
             edit.apply(&mut editor)?;
             pstore.resolve(index);
         }
+        self.write_config(&editor)?;
+        Ok(())
+    }
+
+    fn write_config(&self, editor: &ConfigEditor) -> Result<(), anyhow::Error> {
         std::fs::write(&self.config_path, editor.to_toml())
             .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
         Ok(())
@@ -288,16 +288,25 @@ impl ProblemsUi {
         Ok(())
     }
 
-    fn apply_selected_edit(&self) -> Result<ProblemList> {
-        let edits = &self.edits();
+    /// Applies the currently selected edit and resolves the problem that produced that edit.
+    fn apply_selected_edit(&self) -> Result<()> {
+        let mut pstore_lock = self.problem_store.lock();
+        let edits = edits_for_problem(&pstore_lock, self.problem_index);
         let Some(edit) = edits.get(self.edit_index) else {
-            return Ok(ProblemList::default());
+            return Ok(());
         };
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
         edit.apply(&mut editor)?;
-        std::fs::write(&self.config_path, editor.to_toml())
-            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
-        Ok(edit.replacement_problems())
+        self.write_config(&editor)?;
+
+        // Resolve the currently selected problem.
+        if let Some((index, _)) = pstore_lock.into_iter().nth(self.problem_index) {
+            pstore_lock.replace(index, edit.replacement_problems());
+        }
+
+        // Resolve any other problems that now have no-op edits.
+        pstore_lock.resolve_problems_with_empty_diff(&editor);
+        Ok(())
     }
 }
 

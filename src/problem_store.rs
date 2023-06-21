@@ -1,10 +1,11 @@
-use log::info;
-
+use crate::config_editor;
+use crate::config_editor::ConfigEditor;
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
 use crate::problem::ErrorDetails;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
+use log::info;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -81,6 +82,35 @@ impl ProblemStore {
         });
         let _ = self.event_sender.send(AppEvent::ProblemsAdded);
         receiver
+    }
+
+    /// Resolve all problems for which at least one edit, when applied to `editor` gives an empty
+    /// diff, provided that edit is not expected to produce an empty diff.
+    pub(crate) fn resolve_problems_with_empty_diff(&mut self, editor: &ConfigEditor) {
+        let current_toml = editor.to_toml();
+        let mut empty_indexes = Vec::new();
+        for (index, problem) in self.into_iter() {
+            for edit in config_editor::fixes_for_problem(problem) {
+                if !edit.resolve_problem_if_edit_is_empty() {
+                    continue;
+                }
+                let mut editor_copy = editor.clone();
+                if edit.apply(&mut editor_copy).is_ok() && editor_copy.to_toml() == current_toml {
+                    empty_indexes.push(index);
+                    info!(
+                        "Resolved problem ({problem}) because diff for edit ({edit}) became empty"
+                    );
+                    break;
+                }
+            }
+        }
+        // When we resolve a problem, the indexes of all problems after it are invalided, however
+        // those before it remain valid. So we reverse our list of indexes so that we process from
+        // the end and thus only invalidate those indexes that we've already processed.
+        empty_indexes.reverse();
+        for index in empty_indexes {
+            self.resolve(index);
+        }
     }
 
     /// Within each problem list, group problems by type and crate.
@@ -197,6 +227,7 @@ mod tests {
         problems.push(Problem::UsesBuildScript("crab2".to_owned()));
         problems
     }
+
     #[test]
     fn basic_queries() {
         let mut store = ProblemStore::new(channel().0);

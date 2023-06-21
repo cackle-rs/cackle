@@ -10,6 +10,7 @@ use crate::problem::UnusedAllowApi;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::borrow::Borrow;
+use std::fmt::Display;
 use std::path::Path;
 use toml_edit::Array;
 use toml_edit::Document;
@@ -17,6 +18,7 @@ use toml_edit::Formatted;
 use toml_edit::Item;
 use toml_edit::Value;
 
+#[derive(Clone)]
 pub(crate) struct ConfigEditor {
     document: Document,
 }
@@ -35,6 +37,12 @@ pub(crate) trait Edit {
     /// the original problem.
     fn replacement_problems(&self) -> ProblemList {
         ProblemList::default()
+    }
+
+    /// Whether the problem that produced this edit can be resolved if this edit produces no diff.
+    /// This should be overriden for any problems that are expected to produce no diff.
+    fn resolve_problem_if_edit_is_empty(&self) -> bool {
+        true
     }
 }
 
@@ -439,6 +447,10 @@ impl Edit for IgnoreStdApi {
     fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
         Ok(())
     }
+
+    fn resolve_problem_if_edit_is_empty(&self) -> bool {
+        false
+    }
 }
 
 struct IgnoreApi(AvailableApi);
@@ -462,6 +474,10 @@ impl Edit for IgnoreApi {
         let table = editor.pkg_table(&self.0.pkg_name)?;
         get_or_create_array(table, "import")?;
         Ok(())
+    }
+
+    fn resolve_problem_if_edit_is_empty(&self) -> bool {
+        false
     }
 }
 
@@ -675,6 +691,12 @@ impl Edit for SandboxAllowNetwork {
         let table = editor.pkg_table(&format!("{}.build.sandbox", self.pkg_name))?;
         table["allow_network"] = toml_edit::value(true);
         Ok(())
+    }
+}
+
+impl Display for dyn Edit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.title())
     }
 }
 
