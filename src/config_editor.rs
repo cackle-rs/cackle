@@ -405,11 +405,20 @@ fn add_to_array<S: AsRef<str>>(
             .find(|(_, existing)| {
                 existing
                     .as_str()
-                    .map(|e| e > value.as_str())
+                    .map(|e| e >= value.as_str())
                     .unwrap_or(false)
             })
             .map(|(index, _)| index)
             .unwrap_or_else(|| array.len());
+        if array
+            .get(index)
+            .and_then(Value::as_str)
+            .map(|existing| existing == value)
+            .unwrap_or(false)
+        {
+            // Value is already present in the array.
+            continue;
+        }
         array.insert_formatted(index, create_string(value));
     }
     Ok(())
@@ -772,13 +781,14 @@ mod tests {
                     "fs",
                 ]
             "#},
-            &[(0, disallowed_apis("crab1", &["net"]))],
+            &[(0, disallowed_apis("crab1", &["process", "net", "fs"]))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
                     "env",
                     "fs",
                     "net",
+                    "process",
                 ]
             "#},
         );
