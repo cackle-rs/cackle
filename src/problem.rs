@@ -294,7 +294,15 @@ impl Display for Problem {
 impl Display for DisallowedApiUsage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(f, "Crate '{}' uses disallowed APIs:", self.pkg_name)?;
+            if self.reachable == Some(false) {
+                writeln!(
+                    f,
+                    "Crate '{}' uses disallowed APIs, but only from apparently dead code:",
+                    self.pkg_name
+                )?;
+            } else {
+                writeln!(f, "Crate '{}' uses disallowed APIs:", self.pkg_name)?;
+            }
             for (perm_name, usages) in &self.usages {
                 writeln!(f, "  {perm_name}:")?;
                 display_usages(f, usages)?;
