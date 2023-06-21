@@ -196,9 +196,14 @@ impl Config {
     /// to import any APIs from this package, by listing `import = []`.
     pub(crate) fn unused_imports(&self, crate_index: &CrateIndex) -> ProblemList {
         let mut problems = ProblemList::default();
-        for (pkg_name, pkg_config) in &self.packages {
+        for pkg_name in crate_index.package_names() {
             // If our config lists any import for this package, even empty, then we skip this.
-            if pkg_config.import.is_some() {
+            if self
+                .packages
+                .get(pkg_name)
+                .map(|config| config.import.is_some())
+                .unwrap_or(false)
+            {
                 continue;
             }
             let Ok(pkg_exports) = exported_config_for_package(pkg_name, crate_index) else {

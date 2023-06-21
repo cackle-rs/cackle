@@ -65,6 +65,10 @@ impl CrateIndex {
         self.name_to_dir.get(pkg_name)
     }
 
+    pub(crate) fn package_names(&self) -> impl Iterator<Item = &str> {
+        self.name_to_dir.keys().map(String::as_str)
+    }
+
     pub(crate) fn crate_names(&self) -> HashSet<&str> {
         self.path_to_crate_name
             .values()
