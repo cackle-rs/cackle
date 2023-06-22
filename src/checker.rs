@@ -148,16 +148,8 @@ impl Checker {
         // A subprocess might try to read the flattened config while we're updating it. It doesn't
         // matter if it sees the old or the new flattened config, but we don't want it to see a
         // partially written config, so we write first to a temporary file then rename it.
-        let tmp_path = flattened_path.with_file_name("flattened_tmp.toml");
-        std::fs::write(&tmp_path, config.flattened_toml()?)
-            .with_context(|| format!("Failed to write `{}`", tmp_path.display()))?;
-        std::fs::rename(&tmp_path, &flattened_path).with_context(|| {
-            format!(
-                "Failed to rename `{}` to `{}`",
-                tmp_path.display(),
-                flattened_path.display()
-            )
-        })?;
+        crate::fs::write_atomic(&flattened_path, &config.flattened_toml()?)?;
+
         self.update_config(config);
         info!("Config (re)loaded");
         Ok(())

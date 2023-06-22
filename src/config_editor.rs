@@ -125,7 +125,7 @@ impl ConfigEditor {
     }
 
     pub(crate) fn write(&self, filename: &Path) -> Result<()> {
-        std::fs::write(filename, self.to_toml())?;
+        crate::fs::write_atomic(filename, &self.to_toml())?;
         Ok(())
     }
 

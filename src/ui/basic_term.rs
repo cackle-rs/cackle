@@ -141,8 +141,7 @@ impl BasicTermUi {
         println!("Press enter to write config, or control-c to abort");
         print_prompt()?;
         self.stdin_recv.recv()?;
-        std::fs::write(&self.config_path, initial_toml)
-            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
+        crate::fs::write_atomic(&self.config_path, &initial_toml)?;
         self.config_last_modified = config_modification_time(&self.config_path);
         Ok(Outcome::Continue)
     }

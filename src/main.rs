@@ -12,6 +12,7 @@ mod config_validation;
 mod crate_index;
 mod deps;
 pub(crate) mod events;
+pub(crate) mod fs;
 pub(crate) mod link_info;
 mod logging;
 mod outcome;

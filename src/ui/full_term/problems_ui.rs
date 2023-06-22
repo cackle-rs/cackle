@@ -11,7 +11,6 @@ use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
 use anyhow::bail;
-use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -156,9 +155,7 @@ impl ProblemsUi {
     }
 
     fn write_config(&self, editor: &ConfigEditor) -> Result<(), anyhow::Error> {
-        std::fs::write(&self.config_path, editor.to_toml())
-            .with_context(|| format!("Failed to write `{}`", self.config_path.display()))?;
-        Ok(())
+        crate::fs::write_atomic(&self.config_path, &editor.to_toml())
     }
 
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
