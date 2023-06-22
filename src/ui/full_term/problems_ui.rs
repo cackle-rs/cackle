@@ -31,7 +31,7 @@ mod diff;
 
 pub(super) struct ProblemsUi {
     problem_store: ProblemStoreRef,
-    mode: Mode,
+    modes: Vec<Mode>,
     problem_index: usize,
     edit_index: usize,
     config_path: PathBuf,
@@ -42,12 +42,11 @@ pub(super) struct ProblemsUi {
 enum Mode {
     SelectProblem,
     SelectEdit,
-    Quit,
 }
 
 impl Screen for ProblemsUi {
     fn quit_requested(&self) -> bool {
-        self.mode == Mode::Quit
+        self.modes.is_empty()
     }
 
     fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
@@ -58,21 +57,35 @@ impl Screen for ProblemsUi {
 
         let (top_left, bottom_left) = split_vertical(f.size());
 
+        // Different modes can render into the bottom-left area. The mode highest on the stack that
+        // renders there first consumes it, after which other modes cannot also draw there.
+        let mut bottom_left = Some(bottom_left);
+
         self.render_problems(f, top_left);
 
-        match self.mode {
-            Mode::SelectProblem => self.render_details(f, bottom_left),
-            Mode::SelectEdit => {
-                self.render_edit_help_and_diff(f, bottom_left)?;
+        for mode in self.modes.iter().rev() {
+            match mode {
+                Mode::SelectProblem => {
+                    if let Some(area) = bottom_left.take() {
+                        self.render_details(f, area);
+                    }
+                }
+                Mode::SelectEdit => {
+                    if let Some(area) = bottom_left.take() {
+                        self.render_edit_help_and_diff(f, area)?;
+                    }
+                }
             }
-            Mode::Quit => {}
         }
         Ok(())
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
-        match (self.mode, key.code) {
-            (_, KeyCode::Char('q')) => self.mode = Mode::Quit,
+        let Some(mode) = self.modes.last() else {
+            return Ok(());
+        };
+        match (mode, key.code) {
+            (_, KeyCode::Char('q')) => self.modes.clear(),
             (Mode::SelectProblem, KeyCode::Up | KeyCode::Down) => {
                 update_counter(
                     &mut self.problem_index,
@@ -88,7 +101,7 @@ impl Screen for ProblemsUi {
                 if self.edits().is_empty() {
                     bail!("Sorry. No automatic edits exist for this problem");
                 }
-                self.mode = Mode::SelectEdit;
+                self.modes.push(Mode::SelectEdit);
                 self.edit_index = 0;
             }
             (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
@@ -96,13 +109,17 @@ impl Screen for ProblemsUi {
                 if self.problem_index >= self.problem_store.lock().len() {
                     self.problem_index = 0;
                 }
-                self.mode = Mode::SelectProblem;
+                self.modes.pop();
             }
             (Mode::SelectProblem, KeyCode::Char('a')) => {
                 self.accept_single_enabled = true;
                 self.accept_all_single_edits()?;
             }
-            (_, KeyCode::Esc) => self.mode = Mode::SelectProblem,
+            (_, KeyCode::Esc) => {
+                if self.modes.len() >= 2 {
+                    self.modes.pop();
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -113,7 +130,7 @@ impl ProblemsUi {
     pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
         Self {
             problem_store,
-            mode: Mode::SelectProblem,
+            modes: vec![Mode::SelectProblem],
             problem_index: 0,
             edit_index: 0,
             config_path,
@@ -159,9 +176,10 @@ impl ProblemsUi {
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let pstore_lock = &self.problem_store.lock();
         let mut items = Vec::new();
+        let is_edit_mode = self.modes.last() == Some(&Mode::SelectEdit);
         for (index, (_, problem)) in pstore_lock.into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
-            if self.mode == Mode::SelectEdit && index == self.problem_index {
+            if is_edit_mode && index == self.problem_index {
                 let edits = edits_for_problem(pstore_lock, self.problem_index);
                 items.extend(
                     edits
@@ -171,7 +189,7 @@ impl ProblemsUi {
             }
         }
         let mut index = self.problem_index;
-        if self.mode == Mode::SelectEdit {
+        if is_edit_mode {
             index += self.edit_index + 1
         }
 
@@ -179,7 +197,10 @@ impl ProblemsUi {
             f,
             "Problems",
             items.into_iter(),
-            matches!(self.mode, Mode::SelectProblem | Mode::SelectEdit),
+            matches!(
+                self.modes.last(),
+                Some(&Mode::SelectProblem | &Mode::SelectEdit)
+            ),
             area,
             index,
         );
