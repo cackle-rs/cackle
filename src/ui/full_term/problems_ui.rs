@@ -54,11 +54,6 @@ impl ProblemsUi {
     }
 
     pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
-        if self.problem_store.lock().is_empty() {
-            super::render_build_progress(f);
-            return Ok(());
-        }
-
         let (top_left, bottom_left) = split_vertical(f.size());
 
         self.render_problems(f, top_left);
@@ -180,6 +175,10 @@ impl ProblemsUi {
 
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let pstore_lock = &self.problem_store.lock();
+        if pstore_lock.is_empty() {
+            super::render_build_progress(f, area);
+            return;
+        }
         let mut items = Vec::new();
         let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
         for (index, (_, problem)) in pstore_lock.into_iter().enumerate() {
@@ -214,10 +213,12 @@ impl ProblemsUi {
     fn render_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let block = Block::default().title("Details").borders(Borders::ALL);
         let pstore_lock = &self.problem_store.lock();
-        let Some((_, problem)) = pstore_lock.into_iter().nth(self.problem_index) else {
-            return;
-        };
-        let paragraph = Paragraph::new(problem.details())
+        let details = pstore_lock
+            .into_iter()
+            .nth(self.problem_index)
+            .map(|(_, problem)| problem.details())
+            .unwrap_or_default();
+        let paragraph = Paragraph::new(details)
             .block(block)
             .wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);

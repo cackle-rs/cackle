@@ -132,13 +132,12 @@ fn split_vertical(area: Rect) -> (Rect, Rect) {
     (chunks[0], chunks[1])
 }
 
-fn render_build_progress(f: &mut Frame<CrosstermBackend<Stdout>>) {
-    let area = message_area(f.size());
+fn render_build_progress(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
     let block = Block::default()
         .title("Building")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let paragraph = Paragraph::new("Build in progress")
+    let paragraph = Paragraph::new("Build in progress...")
         .block(block)
         .wrap(Wrap { trim: false });
     f.render_widget(Clear, area);
