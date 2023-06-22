@@ -1,5 +1,6 @@
 //! Terminal user interface for showing and resolving detected problems.
 
+use super::message_area;
 use super::render_list;
 use super::split_vertical;
 use super::update_counter;
@@ -16,9 +17,12 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
+use ratatui::widgets::Clear;
 use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
@@ -42,6 +46,7 @@ pub(super) struct ProblemsUi {
 enum Mode {
     SelectProblem,
     SelectEdit,
+    PromptAutoAccept,
 }
 
 impl Screen for ProblemsUi {
@@ -57,24 +62,21 @@ impl Screen for ProblemsUi {
 
         let (top_left, bottom_left) = split_vertical(f.size());
 
-        // Different modes can render into the bottom-left area. The mode highest on the stack that
-        // renders there first consumes it, after which other modes cannot also draw there.
-        let mut bottom_left = Some(bottom_left);
-
         self.render_problems(f, top_left);
 
-        for mode in self.modes.iter().rev() {
+        for mode in self.modes.iter() {
             match mode {
                 Mode::SelectProblem => {
-                    if let Some(area) = bottom_left.take() {
-                        self.render_details(f, area);
+                    // If we're selecting an edit, then we don't show details, since they both use
+                    // the same area.
+                    if !self.modes.contains(&Mode::SelectEdit) {
+                        self.render_details(f, bottom_left);
                     }
                 }
                 Mode::SelectEdit => {
-                    if let Some(area) = bottom_left.take() {
-                        self.render_edit_help_and_diff(f, area)?;
-                    }
+                    self.render_edit_help_and_diff(f, bottom_left)?;
                 }
+                Mode::PromptAutoAccept => render_auto_accept(f),
             }
         }
         Ok(())
@@ -112,8 +114,14 @@ impl Screen for ProblemsUi {
                 self.modes.pop();
             }
             (Mode::SelectProblem, KeyCode::Char('a')) => {
+                if !self.accept_single_enabled {
+                    self.modes.push(Mode::PromptAutoAccept);
+                }
+            }
+            (Mode::PromptAutoAccept, KeyCode::Enter) => {
                 self.accept_single_enabled = true;
                 self.accept_all_single_edits()?;
+                self.modes.pop();
             }
             (_, KeyCode::Esc) => {
                 if self.modes.len() >= 2 {
@@ -124,6 +132,28 @@ impl Screen for ProblemsUi {
         }
         Ok(())
     }
+}
+
+fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
+    let area = message_area(f.size());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let raw_lines = [
+        "Auto-accept edits for all problems that only have a single edit?",
+        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
+        "Press enter to accept, or escape to cancel.",
+    ];
+    let mut lines = Vec::new();
+    for l in raw_lines {
+        lines.push(Line::from(l));
+        lines.push(Line::from(""));
+    }
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    f.render_widget(Clear, area);
+    f.render_widget(paragraph, area);
 }
 
 impl ProblemsUi {
@@ -176,7 +206,7 @@ impl ProblemsUi {
     fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let pstore_lock = &self.problem_store.lock();
         let mut items = Vec::new();
-        let is_edit_mode = self.modes.last() == Some(&Mode::SelectEdit);
+        let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
         for (index, (_, problem)) in pstore_lock.into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
             if is_edit_mode && index == self.problem_index {
