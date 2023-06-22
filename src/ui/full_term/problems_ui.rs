@@ -46,6 +46,7 @@ enum Mode {
     SelectProblem,
     SelectEdit,
     PromptAutoAccept,
+    Help,
 }
 
 impl ProblemsUi {
@@ -58,6 +59,7 @@ impl ProblemsUi {
 
         self.render_problems(f, top_left);
 
+        let mut previous_mode = None;
         for mode in self.modes.iter() {
             match mode {
                 Mode::SelectProblem => {
@@ -71,7 +73,9 @@ impl ProblemsUi {
                     self.render_edit_help_and_diff(f, bottom_left)?;
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
+                Mode::Help => render_help(f, previous_mode),
             }
+            previous_mode = Some(mode);
         }
         Ok(())
     }
@@ -117,6 +121,7 @@ impl ProblemsUi {
                 self.accept_all_single_edits()?;
                 self.modes.pop();
             }
+            (_, KeyCode::Char('h' | '?')) => self.modes.push(Mode::Help),
             (_, KeyCode::Esc) => {
                 if self.modes.len() >= 2 {
                     self.modes.pop();
@@ -285,21 +290,66 @@ impl ProblemsUi {
     }
 }
 
+fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
+    let mut keys = vec![];
+    let mut title = "Help";
+    match mode {
+        Some(Mode::SelectProblem) => {
+            title = "Help for select-problem";
+            keys.extend(
+                [
+                    ("space/enter", "Show available edits for this problem"),
+                    ("up", "Select previous problem"),
+                    ("down", "Select next problem"),
+                    ("a", "Enable auto-apply for problems with only one edit"),
+                ]
+                .into_iter(),
+            );
+        }
+        Some(Mode::SelectEdit) => {
+            title = "Help for select-edit";
+            keys.extend(
+                [
+                    ("space/enter", "Apply this edit"),
+                    ("up", "Select previous edit"),
+                    ("down", "Select next edit"),
+                ]
+                .into_iter(),
+            );
+        }
+        _ => {}
+    }
+    keys.extend([("q", "Quit"), ("h/?", "Show mode-specific help")].into_iter());
+    let lines: Vec<String> = keys
+        .into_iter()
+        .map(|(key, action)| format!("{key:14} {action}"))
+        .collect();
+    render_message(f, Some(title), &lines);
+}
+
 fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
+    render_message(f, None, &[
+        "Auto-accept edits for all problems that only have a single edit?",
+        "",
+        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
+        "",
+        "Press enter to accept, or escape to cancel.",
+    ]);
+}
+
+fn render_message<S: AsRef<str>>(
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+    title: Option<&str>,
+    raw_lines: &[S],
+) {
     let area = message_area(f.size());
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let raw_lines = [
-        "Auto-accept edits for all problems that only have a single edit?",
-        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
-        "Press enter to accept, or escape to cancel.",
-    ];
-    let mut lines = Vec::new();
-    for l in raw_lines {
-        lines.push(Line::from(l));
-        lines.push(Line::from(""));
+    if let Some(title) = title {
+        block = block.title(title);
     }
+    let lines: Vec<Line> = raw_lines.iter().map(|l| Line::from(l.as_ref())).collect();
     let paragraph = Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false });
