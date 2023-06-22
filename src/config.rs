@@ -41,6 +41,9 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) features: Vec<String>,
+
+    #[serde(default)]
+    pub(crate) ignore_unreachable: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -109,7 +112,7 @@ pub(crate) struct PackageConfig {
     pub(crate) import: Option<Vec<String>>,
 
     #[serde(default)]
-    pub(crate) ignore_unreachable: bool,
+    pub(crate) ignore_unreachable: Option<bool>,
 }
 
 pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Arc<Config>> {
@@ -299,7 +302,9 @@ impl Config {
 
     /// Returns whether reachability information is needed.
     pub(crate) fn needs_reachability(&self) -> bool {
-        self.packages.values().any(|pkg| pkg.ignore_unreachable)
+        self.packages
+            .values()
+            .any(|pkg| pkg.ignore_unreachable.unwrap_or(self.ignore_unreachable))
     }
 }
 

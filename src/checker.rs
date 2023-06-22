@@ -73,7 +73,7 @@ pub(crate) struct CrateInfo {
     allow_proc_macro: bool,
 
     /// Whether to ignore references from dead code in this crate.
-    ignore_unreachable: bool,
+    ignore_unreachable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -352,7 +352,9 @@ impl Checker {
     }
 
     pub(crate) fn ignore_unreachable(&self, crate_id: CrateId) -> bool {
-        self.crate_infos[crate_id.0].ignore_unreachable
+        self.crate_infos[crate_id.0]
+            .ignore_unreachable
+            .unwrap_or(self.config.ignore_unreachable)
     }
 
     pub(crate) fn report_crate_used(&mut self, crate_id: CrateId) {
