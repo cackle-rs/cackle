@@ -62,19 +62,21 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
         sandbox.ro_bind(Path::new(dir));
     }
     let home = PathBuf::from(std::env::var("HOME").context("Couldn't get HOME env var")?);
-    // TODO: Reasses if we want to list these here or just have the user list them in
-    // their allow_read config.
+    // We allow access to the root of the filesystem, but only selected parts of the user's home
+    // directory. The home directory is where sensitive stuff is most likely to live. e.g. access
+    // tokens, credentials, ssh keys etc.
     sandbox.ro_bind(Path::new("/"));
-    // Note, we don't bind all of ~/.cargo because it might contain
-    // crates.io credentials, which we'd like to avoid exposing.
-    sandbox.tmpfs(&home.join(".cargo"));
-    sandbox.ro_bind(&home.join(".cargo").join("bin"));
-    sandbox.ro_bind(&home.join(".cargo").join("git"));
-    sandbox.ro_bind(&home.join(".cargo").join("registry"));
-    sandbox.ro_bind(&home.join(".rustup"));
+    sandbox.tmpfs(&home);
     sandbox.tmpfs(Path::new("/var"));
     sandbox.tmpfs(Path::new("/tmp"));
     sandbox.tmpfs(Path::new("/usr/share"));
+    // We need access to some parts of ~/.cargo in order to be able to build, but we don't bind all
+    // of it because it might contain crates.io credentials, which we'd like to avoid exposing.
+    let cargo_home = &home.join(".cargo");
+    sandbox.ro_bind(&cargo_home.join("bin"));
+    sandbox.ro_bind(&cargo_home.join("git"));
+    sandbox.ro_bind(&cargo_home.join("registry"));
+    sandbox.ro_bind(&home.join(".rustup"));
     sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
     sandbox.pass_env("PATH");
     sandbox.pass_env("HOME");
