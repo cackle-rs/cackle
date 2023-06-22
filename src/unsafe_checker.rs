@@ -68,6 +68,6 @@ mod tests {
         assert!(has_unsafe_in_file("test_crates/crab1/src/impl1.rs"));
         assert!(!has_unsafe_in_file("test_crates/crab2/src/lib.rs"));
         assert!(has_unsafe_in_file("test_crates/crab3/src/lib.rs"));
-        assert!(!has_unsafe_in_file("test_crates/crab-bin/src/main.rs"));
+        assert!(has_unsafe_in_file("test_crates/crab-bin/src/main.rs"));
     }
 }

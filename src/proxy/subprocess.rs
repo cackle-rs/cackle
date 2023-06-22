@@ -164,7 +164,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     loop {
         let mut args = std::env::args().skip(2).peekable();
         let config = get_config_from_env()?;
-        let crate_name = get_crate_name_from_rustc_args();
+        let pkg_name = std::env::var("CARGO_PKG_NAME").ok();
 
         let mut command = Command::new("rustc");
         let mut linker_arg = OsString::new();
@@ -199,7 +199,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         // If something goes wrong, it can be handy to have object files left around to examine.
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
-        let crate_name = crate_name.as_deref().unwrap_or("");
+        let crate_name = pkg_name.as_deref().unwrap_or("");
         let unsafe_permitted = config.unsafe_permitted_for_crate(crate_name);
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
@@ -298,17 +298,6 @@ fn get_config_from_env() -> Result<Arc<Config>> {
     // that the parent process wrote after it loaded any required crate-specific config files and
     // then flattened them into a single file.
     crate::config::parse_file(Path::new(&config_path), &CrateIndex::default())
-}
-
-/// Looks for `--crate-name` in the arguments and if found, returns the subsequent argument.
-fn get_crate_name_from_rustc_args() -> Option<String> {
-    let mut args = std::env::args();
-    while let Some(arg) = args.next() {
-        if arg == "--crate-name" {
-            return args.next();
-        }
-    }
-    None
 }
 
 fn get_env(var_name: &str) -> Result<String> {
