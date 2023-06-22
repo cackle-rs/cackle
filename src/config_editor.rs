@@ -76,6 +76,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
                 edits.push(Box::new(IgnoreUnreachable {
                     pkg_name: usage.pkg_name.clone(),
                 }));
+                edits.push(Box::new(IgnoreUnreachableGlobal));
             }
         }
         Problem::IsProcMacro(pkg_name) => {
@@ -598,6 +599,24 @@ impl Edit for AllowProcMacro {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.pkg_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
+        Ok(())
+    }
+}
+
+struct IgnoreUnreachableGlobal;
+
+impl Edit for IgnoreUnreachableGlobal {
+    fn title(&self) -> String {
+        "Ignore unreachable by default".to_string()
+    }
+
+    fn help(&self) -> &'static str {
+        "Ignore APIs in unreachable code in all packages."
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.document.as_table_mut();
+        table["ignore_unreachable"] = toml_edit::value(true);
         Ok(())
     }
 }
