@@ -8,9 +8,14 @@ use anyhow::Result;
 use std::path::Path;
 
 pub(crate) fn scan_path(path: &Path) -> Result<Option<UnsafeUsage>> {
-    let source = std::fs::read_to_string(path)
-        .with_context(|| format!("Failed to read `{}`", path.display()))?;
-    Ok(scan_string(&source, path))
+    let bytes =
+        std::fs::read(path).with_context(|| format!("Failed to read `{}`", path.display()))?;
+    let Ok(source) = std::str::from_utf8(&bytes) else {
+        // If the file isn't valid UTF-8 then we don't need to check it for the unsafe keyword,
+        // since it can't be a source file that the rust compiler would accept.
+        return Ok(None);
+    };
+    Ok(scan_string(source, path))
 }
 
 fn scan_string(source: &str, path: &Path) -> Option<UnsafeUsage> {
