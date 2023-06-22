@@ -5,7 +5,6 @@ use crate::problem_store::ProblemStoreRef;
 use anyhow::Result;
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -113,14 +112,6 @@ impl super::UserInterface for FullTermUi {
             }
         }
     }
-}
-
-// TODO: We're no longer really using this abstraction, since we now only have one implementation of
-// this trait. Consider getting rid of it.
-trait Screen {
-    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()>;
-    fn handle_key(&mut self, key: KeyEvent) -> Result<()>;
-    fn quit_requested(&self) -> bool;
 }
 
 impl Drop for FullTermUi {

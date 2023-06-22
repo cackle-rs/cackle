@@ -4,7 +4,6 @@ use super::message_area;
 use super::render_list;
 use super::split_vertical;
 use super::update_counter;
-use super::Screen;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
@@ -49,12 +48,12 @@ enum Mode {
     PromptAutoAccept,
 }
 
-impl Screen for ProblemsUi {
-    fn quit_requested(&self) -> bool {
+impl ProblemsUi {
+    pub(super) fn quit_requested(&self) -> bool {
         self.modes.is_empty()
     }
 
-    fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
+    pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
         if self.problem_store.lock().is_empty() {
             super::render_build_progress(f);
             return Ok(());
@@ -82,7 +81,7 @@ impl Screen for ProblemsUi {
         Ok(())
     }
 
-    fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
+    pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(mode) = self.modes.last() else {
             return Ok(());
         };
@@ -132,31 +131,7 @@ impl Screen for ProblemsUi {
         }
         Ok(())
     }
-}
 
-fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
-    let area = message_area(f.size());
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
-    let raw_lines = [
-        "Auto-accept edits for all problems that only have a single edit?",
-        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
-        "Press enter to accept, or escape to cancel.",
-    ];
-    let mut lines = Vec::new();
-    for l in raw_lines {
-        lines.push(Line::from(l));
-        lines.push(Line::from(""));
-    }
-    let paragraph = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: false });
-    f.render_widget(Clear, area);
-    f.render_widget(paragraph, area);
-}
-
-impl ProblemsUi {
     pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
         Self {
             problem_store,
@@ -307,6 +282,28 @@ impl ProblemsUi {
         pstore_lock.resolve_problems_with_empty_diff(&editor);
         Ok(())
     }
+}
+
+fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
+    let area = message_area(f.size());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let raw_lines = [
+        "Auto-accept edits for all problems that only have a single edit?",
+        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
+        "Press enter to accept, or escape to cancel.",
+    ];
+    let mut lines = Vec::new();
+    for l in raw_lines {
+        lines.push(Line::from(l));
+        lines.push(Line::from(""));
+    }
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    f.render_widget(Clear, area);
+    f.render_widget(paragraph, area);
 }
 
 fn edits_for_problem(
