@@ -78,6 +78,11 @@ allow_apis = [
 ]
 allow_unsafe = true
 
+[pkg.crab4.build]
+allow_apis = [
+    "env",
+]
+
 [pkg.crab5]
 allow_apis = [
     "fs",

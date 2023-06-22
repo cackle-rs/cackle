@@ -101,8 +101,19 @@ pub(crate) fn available_kind() -> SandboxKind {
 }
 
 fn is_cargo_env(var: &str) -> bool {
+    // We set this when we call cargo. We don't want it passed through to build scripts.
     if var == "RUSTC_WRAPPER" {
         return false;
     }
-    var.starts_with("CARGO") || var.starts_with("RUSTC") || var == "TARGET"
+
+    const PREFIXES: &[&str] = &["CARGO", "RUSTC", "DEP_"];
+    const ONE_OFFS: &[&str] = &[
+        "TARGET",
+        "OPT_LEVEL",
+        "PROFILE",
+        "HOST",
+        "NUM_JOBS",
+        "DEBUG",
+    ];
+    PREFIXES.iter().any(|prefix| var.starts_with(prefix)) || ONE_OFFS.contains(&var)
 }
