@@ -23,6 +23,7 @@ import = [
 
 [pkg.crab2]
 allow_apis = [
+    "env",
     "fs",
 ]
 
