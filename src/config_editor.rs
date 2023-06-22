@@ -222,14 +222,16 @@ fn edits_for_build_instruction(
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
+        let mut separators = "=-:";
         let mut last_separator = None;
         instruction = &instruction[..instruction.len() - 1];
         for (pos, ch) in instruction.char_indices() {
-            if ch == '=' || ch == '-' || ch == ':' {
+            if separators.contains(ch) {
                 last_separator = Some(pos);
-                // After =, don't look for any more separators.
+                // After =, only permit = as a separator. i.e. ':' and '-' are only separators up to
+                // the first equals.
                 if ch == '=' {
-                    break;
+                    separators = "="
                 }
             }
         }
@@ -774,19 +776,17 @@ mod tests {
 
     #[test]
     fn fix_disallowed_build_instruction() {
+        let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+            pkg_name: "crab1".to_owned(),
+            instruction: "cargo:rustc-env=SOME_VAR=/home/some-path".to_owned(),
+        });
         check(
             "",
-            &[(
-                2,
-                Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-                    pkg_name: "crab1".to_owned(),
-                    instruction: "cargo:rustc-link-search=/home/some-path".to_owned(),
-                }),
-            )],
+            &[(1, problem)],
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_build_instructions = [
-                    "cargo:rustc-link-*",
+                    "cargo:rustc-env=SOME_VAR=*",
                 ]
             "#,
             },
