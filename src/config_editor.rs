@@ -623,9 +623,7 @@ impl Edit for AllowBuildInstruction {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&format!("{}.build", self.pkg_name))?;
-        let allowed = get_or_create_array(table, "allow_build_instructions")?;
-        allowed.push_formatted(create_string(self.instruction.clone()));
-        Ok(())
+        add_to_array(table, "allow_build_instructions", &[&self.instruction])
     }
 }
 
