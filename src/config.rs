@@ -52,7 +52,7 @@ pub(crate) struct CommonConfig {
     pub(crate) ignore_unreachable: bool,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SandboxConfig {
     #[serde(default)]
@@ -67,7 +67,7 @@ pub(crate) struct SandboxConfig {
     pub(crate) allow_network: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
     pub(crate) include: Vec<String>,
@@ -82,7 +82,7 @@ pub(crate) struct PermissionName {
     pub(crate) name: Cow<'static, str>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum SandboxKind {
     #[default]
     Inherit,

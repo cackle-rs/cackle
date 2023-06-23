@@ -11,7 +11,7 @@ pub(crate) enum ErrorKind {
     Unsafe(UnsafeUsage),
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
     pub(crate) file_name: PathBuf,
     pub(crate) start_line: u32,

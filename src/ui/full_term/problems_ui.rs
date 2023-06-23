@@ -154,14 +154,16 @@ impl ProblemsUi {
         fn first_single_edit(
             pstore: &MutexGuard<ProblemStore>,
         ) -> Option<(ProblemStoreIndex, Box<dyn Edit>)> {
-            pstore.into_iter().find_map(|(index, problem)| {
-                let mut edits = config_editor::fixes_for_problem(problem);
-                if edits.len() == 1 {
-                    Some((index, edits.pop().unwrap()))
-                } else {
-                    None
-                }
-            })
+            pstore
+                .iterate_with_duplicates()
+                .find_map(|(index, problem)| {
+                    let mut edits = config_editor::fixes_for_problem(problem);
+                    if edits.len() == 1 {
+                        Some((index, edits.pop().unwrap()))
+                    } else {
+                        None
+                    }
+                })
         }
 
         let mut pstore = self.problem_store.lock();
@@ -186,7 +188,7 @@ impl ProblemsUi {
         }
         let mut items = Vec::new();
         let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
-        for (index, (_, problem)) in pstore_lock.into_iter().enumerate() {
+        for (index, (_, problem)) in pstore_lock.deduplicated_into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
             if is_edit_mode && index == self.problem_index {
                 let edits = edits_for_problem(pstore_lock, self.problem_index);
@@ -219,7 +221,7 @@ impl ProblemsUi {
         let block = Block::default().title("Details").borders(Borders::ALL);
         let pstore_lock = &self.problem_store.lock();
         let details = pstore_lock
-            .into_iter()
+            .deduplicated_into_iter()
             .nth(self.problem_index)
             .map(|(_, problem)| problem.details())
             .unwrap_or_default();
@@ -286,7 +288,11 @@ impl ProblemsUi {
         self.write_config(&editor)?;
 
         // Resolve the currently selected problem.
-        if let Some((index, _)) = pstore_lock.into_iter().nth(self.problem_index) {
+        let maybe_index = pstore_lock
+            .deduplicated_into_iter()
+            .nth(self.problem_index)
+            .map(|(index, _)| index);
+        if let Some(index) = maybe_index {
             pstore_lock.replace(index, edit.replacement_problems());
         }
 
@@ -367,7 +373,7 @@ fn edits_for_problem(
     pstore_lock: &MutexGuard<ProblemStore>,
     problem_index: usize,
 ) -> Vec<Box<dyn Edit>> {
-    let Some((_, problem)) = pstore_lock.into_iter().nth(problem_index) else {
+    let Some((_, problem)) = pstore_lock.deduplicated_into_iter().nth(problem_index) else {
         return Vec::new();
     };
     config_editor::fixes_for_problem(problem)

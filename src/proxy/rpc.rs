@@ -74,7 +74,7 @@ pub(crate) enum Request {
     BuildScriptComplete(BuildScriptOutput),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct BuildScriptOutput {
     pub(crate) exit_code: i32,
     pub(crate) stdout: Vec<u8>,
@@ -84,7 +84,7 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) build_script: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
     pub(crate) crate_name: String,
     pub(crate) error_info: errors::UnsafeUsage,

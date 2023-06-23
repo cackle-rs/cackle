@@ -6,6 +6,7 @@ use crate::problem::ErrorDetails;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use log::info;
+use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -89,7 +90,7 @@ impl ProblemStore {
     pub(crate) fn resolve_problems_with_empty_diff(&mut self, editor: &ConfigEditor) {
         let current_toml = editor.to_toml();
         let mut empty_indexes = Vec::new();
-        for (index, problem) in self.into_iter() {
+        for (index, problem) in self.iterate_with_duplicates() {
             for edit in config_editor::fixes_for_problem(problem) {
                 if !edit.resolve_problem_if_edit_is_empty() {
                     continue;
@@ -111,6 +112,23 @@ impl ProblemStore {
         for index in empty_indexes {
             self.resolve(index);
         }
+    }
+
+    pub(crate) fn iterate_with_duplicates(
+        &self,
+    ) -> impl Iterator<Item = (ProblemStoreIndex, &Problem)> {
+        ProblemStoreIterator {
+            store: self,
+            index: ProblemStoreIndex::default(),
+        }
+    }
+
+    pub(crate) fn deduplicated_into_iter(
+        &self,
+    ) -> impl Iterator<Item = (ProblemStoreIndex, &Problem)> {
+        let mut seen = HashSet::new();
+        self.iterate_with_duplicates()
+            .filter(move |(_, problem)| seen.insert(*problem))
     }
 
     /// Within each problem list, group problems by type and crate.
@@ -172,7 +190,7 @@ struct Entry {
     sender: Option<Sender<Outcome>>,
 }
 
-pub(crate) struct ProblemStoreIterator<'a> {
+struct ProblemStoreIterator<'a> {
     store: &'a ProblemStore,
     index: ProblemStoreIndex,
 }
@@ -200,22 +218,10 @@ impl<'a> Iterator for ProblemStoreIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a ProblemStore {
-    type Item = (ProblemStoreIndex, &'a Problem);
-
-    type IntoIter = ProblemStoreIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ProblemStoreIterator {
-            store: self,
-            index: ProblemStoreIndex::default(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::ProblemStore;
+    use super::ProblemStoreIndex;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
     use std::sync::mpsc::channel;
@@ -236,7 +242,7 @@ mod tests {
 
         assert_eq!(store.len(), 4);
 
-        let mut iter = store.into_iter();
+        let mut iter = store.iterate_with_duplicates();
         assert_eq!(
             iter.next().map(|(_, v)| v),
             Some(&Problem::UsesBuildScript("crab1".to_owned()))
@@ -255,25 +261,29 @@ mod tests {
         );
         assert_eq!(iter.next().map(|(_, v)| v), None);
 
-        assert_eq!(store.into_iter().count(), 4);
+        assert_eq!(store.iterate_with_duplicates().count(), 4);
     }
 
     #[test]
     fn all_resolved() {
+        fn first_problem_index(store: &ProblemStore) -> Option<ProblemStoreIndex> {
+            Some(store.iterate_with_duplicates().next()?.0)
+        }
+
         let mut store = ProblemStore::new(channel().0);
         let done1 = store.add(create_problems());
         let done2 = store.add(create_problems());
 
         assert_eq!(done1.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(store.into_iter().next().unwrap().0);
+        store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done1.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(store.into_iter().next().unwrap().0);
+        store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done1.try_recv(), Ok(crate::outcome::Outcome::Continue));
 
         assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(store.into_iter().next().unwrap().0);
+        store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(store.into_iter().next().unwrap().0);
+        store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done2.try_recv(), Ok(crate::outcome::Outcome::Continue));
     }
 
@@ -298,5 +308,14 @@ mod tests {
         store.abort();
         assert_eq!(done1.try_recv(), Ok(crate::outcome::Outcome::GiveUp));
         assert_eq!(done2.try_recv(), Ok(crate::outcome::Outcome::GiveUp));
+    }
+
+    #[test]
+    fn deduplicated_iteraton() {
+        let mut store = ProblemStore::new(channel().0);
+        store.add(create_problems());
+        store.add(create_problems());
+        assert_eq!(store.iterate_with_duplicates().count(), 4);
+        assert_eq!(store.deduplicated_into_iter().count(), 2);
     }
 }

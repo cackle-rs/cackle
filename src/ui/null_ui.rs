@@ -32,7 +32,7 @@ impl super::UserInterface for NullUi {
                     let mut pstore = problem_store.lock();
                     pstore.group_by_crate();
                     let mut has_errors = false;
-                    for (_, problem) in pstore.into_iter() {
+                    for (_, problem) in pstore.deduplicated_into_iter() {
                         let severity = if self.args.fail_on_warnings {
                             Severity::Error
                         } else {
@@ -51,7 +51,11 @@ impl super::UserInterface for NullUi {
                     if has_errors {
                         pstore.abort();
                     } else {
-                        while let Some((index, _)) = pstore.into_iter().next() {
+                        let maybe_index = pstore
+                            .deduplicated_into_iter()
+                            .next()
+                            .map(|(index, _)| index);
+                        while let Some(index) = maybe_index {
                             pstore.resolve(index);
                         }
                     }

@@ -1,7 +1,7 @@
 use rustc_demangle::demangle;
 use std::fmt::Display;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct SectionName {
     bytes: Vec<u8>,
 }

@@ -47,7 +47,7 @@ impl super::UserInterface for BasicTermUi {
             }
             loop {
                 let pstore_lock = problem_store.lock();
-                let Some((problem_index, problem)) = pstore_lock.into_iter().next() else {
+                let Some((problem_index, problem)) = pstore_lock.deduplicated_into_iter().next() else {
                         break;
                     };
                 if matches!(problem, Problem::MissingConfiguration(_)) {

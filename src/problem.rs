@@ -22,7 +22,7 @@ pub(crate) struct ProblemList {
 }
 
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Problem {
     Message(String),
     Error(ErrorDetails),
@@ -41,13 +41,13 @@ pub(crate) enum Problem {
     AvailableApi(AvailableApi),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ErrorDetails {
     pub(crate) short: String,
     pub(crate) detail: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BuildScriptFailed {
     pub(crate) output: BuildScriptOutput,
 }
@@ -59,26 +59,26 @@ pub(crate) struct DisallowedApiUsage {
     pub(crate) reachable: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct UnusedAllowApi {
     pub(crate) pkg_name: String,
     pub(crate) permissions: Vec<PermissionName>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DisallowedBuildInstruction {
     pub(crate) pkg_name: String,
     pub(crate) instruction: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct AvailableApi {
     pub(crate) pkg_name: String,
     pub(crate) api: PermissionName,
     pub(crate) config: PermConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct MultipleSymbolsInSection {
     pub(crate) section_name: SectionName,
     pub(crate) symbols: Vec<Symbol>,
@@ -412,6 +412,17 @@ impl From<Problem> for ProblemList {
         Self {
             problems: vec![value],
         }
+    }
+}
+
+impl std::hash::Hash for DisallowedApiUsage {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.pkg_name.hash(state);
+        // Out of laziness, we only hash the permission names, not the usage information.
+        for perm in self.usages.keys() {
+            perm.hash(state);
+        }
+        self.reachable.hash(state);
     }
 }
 
