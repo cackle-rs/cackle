@@ -243,13 +243,19 @@ impl ProblemsUi {
             return Ok(());
         };
 
-        let original = std::fs::read_to_string(&self.config_path).unwrap_or_default();
-        let mut editor = ConfigEditor::from_toml_string(&original)?;
-        edit.apply(&mut editor)?;
-        let updated = editor.to_toml();
-
         let mut lines = Vec::new();
         lines.push(Line::from(edit.help()));
+
+        let original = std::fs::read_to_string(&self.config_path).unwrap_or_default();
+        let mut editor = ConfigEditor::from_toml_string(&original)?;
+        // Some edits (e.g. selecting Bubblewrap as a sandbox can fail with an error). We show that
+        // error inline rather than in an error dialog. A dialog wouldn't work because the error
+        // would just occur again as soon as the dialog was closed.
+        if let Err(error) = edit.apply(&mut editor) {
+            lines.push(Line::from(""));
+            lines.push(Line::from(error.to_string()));
+        }
+        let updated = editor.to_toml();
 
         let mut diff = diff::diff_lines(&original, &updated);
 

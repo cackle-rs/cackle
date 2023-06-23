@@ -198,6 +198,7 @@ impl ConfigEditor {
     }
 
     pub(crate) fn set_sandbox_kind(&mut self, sandbox_kind: SandboxKind) -> Result<()> {
+        crate::sandbox::verify_kind(sandbox_kind)?;
         let sandbox_kind = match sandbox_kind {
             SandboxKind::Inherit => "Inherit",
             SandboxKind::Disabled => "Disabled",
