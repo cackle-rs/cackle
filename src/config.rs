@@ -22,7 +22,7 @@ pub(crate) const MAX_VERSION: i64 = 1;
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Config {
-    pub(crate) version: i64,
+    pub(crate) common: CommonConfig,
 
     #[serde(default, rename = "api")]
     pub(crate) apis: BTreeMap<PermissionName, PermConfig>,
@@ -32,6 +32,12 @@ pub(crate) struct Config {
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CommonConfig {
+    pub(crate) version: i64,
 
     #[serde(default)]
     pub(crate) explicit_build_scripts: bool,
@@ -134,11 +140,11 @@ fn parse(cackle: &str) -> Result<Config> {
 }
 
 fn merge_built_ins(config: &mut Config) -> Result<()> {
-    if config.import_std.is_empty() {
+    if config.common.import_std.is_empty() {
         return Ok(());
     }
     let built_ins = built_in::get_built_ins();
-    for imp in config.import_std.drain(..) {
+    for imp in config.common.import_std.drain(..) {
         let perm = PermissionName::new(imp.as_str());
         let built_in_api = built_ins
             .get(&perm)
@@ -302,9 +308,10 @@ impl Config {
 
     /// Returns whether reachability information is needed.
     pub(crate) fn needs_reachability(&self) -> bool {
-        self.packages
-            .values()
-            .any(|pkg| pkg.ignore_unreachable.unwrap_or(self.ignore_unreachable))
+        self.packages.values().any(|pkg| {
+            pkg.ignore_unreachable
+                .unwrap_or(self.common.ignore_unreachable)
+        })
     }
 }
 
@@ -321,7 +328,7 @@ pub(crate) mod testing {
 
     pub(crate) fn parse(cackle: &str) -> anyhow::Result<Arc<super::Config>> {
         let cackle_with_header = format!(
-            "version = 1\n\
+            "[common]\nversion = 1\n\
             {cackle}
         "
         );

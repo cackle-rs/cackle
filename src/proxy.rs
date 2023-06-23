@@ -85,9 +85,9 @@ pub(crate) fn invoke_cargo_build(
     if let Some(target) = &args.target {
         command.arg("--target").arg(target);
     }
-    if !config.features.is_empty() {
+    if !config.common.features.is_empty() {
         command.arg("--features");
-        command.arg(config.features.join(","));
+        command.arg(config.common.features.join(","));
     }
     command
         .env(SOCKET_ENV, &ipc_path)

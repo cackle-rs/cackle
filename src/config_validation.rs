@@ -22,8 +22,8 @@ enum Problem {
 
 pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
     let mut problems = Vec::new();
-    if config.version < 1 || config.version > MAX_VERSION {
-        problems.push(Problem::UnsupportedVersion(config.version));
+    if config.common.version < 1 || config.common.version > MAX_VERSION {
+        problems.push(Problem::UnsupportedVersion(config.common.version));
     }
     let permission_names: HashSet<_> = config.apis.keys().collect();
     for (name, crate_config) in &config.packages {

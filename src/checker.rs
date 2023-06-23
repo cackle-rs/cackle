@@ -315,7 +315,7 @@ impl Checker {
     pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> ProblemList {
         let pkg_id = self.crate_id_from_name(&format!("{package_name}.build"));
         let crate_info = &mut self.crate_infos[pkg_id.0];
-        if !crate_info.has_config && self.config.explicit_build_scripts {
+        if !crate_info.has_config && self.config.common.explicit_build_scripts {
             return Problem::UsesBuildScript(package_name.to_owned()).into();
         }
         crate_info.used = true;
@@ -354,7 +354,7 @@ impl Checker {
     pub(crate) fn ignore_unreachable(&self, crate_id: CrateId) -> bool {
         self.crate_infos[crate_id.0]
             .ignore_unreachable
-            .unwrap_or(self.config.ignore_unreachable)
+            .unwrap_or(self.config.common.ignore_unreachable)
     }
 
     pub(crate) fn report_crate_used(&mut self, crate_id: CrateId) {

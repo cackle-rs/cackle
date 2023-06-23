@@ -100,7 +100,7 @@ impl BasicTermUi {
     fn create_initial_config(&mut self) -> Result<Outcome> {
         println!("Creating initial cackle.toml");
         let mut editor = config_editor::ConfigEditor::initial();
-        editor.set_version(MAX_VERSION);
+        editor.set_version(MAX_VERSION)?;
         let sandbox_kind = sandbox::available_kind();
         if sandbox_kind == SandboxKind::Disabled {
             println!(indoc! {r#"

@@ -138,6 +138,10 @@ impl ConfigEditor {
         self.table(std::iter::once("pkg").chain(pkg_name.split('.')))
     }
 
+    fn common_table(&mut self) -> Result<&mut toml_edit::Table> {
+        self.table(["common"].into_iter())
+    }
+
     fn table<'a>(
         &mut self,
         path: impl Iterator<Item = &'a str> + Clone,
@@ -164,17 +168,16 @@ impl ConfigEditor {
         Ok(table)
     }
 
-    pub(crate) fn set_version(&mut self, version: i64) {
-        self.document
-            .as_table_mut()
+    pub(crate) fn set_version(&mut self, version: i64) -> Result<()> {
+        self.common_table()?
             .entry("version")
             .or_insert_with(|| toml_edit::value(version));
+        Ok(())
     }
 
     pub(crate) fn toggle_std_import(&mut self, api: &str) -> Result<()> {
         let imports = self
-            .document
-            .as_table_mut()
+            .common_table()?
             .entry("import_std")
             .or_insert_with(create_array)
             .as_array_mut()
@@ -200,12 +203,7 @@ impl ConfigEditor {
             SandboxKind::Disabled => "Disabled",
             SandboxKind::Bubblewrap => "Bubblewrap",
         };
-        self.document
-            .as_table_mut()
-            .entry("sandbox")
-            .or_insert_with(toml_edit::table)
-            .as_table_mut()
-            .ok_or_else(|| anyhow!("sandbox isn't a table"))?
+        self.table(["sandbox"].into_iter())?
             .insert("kind", toml_edit::value(sandbox_kind));
         Ok(())
     }
@@ -272,8 +270,7 @@ impl Edit for CreateInitialConfig {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        editor.set_version(crate::config::MAX_VERSION);
-        Ok(())
+        editor.set_version(crate::config::MAX_VERSION)
     }
 
     fn replacement_problems(&self) -> ProblemList {
@@ -615,7 +612,7 @@ impl Edit for IgnoreUnreachableGlobal {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.document.as_table_mut();
+        let table = editor.common_table()?;
         table["ignore_unreachable"] = toml_edit::value(true);
         Ok(())
     }

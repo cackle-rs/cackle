@@ -1,3 +1,4 @@
+[common]
 version = 1
 features = [
     "crash-if-not-sandboxed",
