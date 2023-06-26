@@ -96,7 +96,7 @@ pub(crate) const SANDBOX_KINDS: &[SandboxKind] = &[SandboxKind::Disabled, Sandbo
 #[serde(deny_unknown_fields)]
 pub(crate) struct PackageConfig {
     #[serde(default)]
-    allow_unsafe: bool,
+    pub(crate) allow_unsafe: bool,
 
     #[serde(default)]
     pub(crate) allow_build_instructions: Vec<String>,

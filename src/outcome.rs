@@ -23,6 +23,7 @@ impl Outcome {
 
 /// Our own representation for an ExitCode. We don't use ExitStatus from the standard library
 /// because sometimes we need to construct an ExitCode ourselves.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ExitCode(pub(crate) i32);
 
 impl ExitCode {

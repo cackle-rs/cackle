@@ -21,6 +21,7 @@ pub(crate) mod problem_store;
 mod proxy;
 mod sandbox;
 pub(crate) mod section_name;
+mod summary;
 pub(crate) mod symbol;
 mod symbol_graph;
 mod ui;
@@ -46,6 +47,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
+use summary::SummaryOptions;
 use symbol_graph::SymGraph;
 
 #[derive(Parser, Debug, Clone, Default)]
@@ -125,6 +127,8 @@ enum Command {
     Check,
     /// Interactive check of configuration.
     Ui(UiArgs),
+    /// Print summary of permissions used.
+    Summary(SummaryOptions),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -157,6 +161,7 @@ struct Cackle {
     args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
+    crate_index: Arc<CrateIndex>,
 }
 
 impl Cackle {
@@ -212,12 +217,16 @@ impl Cackle {
             args,
             event_sender,
             ui_join_handle,
+            crate_index,
         })
     }
 
     /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
     /// before we return. That way the user interface will be cleaned up before we exit.
     fn run_and_report_errors(mut self) -> ExitCode {
+        if let Command::Summary(options) = &self.args.command {
+            return self.print_summary(options);
+        }
         let exit_code = match self.run() {
             Err(error) => {
                 self.problem_store.report_error(error);
@@ -230,7 +239,23 @@ impl Cackle {
             println!("UI error: {error}");
             return outcome::FAILURE;
         }
+        if exit_code == outcome::SUCCESS {
+            let checker = self.checker.lock().unwrap();
+            let summary = summary::Summary::new(&self.crate_index, &checker.config);
+            println!("{summary}");
+        }
         exit_code
+    }
+
+    fn print_summary(&self, options: &SummaryOptions) -> ExitCode {
+        let mut checker = self.checker.lock().unwrap();
+        if let Err(error) = checker.load_config() {
+            println!("{error:#}");
+            return outcome::FAILURE;
+        }
+        let summary = summary::Summary::new(&self.crate_index, &checker.config);
+        summary.print(options);
+        outcome::SUCCESS
     }
 
     fn run(&mut self) -> Result<ExitCode> {
@@ -334,6 +359,7 @@ impl Args {
         match &self.command {
             Command::Check => ui::Kind::None,
             Command::Ui(ui_args) => ui_args.ui,
+            Command::Summary(..) => ui::Kind::None,
         }
     }
 }
