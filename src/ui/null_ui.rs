@@ -51,12 +51,16 @@ impl super::UserInterface for NullUi {
                     if has_errors {
                         pstore.abort();
                     } else {
-                        let maybe_index = pstore
-                            .deduplicated_into_iter()
-                            .next()
-                            .map(|(index, _)| index);
-                        while let Some(index) = maybe_index {
-                            pstore.resolve(index);
+                        loop {
+                            let maybe_index = pstore
+                                .iterate_with_duplicates()
+                                .next()
+                                .map(|(index, _)| index);
+                            if let Some(index) = maybe_index {
+                                pstore.resolve(index);
+                            } else {
+                                break;
+                            }
                         }
                     }
                 }
@@ -64,4 +68,26 @@ impl super::UserInterface for NullUi {
         }
         Ok(())
     }
+}
+
+#[test]
+fn test_null_ui_with_warning() {
+    use crate::problem::Problem::UnusedPackageConfig;
+
+    let mut ui = NullUi::new(&Arc::new(Args::default()));
+    let (event_send, event_recv) = std::sync::mpsc::channel();
+    let mut problem_store = crate::problem_store::create(event_send.clone());
+    let join_handle = std::thread::spawn({
+        let problem_store = problem_store.clone();
+        move || {
+            crate::ui::UserInterface::run(&mut ui, problem_store, event_recv).unwrap();
+        }
+    });
+    let mut problems = crate::problem::ProblemList::default();
+    problems.push(UnusedPackageConfig("crab1".to_owned()));
+    problems.push(UnusedPackageConfig("crab2".to_owned()));
+    let outcome = problem_store.fix_problems(problems);
+    assert_eq!(outcome, crate::outcome::Outcome::Continue);
+    event_send.send(AppEvent::Shutdown).unwrap();
+    join_handle.join().unwrap();
 }
