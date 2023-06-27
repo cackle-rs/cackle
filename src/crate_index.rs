@@ -30,7 +30,7 @@ impl CrateIndex {
             }
             for target in package.targets {
                 if let Some(target_dir) = target.src_path.into_std_path_buf().parent() {
-                    let name = if target.name == "build-script-build" {
+                    let name = if target.name.starts_with("build-script-") {
                         format!("{}.build", package.name)
                     } else {
                         package.name.clone()

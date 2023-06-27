@@ -25,7 +25,7 @@ impl LinkInfo {
             .filter(|path| has_supported_extension(path))
             .collect();
         Ok(LinkInfo {
-            is_build_script: crate_name == "build_script_build",
+            is_build_script: crate_name.starts_with("build_script_"),
             package_name,
             object_paths,
             output_file: get_output_file()?,
