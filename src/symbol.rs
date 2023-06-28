@@ -85,10 +85,8 @@ impl Debug for Symbol {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::Symbol;
-
+#[test]
+fn test_parts() {
     fn borrow(input: &[Vec<String>]) -> Vec<Vec<&str>> {
         input
             .iter()
@@ -96,25 +94,22 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_parts() {
-        let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
-        println!("{symbol}");
-        assert_eq!(
-            borrow(&symbol.parts().unwrap()),
-            vec![
-                vec!["core", "ptr", "drop_in_place"],
-                vec!["std", "rt", "lang_start"],
-                vec!["{{closure}}"],
-            ]
-        );
-    }
-    #[test]
-    fn test_display() {
-        let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
-        assert_eq!(
-            symbol.to_string(),
-            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
-        );
-    }
+    let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
+    println!("{symbol}");
+    assert_eq!(
+        borrow(&symbol.parts().unwrap()),
+        vec![
+            vec!["core", "ptr", "drop_in_place"],
+            vec!["std", "rt", "lang_start"],
+            vec!["{{closure}}"],
+        ]
+    );
+}
+#[test]
+fn test_display() {
+    let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
+    assert_eq!(
+        symbol.to_string(),
+        "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
+    );
 }
