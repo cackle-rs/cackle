@@ -1,0 +1,11 @@
+[package]
+name = "shared1"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = [ "cdylib" ]
+
+[dependencies]
+crab1 = { path = "../crab1" }
+crab2 = { path = "../crab2" }

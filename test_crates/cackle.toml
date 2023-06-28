@@ -20,6 +20,9 @@ allow_unsafe = true
 import = [
     "fs",
 ]
+allow_apis = [
+    "env",
+]
 
 [pkg.crab2]
 allow_apis = [
@@ -88,6 +91,13 @@ allow_apis = [
 [pkg.crab5]
 allow_apis = [
     "fs",
+]
+
+[pkg.shared1]
+allow_unsafe = true
+allow_apis = [
+    "crab1::fs",
+    "env",
 ]
 
 [pkg.crab1.build.sandbox]

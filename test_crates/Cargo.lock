@@ -47,3 +47,11 @@ version = "0.1.0"
 [[package]]
 name = "pmacro1"
 version = "0.1.0"
+
+[[package]]
+name = "shared1"
+version = "0.1.0"
+dependencies = [
+ "crab1",
+ "crab2",
+]

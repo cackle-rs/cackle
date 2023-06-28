@@ -27,3 +27,9 @@ pub fn call_read_file() {
 pub fn do_network_stuff() {
     std::net::TcpListener::bind("127.0.0.1:9876").unwrap();
 }
+
+/// This function shows up in the dynamic symbols of shared1, so should count as used.
+#[no_mangle]
+pub extern "C" fn crab1_entry() {
+    println!("{:?}", std::env::var("HOME"));
+}

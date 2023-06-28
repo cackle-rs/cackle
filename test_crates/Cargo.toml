@@ -7,4 +7,5 @@ members = [
     "crab5",
     "crab-bin",
     "pmacro1",
+    "shared1",
 ]
