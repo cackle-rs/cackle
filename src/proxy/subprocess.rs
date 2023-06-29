@@ -4,6 +4,7 @@
 use super::cackle_exe;
 use super::errors::UnsafeUsage;
 use super::rpc::BuildScriptOutput;
+use super::rpc::RustcOutput;
 use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
@@ -161,7 +162,15 @@ fn target_subdir(build_script_path: &Path) -> Result<&Path> {
 }
 
 fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
+    // When rustc calls the linker (us), we notify the main cackle process, which checks what APIs
+    // are used. The main process needs to know which source paths belong to which crates. For it to
+    // know this mapping, we need to parse the deps file that gets created when rustc runs. So on
+    // the first iteration, we don't allow linking and only emit dep-info. When that completes, we
+    // provide the source to crate mapping to the parent process, then repeat compilation, but this
+    // time allow linking.
+    let mut allow_linking = false;
     loop {
+        let mut is_linking = false;
         let mut args = std::env::args().skip(2).peekable();
         let config = get_config_from_env()?;
         let pkg_name =
@@ -190,6 +199,19 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             if arg.starts_with("--error-format") {
                 continue;
             }
+            if let Some(emit) = arg.strip_prefix("--emit=") {
+                is_linking = emit.split(',').any(|p| p == "link");
+                if is_linking && !allow_linking {
+                    command.arg(format!(
+                        "--emit={}",
+                        emit.split(',')
+                            .filter(|p| *p != "link")
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ));
+                    continue;
+                }
+            }
             // For all other arguments, pass them through.
             command.arg(arg);
         }
@@ -214,16 +236,31 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         }
         let output = command.output()?;
         if output.status.code() == Some(0) {
-            if !unsafe_permitted {
-                if let Some(unsafe_usage) = find_unsafe_in_sources()? {
-                    let response = rpc_client.crate_uses_unsafe(&crate_name, unsafe_usage)?;
-                    if response == Outcome::Continue {
-                        continue;
+            // We only figure out source paths, check for unsafe and notify the parent process of
+            // source paths on the first successful run. Doing it a second time would be a waste.
+            if !allow_linking {
+                let source_paths = crate::deps::source_files_from_rustc_args(std::env::args())?;
+                if !unsafe_permitted {
+                    if let Some(unsafe_usage) = find_unsafe_in_sources(&source_paths)? {
+                        let response = rpc_client.crate_uses_unsafe(&crate_name, unsafe_usage)?;
+                        if response == Outcome::Continue {
+                            continue;
+                        }
                     }
                 }
+                // Tell the main process what source paths this rustc invocation made use of. It needs
+                // these so that it can attribute source files to a particular crate. We ignore the
+                // response, since we don't need it.
+                rpc_client.rustc_complete(RustcOutput {
+                    crate_name,
+                    source_paths,
+                })?;
             }
-            std::io::stdout().lock().write_all(&output.stdout)?;
-            std::io::stderr().lock().write_all(&output.stderr)?;
+            // Only send output on last successful run of rustc.
+            if allow_linking || !is_linking {
+                std::io::stdout().lock().write_all(&output.stdout)?;
+                std::io::stderr().lock().write_all(&output.stderr)?;
+            }
         } else {
             let crate_name = &crate_name;
             let output = &output;
@@ -242,14 +279,19 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
                 }
             }
         }
+        if is_linking && !allow_linking {
+            // Repeat loop, but this time allow linking.
+            allow_linking = true;
+            continue;
+        }
         return Ok(output.status.into());
     }
 }
 
-/// Searches for the first unsafe keyword in the sources for the current invocation of rustc.
-fn find_unsafe_in_sources() -> Result<Option<UnsafeUsage>> {
-    for file in crate::deps::source_files_from_rustc_args(std::env::args())? {
-        if let Some(unsafe_usage) = unsafe_checker::scan_path(&file)? {
+/// Searches for the first unsafe keyword in the specified paths.
+fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Option<UnsafeUsage>> {
+    for file in paths {
+        if let Some(unsafe_usage) = unsafe_checker::scan_path(file)? {
             return Ok(Some(unsafe_usage));
         }
     }

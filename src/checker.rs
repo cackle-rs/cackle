@@ -15,6 +15,7 @@ use crate::symbol::Symbol;
 use crate::symbol_graph::SymGraph;
 use crate::Args;
 use crate::CheckState;
+use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use log::info;
@@ -39,6 +40,10 @@ pub(crate) struct Checker {
     target_dir: PathBuf,
     args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
+    /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
+    /// map to a single crate, but in rare cases multiple crates within a package could use the same
+    /// source path.
+    path_to_crate: HashMap<PathBuf, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -130,6 +135,7 @@ impl Checker {
             target_dir,
             args,
             crate_index,
+            path_to_crate: Default::default(),
         }
     }
 
@@ -216,6 +222,10 @@ impl Checker {
                 self.check_linker_invocation(link_info, check_state)
             }
             rpc::Request::BuildScriptComplete(output) => Ok(self.check_build_script_output(output)),
+            rpc::Request::RustcComplete(info) => {
+                self.record_crate_paths(info);
+                Ok(ProblemList::default())
+            }
         }
     }
 
@@ -344,6 +354,23 @@ impl Checker {
         &self.permission_names[perm_id.0]
     }
 
+    pub(crate) fn crate_names_from_source_path(
+        &mut self,
+        source_path: &Path,
+        ref_path: &Path,
+    ) -> Result<Vec<String>> {
+        self.path_to_crate
+            .get(Path::new(source_path))
+            .ok_or_else(|| {
+                anyhow!(
+                    "Couldn't find crate name for {} referenced from {}",
+                    source_path.display(),
+                    ref_path.display()
+                )
+            })
+            .cloned()
+    }
+
     pub(crate) fn crate_id_from_name(&mut self, crate_name: &str) -> CrateId {
         if let Some(id) = self.crate_name_to_index.get(crate_name) {
             return *id;
@@ -460,6 +487,23 @@ impl Checker {
             }
         }
         problems
+    }
+
+    fn record_crate_paths(&mut self, info: &rpc::RustcOutput) {
+        for path in &info.source_paths {
+            self.path_to_crate
+                .entry(path.to_owned())
+                .or_default()
+                .push(info.crate_name.clone());
+        }
+    }
+
+    pub(crate) fn print_path_to_crate_map(&self) {
+        for (path, crates) in &self.path_to_crate {
+            for c in crates {
+                println!("{} -> {}", path.display(), c);
+            }
+        }
     }
 }
 

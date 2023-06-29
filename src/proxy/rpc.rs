@@ -53,6 +53,12 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
+    pub(crate) fn rustc_complete(&self, info: RustcOutput) -> Result<Outcome> {
+        let mut ipc = self.connect()?;
+        write_to_stream(&Request::RustcComplete(info), &mut ipc)?;
+        read_from_stream(&mut ipc)
+    }
+
     /// Creates a new connection to the socket. We only send a single request/response on each
     /// connection because it makes things simpler. In general a single request/response is all we
     /// need anyway.
@@ -72,6 +78,7 @@ pub(crate) enum Request {
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
     BuildScriptComplete(BuildScriptOutput),
+    RustcComplete(RustcOutput),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
@@ -82,6 +89,12 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) package_name: String,
     pub(crate) sandbox_config: SandboxConfig,
     pub(crate) build_script: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
+pub(crate) struct RustcOutput {
+    pub(crate) crate_name: String,
+    pub(crate) source_paths: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]

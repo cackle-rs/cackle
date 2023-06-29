@@ -48,19 +48,6 @@ impl CrateIndex {
         Ok(mapping)
     }
 
-    pub(crate) fn crate_name_for_path(&self, mut path: &Path) -> Option<&str> {
-        loop {
-            if let Some(crate_name) = self.path_to_crate_name.get(path) {
-                return Some(crate_name);
-            }
-            if let Some(parent) = path.parent() {
-                path = parent;
-            } else {
-                return None;
-            }
-        }
-    }
-
     pub(crate) fn pkg_dir(&self, pkg_name: &str) -> Option<&Utf8PathBuf> {
         self.name_to_dir.get(pkg_name)
     }
@@ -77,6 +64,7 @@ impl CrateIndex {
     }
 }
 
+// TODO: Consider removing this if it isn't used.
 impl Display for CrateIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (path, name) in &self.path_to_crate_name {

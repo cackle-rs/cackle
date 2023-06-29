@@ -15,7 +15,6 @@ use crate::problem::ProblemList;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use crate::Args;
-use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -179,7 +178,6 @@ impl SymGraph {
                 dup
             ));
         }
-        let crate_index = checker.crate_index.clone();
         for section in &self.sections {
             if section.name.is_empty() {
                 // TODO: Determine if it's OK to just ignore this.
@@ -206,55 +204,57 @@ impl SymGraph {
                     &mut problems,
                 );
             }
-            let crate_name = crate_index
-                .crate_name_for_path(source_filename)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Couldn't find crate name for {} referenced from {}",
-                        source_filename.display(),
-                        section.defined_in.display(),
-                    )
-                })?;
-            let crate_id = checker.crate_id_from_name(crate_name);
-            if checker.ignore_unreachable(crate_id) && !section.reachable {
-                // The only way we could get here without reachability having been computed would be
-                // if there was an inconsistency between `Checker::ignore_unreachable` and
-                // `Config::needs_reachability`. i.e. a bug, but a bad enough bug that it's better
-                // to crash than continue.
-                assert!(self.reachabilty_computed);
-                continue;
-            }
-            let reachable = if self.reachabilty_computed {
-                Some(section.reachable)
-            } else {
-                None
-            };
-            for reference in &section.references {
-                if let Some(ref_name) = self.referenced_symbol(reference) {
-                    for name_parts in ref_name.parts()? {
-                        // If a package references another symbol within the same package, ignore
-                        // it.
-                        if name_parts
-                            .first()
-                            .map(|name_start| crate_name == name_start)
-                            .unwrap_or(false)
-                        {
-                            continue;
-                        }
-                        checker.path_used(crate_id, &name_parts, &mut problems, reachable, || {
-                            let location = if let Some(filename) = section.source_filename.clone() {
-                                UsageLocation::Source(SourceLocation { filename })
-                            } else {
-                                UsageLocation::Unknown(UnknownLocation {
-                                    object_path: section.defined_in.clone(),
-                                })
-                            };
-                            Usage {
-                                location,
-                                from: section.as_referee(),
-                                to: ref_name.clone(),
+            let crate_names =
+                checker.crate_names_from_source_path(source_filename, &section.defined_in)?;
+            for crate_name in crate_names {
+                let crate_id = checker.crate_id_from_name(&crate_name);
+                if checker.ignore_unreachable(crate_id) && !section.reachable {
+                    // The only way we could get here without reachability having been computed would be
+                    // if there was an inconsistency between `Checker::ignore_unreachable` and
+                    // `Config::needs_reachability`. i.e. a bug, but a bad enough bug that it's better
+                    // to crash than continue.
+                    assert!(self.reachabilty_computed);
+                    continue;
+                }
+                let reachable = if self.reachabilty_computed {
+                    Some(section.reachable)
+                } else {
+                    None
+                };
+                for reference in &section.references {
+                    if let Some(ref_name) = self.referenced_symbol(reference) {
+                        for name_parts in ref_name.parts()? {
+                            // If a package references another symbol within the same package, ignore
+                            // it.
+                            if name_parts
+                                .first()
+                                .map(|name_start| &crate_name == name_start)
+                                .unwrap_or(false)
+                            {
+                                continue;
                             }
-                        });
+                            checker.path_used(
+                                crate_id,
+                                &name_parts,
+                                &mut problems,
+                                reachable,
+                                || {
+                                    let location =
+                                        if let Some(filename) = section.source_filename.clone() {
+                                            UsageLocation::Source(SourceLocation { filename })
+                                        } else {
+                                            UsageLocation::Unknown(UnknownLocation {
+                                                object_path: section.defined_in.clone(),
+                                            })
+                                        };
+                                    Usage {
+                                        location,
+                                        from: section.as_referee(),
+                                        to: ref_name.clone(),
+                                    }
+                                },
+                            );
+                        }
                     }
                 }
             }

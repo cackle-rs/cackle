@@ -193,9 +193,6 @@ impl Cackle {
             crate_index.clone(),
             config_path.clone(),
         );
-        if args.print_path_to_crate_map {
-            println!("{crate_index}");
-        }
         for crate_name in crate_index.crate_names() {
             let crate_id = checker.crate_id_from_name(crate_name);
             checker.report_crate_used(crate_id);
@@ -238,6 +235,9 @@ impl Cackle {
         if let Ok(Err(error)) = self.ui_join_handle.join() {
             println!("UI error: {error}");
             return outcome::FAILURE;
+        }
+        if self.args.print_path_to_crate_map {
+            self.checker.lock().unwrap().print_path_to_crate_map();
         }
         if exit_code == outcome::SUCCESS {
             let checker = self.checker.lock().unwrap();
