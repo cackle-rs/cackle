@@ -61,7 +61,8 @@ allow_proc_macro = true
 
 [pkg.crab-bin]
 allow_apis = [
-   "fs",
+    "env",
+    "fs",
 ]
 allow_unsafe = true
 

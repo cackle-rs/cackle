@@ -10,4 +10,11 @@ fn main() {
     write_to_file("a.txt", "Hello");
     crab2::stuff::do_stuff();
     crab4::access_file();
+    non_mangled_function();
+}
+
+#[no_mangle]
+fn non_mangled_function() {
+    // Make sure we don't miss function references from non-mangled functions.
+    println!("{:?}", std::env::var("HOME"));
 }
