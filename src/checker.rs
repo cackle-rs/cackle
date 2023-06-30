@@ -226,6 +226,10 @@ impl Checker {
                 self.record_crate_paths(info);
                 Ok(ProblemList::default())
             }
+            rpc::Request::RustcStarted(crate_name) => {
+                info!("Rustc started compiling {crate_name}");
+                Ok(ProblemList::default())
+            }
         }
     }
 

@@ -169,6 +169,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     // provide the source to crate mapping to the parent process, then repeat compilation, but this
     // time allow linking.
     let mut allow_linking = false;
+    let mut first = true;
     loop {
         let mut is_linking = false;
         let mut args = std::env::args().skip(2).peekable();
@@ -233,6 +234,10 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         let unsafe_permitted = config.unsafe_permitted_for_crate(&crate_name);
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
+        }
+        if first {
+            rpc_client.rustc_started(&crate_name)?;
+            first = false;
         }
         let output = command.output()?;
         if output.status.code() == Some(0) {

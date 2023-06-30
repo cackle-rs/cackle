@@ -41,6 +41,13 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
+    pub(crate) fn rustc_started(&self, crate_name: &str) -> Result<Outcome> {
+        let mut ipc = self.connect()?;
+        let request = Request::RustcStarted(crate_name.to_owned());
+        write_to_stream(&request, &mut ipc)?;
+        read_from_stream(&mut ipc)
+    }
+
     pub(crate) fn linker_invoked(&self, info: LinkInfo) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         write_to_stream(&Request::LinkerInvoked(info), &mut ipc)?;
@@ -78,6 +85,7 @@ pub(crate) enum Request {
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
     BuildScriptComplete(BuildScriptOutput),
+    RustcStarted(String),
     RustcComplete(RustcOutput),
 }
 
