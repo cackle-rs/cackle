@@ -231,7 +231,14 @@ impl Checker {
         problems.merge(
             self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
         );
-        Ok(problems.grouped_by_type_crate_and_api())
+        let problems = problems.grouped_by_type_crate_and_api();
+        info!(
+            "Checking linker args for {} with {} objects. {} problems",
+            info.package_name,
+            info.object_paths.len(),
+            problems.len(),
+        );
+        Ok(problems)
     }
 
     pub(crate) fn check_object_paths(

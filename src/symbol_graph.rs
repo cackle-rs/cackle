@@ -21,6 +21,7 @@ use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
 use gimli::Dwarf;
+use log::info;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
@@ -182,12 +183,13 @@ impl SymGraph {
         for section in &self.sections {
             if section.name.is_empty() {
                 // TODO: Determine if it's OK to just ignore this.
+                info!("Got empty section name");
                 continue;
             }
             let Some(source_filename) = section.source_filename.as_ref() else {
                 // TODO: Determine if it's OK to just ignore this.
+                info!("Couldn't determine source filename for section `{}` in `{}`", section.name, section.defined_in.display());
                 continue;
-                //bail!("Couldn't determine source filename for section `{}` in `{}`", section.name, section.defined_in.display());
             };
             // Ignore sources from the rust standard library and precompiled crates that are bundled
             // with the standard library (e.g. hashbrown).
@@ -395,8 +397,8 @@ impl SymGraph {
                 let Some(&section_id) = self.sym_to_local_section.get(&symbol).or_else(|| self.symbol_to_section.get(&symbol)) else {
                     // TODO: Investigate this
                     //println!("SYM NOT FOUND: {symbol}");
+                    info!("Debug info references unknown symbol `{symbol}`");
                     continue;
-                    //bail!("Debug info references unknown symbol `{symbol}`");
                 };
                 self.sections[section_id].source_filename = Some(path);
             }
