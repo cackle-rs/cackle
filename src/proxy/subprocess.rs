@@ -164,11 +164,15 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     loop {
         let mut args = std::env::args().skip(2).peekable();
         let config = get_config_from_env()?;
-        let pkg_name = std::env::var("CARGO_PKG_NAME").ok();
+        let pkg_name =
+            std::env::var("CARGO_PKG_NAME").map_err(|_| anyhow!("CARGO_PKG_NAME not set"))?;
 
         let mut command = Command::new("rustc");
         let mut linker_arg = OsString::new();
         let mut orig_linker_arg = None;
+        let is_build_script = std::env::var("CARGO_CRATE_NAME")
+            .map(|v| v.starts_with("build_script_"))
+            .unwrap_or(false);
         while let Some(arg) = args.next() {
             // Look for `-C linker=...`. If we find it, note the value for later use and drop the
             // argument.
@@ -199,8 +203,12 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         // If something goes wrong, it can be handy to have object files left around to examine.
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
-        let crate_name = pkg_name.as_deref().unwrap_or("");
-        let unsafe_permitted = config.unsafe_permitted_for_crate(crate_name);
+        let crate_name = if is_build_script {
+            format!("{pkg_name}.build")
+        } else {
+            pkg_name
+        };
+        let unsafe_permitted = config.unsafe_permitted_for_crate(&crate_name);
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
         }
@@ -208,7 +216,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         if output.status.code() == Some(0) {
             if !unsafe_permitted {
                 if let Some(unsafe_usage) = find_unsafe_in_sources()? {
-                    let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_usage)?;
+                    let response = rpc_client.crate_uses_unsafe(&crate_name, unsafe_usage)?;
                     if response == Outcome::Continue {
                         continue;
                     }

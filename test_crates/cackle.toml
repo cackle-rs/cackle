@@ -37,6 +37,7 @@ allow_apis = [
 allow_build_instructions = [
     "cargo:rustc-link-*"
 ]
+allow_unsafe = true
 
 [pkg.crab3]
 allow_unsafe = true
