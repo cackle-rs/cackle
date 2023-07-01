@@ -23,6 +23,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
                 "std::path",
             ],
             &[
+                "std::env::VarError",
                 "std::env::args",
                 "std::env::var",
                 "std::env::var_os",
