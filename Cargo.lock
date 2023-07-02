@@ -84,6 +84,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bitflags"
+version = "2.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "630be753d4e58660abd17930c71b647fe46c27ea6b63cc59e1e3851406972e42"
+
+[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -95,7 +101,6 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "ar",
- "atty",
  "cargo_metadata",
  "clap",
  "colored",
@@ -103,6 +108,7 @@ dependencies = [
  "diff",
  "gimli",
  "indoc",
+ "is-terminal",
  "log",
  "object",
  "once_cell",
@@ -185,7 +191,7 @@ checksum = "223163f58c9a40c3b0a43e1c4b50a9ce09f007ea2cb1ec258a687945b4b7929f"
 dependencies = [
  "anstream",
  "anstyle",
- "bitflags",
+ "bitflags 1.3.2",
  "clap_lex",
  "strsim",
 ]
@@ -249,7 +255,7 @@ version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a84cda67535339806297f1b331d6dd6320470d2a0fe65381e79ee9e156dd3d13"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "crossterm_winapi",
  "libc",
  "mio",
@@ -396,14 +402,13 @@ dependencies = [
 
 [[package]]
 name = "is-terminal"
-version = "0.4.6"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "256017f749ab3117e93acb91063009e1f1bb56d03965b14c2c8df4eb02c524d8"
+checksum = "24fddda5af7e54bf7da53067d6e802dbcc381d0a8eef629df528e3ebf68755cb"
 dependencies = [
  "hermit-abi 0.3.1",
- "io-lifetimes",
- "rustix",
- "windows-sys 0.45.0",
+ "rustix 0.38.1",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -429,6 +434,12 @@ name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef53942eb7bf7ff43a617b3e2c1c4a5ecf5944a7c1bc12d7ee39bbb15e5c1519"
+
+[[package]]
+name = "linux-raw-sys"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09fc20d2ca12cb9f044c93e3bd6d32d523e6e2ec3db4f7b2939cd99026ecd3f0"
 
 [[package]]
 name = "lock_api"
@@ -537,7 +548,7 @@ version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce841e0486e7c2412c3740168ede33adeba8e154a15107b879d8162d77c7174e"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "cassowary",
  "crossterm",
  "unicode-segmentation",
@@ -550,7 +561,7 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567664f262709473930a4bf9e51bf2ebf3348f2e748ccc50dea20646858f8f29"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
 ]
 
 [[package]]
@@ -574,11 +585,24 @@ version = "0.37.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b96e891d04aa506a6d1f318d2771bcb1c7dfda84e126660ace067c9b474bb2c0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "errno",
  "io-lifetimes",
  "libc",
- "linux-raw-sys",
+ "linux-raw-sys 0.3.8",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "rustix"
+version = "0.38.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbc6396159432b5c8490d4e301d8c705f61860b8b6c863bf79942ce5401968f3"
+dependencies = [
+ "bitflags 2.3.3",
+ "errno",
+ "libc",
+ "linux-raw-sys 0.4.3",
  "windows-sys 0.48.0",
 ]
 
@@ -729,7 +753,7 @@ dependencies = [
  "cfg-if",
  "fastrand",
  "redox_syscall",
- "rustix",
+ "rustix 0.37.20",
  "windows-sys 0.48.0",
 ]
 

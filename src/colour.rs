@@ -1,4 +1,5 @@
 use clap::ValueEnum;
+use is_terminal::IsTerminal;
 
 #[derive(ValueEnum, Debug, Clone, Copy, Default)]
 pub(crate) enum Colour {
@@ -22,7 +23,7 @@ impl Colour {
     pub(crate) fn detect(self) -> Self {
         match self {
             Colour::Auto => {
-                if atty::is(atty::Stream::Stdout) {
+                if std::io::stdout().is_terminal() {
                     Colour::Always
                 } else {
                     Colour::Never
