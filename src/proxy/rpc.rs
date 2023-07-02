@@ -47,7 +47,7 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn buid_script_complete(&self, info: BuildScriptOutput) -> Result<Outcome> {
+    pub(crate) fn build_script_complete(&self, info: BuildScriptOutput) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         write_to_stream(&Request::BuildScriptComplete(info), &mut ipc)?;
         read_from_stream(&mut ipc)

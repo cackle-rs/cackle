@@ -118,7 +118,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         sandbox.pass_cargo_env();
 
         let output = sandbox.run(&orig_build_script)?;
-        let rpc_response = rpc_client.buid_script_complete(BuildScriptOutput::new(
+        let rpc_response = rpc_client.build_script_complete(BuildScriptOutput::new(
             &output,
             package_name,
             &output.status,
