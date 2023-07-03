@@ -82,10 +82,6 @@ struct Args {
     #[clap(long, default_value = "2")]
     usage_report_cap: i32,
 
-    /// Analyse specified object file(s). Useful for debugging.
-    #[clap(long, num_args = 1.., value_delimiter = ' ')]
-    object_paths: Vec<PathBuf>,
-
     /// Whether to use coloured output.
     #[clap(long, alias = "color", default_value = "auto")]
     colour: colour::Colour,
@@ -176,9 +172,7 @@ impl Cackle {
             .canonicalize()
             .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-        if args.object_paths.is_empty() {
-            proxy::clean(&root_path, &args)?;
-        }
+        proxy::clean(&root_path, &args)?;
 
         let config_path = args
             .cackle_path
@@ -264,21 +258,6 @@ impl Cackle {
             return Ok(outcome::FAILURE);
         }
         self.checker.lock().unwrap().load_config()?;
-
-        if !self.args.object_paths.is_empty() {
-            let paths: Vec<_> = self.args.object_paths.clone();
-            let mut check_state = CheckState::default();
-            let problems = self
-                .checker
-                .lock()
-                .unwrap()
-                .check_object_paths(&paths, &mut check_state)?;
-            if !problems.is_empty() && self.problem_store.fix_problems(problems) == Outcome::GiveUp
-            {
-                return Ok(outcome::FAILURE);
-            }
-            return Ok(outcome::SUCCESS);
-        }
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;
         let config_path = crate::config::flattened_config_path(&self.target_dir);
