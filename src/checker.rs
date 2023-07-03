@@ -14,7 +14,6 @@ use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
-use crate::symbol_graph::SymGraph;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
@@ -36,7 +35,7 @@ pub(crate) struct Checker {
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
-    args: Arc<Args>,
+    pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
     /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
     /// map to a single crate, but in rare cases multiple crates within a package could use the same
@@ -255,36 +254,17 @@ impl Checker {
                     .join(" ")
             );
         }
-        if check_state.graph.is_none() {
+        if check_state.graph_outputs.is_none() {
             let start = std::time::Instant::now();
-            let mut graph = SymGraph::default();
-            for path in paths {
-                graph
-                    .process_file(path)
-                    .with_context(|| format!("Failed to process `{}`", path.display()))?;
-            }
+            let graph_outputs = crate::symbol_graph::scan_objects(paths, self)?;
             if self.args.print_timing {
                 println!("Graph computation took {}ms", start.elapsed().as_millis());
             }
-            check_state.graph = Some(graph);
+            check_state.graph_outputs = Some(graph_outputs);
         }
-        let graph = check_state.graph.as_mut().unwrap();
-        // In order to save some computation, we skip computing reachabilty unless we actually need
-        // it. The two cases where we need it are (1) if any package sets ignore_unreachable and (2)
-        // if the user interface is active, since in that case we might want to suggest
-        // ignore_unreachable as an edit.
-        if self.config.needs_reachability() || matches!(self.args.command, crate::Command::Ui(..)) {
-            let result = graph.compute_reachability(&self.args);
-            if result.is_err() && self.args.verbose_errors {
-                println!("Object paths:");
-                for p in paths {
-                    println!("  {}", p.display());
-                }
-            }
-            result?;
-        }
+        let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
         let start = std::time::Instant::now();
-        let problems = graph.problems(self)?;
+        let problems = graph_outputs.problems(self)?;
         if self.args.print_timing {
             println!("API usage checking took {}ms", start.elapsed().as_millis());
         }
@@ -300,7 +280,7 @@ impl Checker {
     }
 
     pub(crate) fn multiple_symbols_in_section(
-        &mut self,
+        &self,
         defined_in: &Path,
         symbols: &[Symbol],
         section_name: &SectionName,
@@ -330,7 +310,7 @@ impl Checker {
     }
 
     pub(crate) fn crate_names_from_source_path(
-        &mut self,
+        &self,
         source_path: &Path,
         ref_path: &Path,
     ) -> Result<Vec<CrateName>> {
@@ -389,7 +369,7 @@ impl Checker {
         matched
     }
 
-    pub(crate) fn permission_used(&mut self, api_usage: ApiUsage, problems: &mut ProblemList) {
+    pub(crate) fn permission_used(&mut self, api_usage: &ApiUsage, problems: &mut ProblemList) {
         assert_eq!(api_usage.usages.keys().count(), 1);
         let permission = api_usage.usages.keys().next().unwrap();
         let crate_info = &mut self
@@ -399,7 +379,7 @@ impl Checker {
         if crate_info.allowed_perms.contains(permission) {
             crate_info.unused_allowed_perms.remove(permission);
         } else {
-            problems.push(Problem::DisallowedApiUsage(api_usage));
+            problems.push(Problem::DisallowedApiUsage(api_usage.clone()));
         }
     }
 
@@ -548,7 +528,7 @@ mod tests {
                 usages,
                 reachable: None,
             };
-            checker.permission_used(api_usage, &mut problems);
+            checker.permission_used(&api_usage, &mut problems);
         }
 
         assert!(problems.is_empty());

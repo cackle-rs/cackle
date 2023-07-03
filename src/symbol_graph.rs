@@ -71,7 +71,7 @@ struct SectionInfo {
 }
 
 #[derive(Default)]
-pub(crate) struct SymGraph {
+struct SymGraph {
     sections: Vec<SectionInfo>,
 
     /// The index of the section in which each non-private symbol is defined.
@@ -89,7 +89,7 @@ pub(crate) struct SymGraph {
     reachabilty_computed: bool,
 }
 
-struct GraphOutputs {
+pub(crate) struct GraphOutputs {
     api_usages: Vec<ApiUsage>,
 
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
@@ -98,10 +98,32 @@ struct GraphOutputs {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionIndex(usize);
+struct SectionIndex(usize);
+
+pub(crate) fn scan_objects(paths: &[PathBuf], checker: &Checker) -> Result<GraphOutputs> {
+    let mut graph = SymGraph::default();
+    for path in paths {
+        graph
+            .process_file(path)
+            .with_context(|| format!("Failed to process `{}`", path.display()))?;
+    }
+    graph.compute_reachability(&checker.args)?;
+    graph.api_usages(checker)
+}
+
+impl GraphOutputs {
+    pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
+        let mut problems = self.base_problems.clone();
+        for api_usage in &self.api_usages {
+            checker.permission_used(api_usage, &mut problems);
+        }
+
+        Ok(problems)
+    }
+}
 
 impl SymGraph {
-    pub(crate) fn process_file(&mut self, filename: &Path) -> Result<()> {
+    fn process_file(&mut self, filename: &Path) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
             Filetype::Archive => {
@@ -122,7 +144,7 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn compute_reachability(&mut self, args: &Args) -> Result<()> {
+    fn compute_reachability(&mut self, args: &Args) -> Result<()> {
         if self.reachabilty_computed {
             return Ok(());
         }
@@ -178,17 +200,7 @@ impl SymGraph {
         Ok(())
     }
 
-    pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
-        let graph_outputs = self.api_usages(checker)?;
-        let mut problems = graph_outputs.base_problems;
-        for api_usage in graph_outputs.api_usages {
-            checker.permission_used(api_usage, &mut problems);
-        }
-
-        Ok(problems)
-    }
-
-    fn api_usages(&self, checker: &mut Checker) -> Result<GraphOutputs> {
+    fn api_usages(&self, checker: &Checker) -> Result<GraphOutputs> {
         let mut api_usages = Vec::new();
         let mut problems = ProblemList::default();
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {

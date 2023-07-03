@@ -320,14 +320,6 @@ impl Config {
         }
         config
     }
-
-    /// Returns whether reachability information is needed.
-    pub(crate) fn needs_reachability(&self) -> bool {
-        self.packages.values().any(|pkg| {
-            pkg.ignore_unreachable
-                .unwrap_or(self.common.ignore_unreachable)
-        })
-    }
 }
 
 pub(crate) fn flattened_config_path(target_dir: &Path) -> PathBuf {
