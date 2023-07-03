@@ -269,9 +269,6 @@ impl Checker {
             check_state.graph = Some(graph);
         }
         let graph = check_state.graph.as_mut().unwrap();
-        if self.args.print_all_references {
-            println!("{graph}");
-        }
         // In order to save some computation, we skip computing reachabilty unless we actually need
         // it. The two cases where we need it are (1) if any package sets ignore_unreachable and (2)
         // if the user interface is active, since in that case we might want to suggest

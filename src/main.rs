@@ -63,11 +63,6 @@ struct Args {
     #[clap(short, long)]
     cackle_path: Option<PathBuf>,
 
-    /// Print all references (may be large). Useful for debugging why something is passing when you
-    /// think it shouldn't be.
-    #[clap(long)]
-    print_all_references: bool,
-
     /// Print the mapping from paths to crate names. Useful for debugging.
     #[clap(long)]
     print_path_to_crate_map: bool,

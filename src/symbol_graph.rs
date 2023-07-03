@@ -29,7 +29,6 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Index;
@@ -443,29 +442,6 @@ impl Index<SectionIndex> for Vec<SectionInfo> {
 impl IndexMut<SectionIndex> for Vec<SectionInfo> {
     fn index_mut(&mut self, index: SectionIndex) -> &mut Self::Output {
         &mut self[index.0]
-    }
-}
-
-impl Display for SymGraph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for section in &self.sections {
-            write!(f, "{}", section.name)?;
-            if let Some(path) = &section.source_filename {
-                write!(f, " ({})", path.display())?;
-            }
-            writeln!(f)?;
-            for reference in &section.references {
-                match reference {
-                    Reference::Section(section_index) => {
-                        writeln!(f, "  -> {}", self.sections[*section_index].name)?;
-                    }
-                    Reference::Name(symbol) => {
-                        writeln!(f, "  -> {}", symbol)?;
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 }
 
