@@ -8,9 +8,7 @@
 use crate::checker::Checker;
 use crate::checker::Referee;
 use crate::checker::SourceLocation;
-use crate::checker::UnknownLocation;
 use crate::checker::Usage;
-use crate::checker::UsageLocation;
 use crate::problem::ApiUsage;
 use crate::problem::ProblemList;
 use crate::section_name::SectionName;
@@ -21,6 +19,8 @@ use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
 use gimli::Dwarf;
+use gimli::EndianSlice;
+use gimli::LittleEndian;
 use log::info;
 use object::Object;
 use object::ObjectSection;
@@ -28,12 +28,10 @@ use object::ObjectSymbol;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
 use std::ops::Index;
 use std::ops::IndexMut;
-use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -43,7 +41,12 @@ enum Filetype {
     Other,
 }
 
-enum Reference {
+struct Reference {
+    target: ReferenceTarget,
+    filename: Option<String>,
+}
+
+enum ReferenceTarget {
     Section(SectionIndex),
     Name(Symbol),
 }
@@ -58,16 +61,18 @@ struct SectionInfo {
     /// Outgoing references from this section.
     references: Vec<Reference>,
 
-    /// The rust source file that defined this section if we were able to determine this from the
-    /// debug info.
-    source_filename: Option<PathBuf>,
-
     /// Symbols that this section defines. Generally there should be exactly one, at least with the
     /// compilation settings that we should be using.
-    definitions: Vec<Symbol>,
+    definitions: Vec<SymbolInSection>,
 
     /// Whether this section is reachable by following references from a root (e.g. `main`).
     reachable: bool,
+}
+
+struct SymbolInSection {
+    symbol: Symbol,
+    // Offset of the symbol within the section.
+    offset: u64,
 }
 
 #[derive(Default)]
@@ -87,6 +92,15 @@ struct SymGraph {
 
     /// Whether `compute_reachability` has been called and it has suceeded.
     reachabilty_computed: bool,
+
+    exe: ExeInfo,
+}
+
+/// Information derived from a linked binary. Generally an executable, but could also be shared
+/// object (so).
+#[derive(Default)]
+struct ExeInfo {
+    symbol_addresses: HashMap<Symbol, u64>,
 }
 
 pub(crate) struct GraphOutputs {
@@ -100,11 +114,25 @@ pub(crate) struct GraphOutputs {
 #[derive(Clone, Copy)]
 struct SectionIndex(usize);
 
-pub(crate) fn scan_objects(paths: &[PathBuf], checker: &Checker) -> Result<GraphOutputs> {
+pub(crate) fn scan_objects(
+    paths: &[PathBuf],
+    exe_path: &Path,
+    checker: &Checker,
+) -> Result<GraphOutputs> {
+    let file_bytes = std::fs::read(exe_path)
+        .with_context(|| format!("Failed to read `{}`", exe_path.display()))?;
+    let obj = object::File::parse(file_bytes.as_slice())
+        .with_context(|| format!("Failed to parse {}", exe_path.display()))?;
+    let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
+    let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
+    let ctx = addr2line::Context::from_dwarf(dwarf)
+        .with_context(|| format!("Failed to process {}", exe_path.display()))?;
+
     let mut graph = SymGraph::default();
+    graph.exe.load_symbols(&obj)?;
     for path in paths {
         graph
-            .process_file(path)
+            .process_file(path, &ctx)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
     graph.compute_reachability(&checker.args)?;
@@ -123,7 +151,11 @@ impl GraphOutputs {
 }
 
 impl SymGraph {
-    fn process_file(&mut self, filename: &Path) -> Result<()> {
+    fn process_file(
+        &mut self,
+        filename: &Path,
+        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+    ) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
             Filetype::Archive => {
@@ -132,13 +164,13 @@ impl SymGraph {
                     let Ok(mut entry) = entry_result else { continue; };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
-                    self.process_file_bytes(filename, &buffer)?;
+                    self.process_file_bytes(filename, &buffer, ctx)?;
                 }
             }
             Filetype::Other => {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
-                self.process_file_bytes(filename, &file_bytes)?;
+                self.process_file_bytes(filename, &file_bytes, ctx)?;
             }
         }
         Ok(())
@@ -183,9 +215,9 @@ impl SymGraph {
             self.sections[section_index.0].reachable = true;
             let section = &self.sections[section_index.0];
             for reference in &section.references {
-                let next_section_index = match reference {
-                    Reference::Section(section_index) => Some(*section_index),
-                    Reference::Name(symbol) => self.symbol_to_section.get(symbol).cloned(),
+                let next_section_index = match &reference.target {
+                    ReferenceTarget::Section(section_index) => Some(*section_index),
+                    ReferenceTarget::Name(symbol) => self.symbol_to_section.get(symbol).cloned(),
                 };
                 queue.extend(next_section_index.into_iter());
             }
@@ -216,44 +248,27 @@ impl SymGraph {
                 info!("Got empty section name");
                 continue;
             }
-            let Some(source_filename) = section.source_filename.as_ref() else {
-                // TODO: Determine if it's OK to just ignore this.
-                info!("Couldn't determine source filename for section `{}` in `{}`", section.name, section.defined_in.display());
-                continue;
+            let reachable = if self.reachabilty_computed {
+                Some(section.reachable)
+            } else {
+                None
             };
-            // Ignore sources from the rust standard library and precompiled crates that are bundled
-            // with the standard library (e.g. hashbrown).
-            if source_filename.starts_with("/rustc/")
-                || source_filename.starts_with("/cargo/registry")
-            {
-                continue;
-            }
-            if section.definitions.len() > 1 {
-                checker.multiple_symbols_in_section(
-                    &section.defined_in,
-                    &section.definitions,
-                    &section.name,
-                    &mut problems,
-                );
-            }
-            let crate_names =
-                checker.crate_names_from_source_path(source_filename, &section.defined_in)?;
-            for crate_name in crate_names {
-                if checker.ignore_unreachable(&crate_name) && !section.reachable {
-                    // The only way we could get here without reachability having been computed would be
-                    // if there was an inconsistency between `Checker::ignore_unreachable` and
-                    // `Config::needs_reachability`. i.e. a bug, but a bad enough bug that it's better
-                    // to crash than continue.
-                    assert!(self.reachabilty_computed);
+            for reference in &section.references {
+                let Some(source_filename) = reference.filename.as_ref() else {
+                    continue;
+                };
+                let source_filename = Path::new(source_filename);
+                // Ignore sources from the rust standard library and precompiled crates that are bundled
+                // with the standard library (e.g. hashbrown).
+                if source_filename.starts_with("/rustc/")
+                    || source_filename.starts_with("/cargo/registry")
+                {
                     continue;
                 }
-                let reachable = if self.reachabilty_computed {
-                    Some(section.reachable)
-                } else {
-                    None
-                };
-                for reference in &section.references {
-                    if let Some(ref_name) = self.referenced_symbol(reference) {
+                let crate_names =
+                    checker.crate_names_from_source_path(source_filename, &section.defined_in)?;
+                for crate_name in crate_names {
+                    if let Some(ref_name) = self.referenced_symbol(&reference.target) {
                         for name_parts in ref_name.parts()? {
                             // If a package references another symbol within the same package, ignore
                             // it.
@@ -264,12 +279,8 @@ impl SymGraph {
                             {
                                 continue;
                             }
-                            let location = if let Some(filename) = section.source_filename.clone() {
-                                UsageLocation::Source(SourceLocation { filename })
-                            } else {
-                                UsageLocation::Unknown(UnknownLocation {
-                                    object_path: section.defined_in.clone(),
-                                })
+                            let location = SourceLocation {
+                                filename: source_filename.to_owned(),
                             };
                             for permission in checker.apis_for_path(&name_parts) {
                                 let mut usages = BTreeMap::new();
@@ -298,18 +309,25 @@ impl SymGraph {
         })
     }
 
-    fn referenced_symbol<'a>(&'a self, reference: &'a Reference) -> Option<&'a Symbol> {
+    fn referenced_symbol<'a>(&'a self, reference: &'a ReferenceTarget) -> Option<&'a Symbol> {
         match reference {
-            Reference::Section(section_index) => self.sections[*section_index].definitions.first(),
-            Reference::Name(symbol) => Some(symbol),
+            ReferenceTarget::Section(section_index) => self.sections[*section_index]
+                .definitions
+                .first()
+                .map(|d| &d.symbol),
+            ReferenceTarget::Name(symbol) => Some(symbol),
         }
     }
 
-    fn process_file_bytes(&mut self, filename: &Path, file_bytes: &[u8]) -> Result<()> {
+    fn process_file_bytes(
+        &mut self,
+        filename: &Path,
+        file_bytes: &[u8],
+        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+    ) -> Result<()> {
         let obj = object::File::parse(file_bytes)
             .with_context(|| format!("Failed to parse {}", filename.display()))?;
-        self.process_object_relocations(&obj, filename)?;
-        self.process_debug_info(&obj)?;
+        self.process_object_relocations(&obj, filename, ctx)?;
         for (sym, indexes) in &self.duplicate_symbol_section_indexes {
             println!("Duplicate symbol `{sym}` defined in:");
             for i in indexes {
@@ -319,7 +337,12 @@ impl SymGraph {
         Ok(())
     }
 
-    fn process_object_relocations(&mut self, obj: &object::File, filename: &Path) -> Result<()> {
+    fn process_object_relocations(
+        &mut self,
+        obj: &object::File,
+        filename: &Path,
+        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+    ) -> Result<()> {
         let mut section_name_to_index = HashMap::new();
         for section in obj.sections() {
             if let Ok(name) = section.name() {
@@ -336,7 +359,10 @@ impl SymGraph {
             }
             let Some(section_name) = section_name_for_symbol(&sym, obj) else { continue };
             let Some(&index) = section_name_to_index.get(&section_name) else { continue };
-            self.sections[index].definitions.push(Symbol::new(name));
+            self.sections[index].definitions.push(SymbolInSection {
+                symbol: Symbol::new(name),
+                offset: sym.address(),
+            });
             if sym.is_local() {
                 self.sym_to_local_section.insert(Symbol::new(name), index);
             } else if let Some(old_index) = self.symbol_to_section.insert(Symbol::new(name), index)
@@ -355,29 +381,50 @@ impl SymGraph {
             let Ok(section_name) = section.name() else { continue };
             let Some(&section_index) = section_name_to_index.get(section_name) else { continue };
             let section_info = &mut self.sections[section_index];
-            for (_offset, rel) in section.relocations() {
+            let section_start_in_exe =
+                section_info
+                    .definitions
+                    .get(0)
+                    .and_then(|first_def_in_section| {
+                        self.exe
+                            .symbol_addresses
+                            .get(&first_def_in_section.symbol)
+                            .map(|section_start| section_start - first_def_in_section.offset)
+                    });
+            let Some(section_start_in_exe) = section_start_in_exe else { continue };
+            for (offset, rel) in section.relocations() {
+                let location = ctx
+                    .find_location(section_start_in_exe + offset)
+                    .context("find_location failed")?;
+                let source_filename = location.and_then(|l| l.file).map(|f| f.to_owned());
                 let object::RelocationTarget::Symbol(symbol_index) = rel.target() else { continue };
                 let Ok(symbol) = obj.symbol_by_index(symbol_index) else { continue };
                 let name = symbol.name_bytes().unwrap_or_default();
+                // TODO: There's a bit of duplication in the following code that needs fixing.
                 if name.is_empty() {
                     if let Some(section_name) = section_name_for_symbol(&symbol, obj) {
                         if let Some(section_index) =
                             section_name_to_index.get(section_name.as_str())
                         {
-                            section_info
-                                .references
-                                .push(Reference::Section(*section_index));
+                            section_info.references.push(Reference {
+                                target: ReferenceTarget::Section(*section_index),
+                                filename: source_filename,
+                            });
                         }
                     }
                 } else {
                     let symbol = Symbol::new(name);
 
                     if let Some(local_index) = self.sym_to_local_section.get(&symbol) {
-                        section_info
-                            .references
-                            .push(Reference::Section(*local_index));
+                        section_info.references.push(Reference {
+                            target: ReferenceTarget::Section(*local_index),
+                            filename: source_filename,
+                        });
                     } else {
-                        section_info.references.push(Reference::Name(symbol));
+                        section_info.references.push(Reference {
+                            target: ReferenceTarget::Name(symbol),
+                            filename: source_filename,
+                        });
                     }
                 }
             }
@@ -391,53 +438,13 @@ impl SymGraph {
         &self.sections[index.0].name == ".data.DW.ref.rust_eh_personality"
             && name == b"DW.ref.rust_eh_personality"
     }
+}
 
-    fn process_debug_info(&mut self, obj: &object::File) -> Result<(), anyhow::Error> {
-        let owned_dwarf = Dwarf::load(|id| load_section(obj, id))?;
-        let dwarf =
-            owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
-        let mut units = dwarf.units();
-        while let Some(header) = units.next()? {
-            let unit = dwarf.unit(header)?;
-            let compdir = path_from_opt_slice(unit.comp_dir);
-            let Some(line_program) = &unit.line_program else { continue };
-            let header = line_program.header();
-
-            let mut entries = unit.entries();
-            while let Some((_, entry)) = entries.next_dfs()? {
-                if entry.tag() != gimli::DW_TAG_subprogram {
-                    continue;
-                }
-                let Ok(Some(attr)) = entry.attr_value(gimli::DW_AT_linkage_name) else {
-                        continue
-                    };
-                let Ok(symbol) = dwarf.attr_string(&unit, attr) else { continue };
-
-                let Ok(Some(gimli::AttributeValue::FileIndex(file_index))) =
-                        entry.attr_value(gimli::DW_AT_decl_file) else {
-                            continue
-                        };
-                let Some(file) = header.file(file_index) else {
-                            bail!("Object file contained invalid file index {file_index}");
-                        };
-                let mut path = compdir.to_owned();
-                if let Some(directory) = file.directory(header) {
-                    let directory = dwarf.attr_string(&unit, directory)?;
-                    path.push(OsStr::from_bytes(directory.as_ref()));
-                }
-                path.push(OsStr::from_bytes(
-                    dwarf.attr_string(&unit, file.path_name())?.as_ref(),
-                ));
-
-                let symbol = Symbol::new(symbol.to_vec());
-                let Some(&section_id) = self.sym_to_local_section.get(&symbol).or_else(|| self.symbol_to_section.get(&symbol)) else {
-                    // TODO: Investigate this
-                    //println!("SYM NOT FOUND: {symbol}");
-                    info!("Debug info references unknown symbol `{symbol}`");
-                    continue;
-                };
-                self.sections[section_id].source_filename = Some(path);
-            }
+impl ExeInfo {
+    fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
+        for symbol in obj.symbols() {
+            self.symbol_addresses
+                .insert(Symbol::new(symbol.name_bytes()?), symbol.address());
         }
         Ok(())
     }
@@ -468,7 +475,7 @@ impl SectionInfo {
 
     fn as_referee(&self) -> Referee {
         if let Some(sym) = self.definitions.first() {
-            Referee::Symbol(sym.clone())
+            Referee::Symbol(sym.symbol.clone())
         } else {
             Referee::Section(self.name.clone())
         }
@@ -482,9 +489,7 @@ fn section_name_for_symbol(symbol: &object::Symbol, obj: &object::File) -> Optio
         .and_then(|section| section.name().ok().map(|name| name.to_owned()))
 }
 
-/// Loads section `id` from `obj`. We return a Cow because it's what gimli expects, but we only ever
-/// return an owned Cow because we need to copy the section data so that we can apply relocations to
-/// it.
+/// Loads section `id` from `obj`.
 fn load_section(
     obj: &object::File,
     id: gimli::SectionId,
@@ -495,58 +500,9 @@ fn load_section(
     let Ok(data) = section.uncompressed_data() else {
         return Ok(Cow::Borrowed([].as_slice()));
     };
-    let mut data = data.into_owned();
-    for (offset, rel) in section.relocations() {
-        let offset = offset as usize;
-        let size = (rel.size() / 8) as usize;
-        let mut value = load_var_int(offset, size, &data)?;
-        if let object::RelocationKind::Absolute = rel.kind() {
-            if rel.has_implicit_addend() {
-                value = value.wrapping_add(rel.addend());
-            } else {
-                value = rel.addend();
-            }
-        }
-        store_var_int(offset, size, &mut data, value)?;
-    }
-    Ok(Cow::Owned(data))
-}
-
-/// Read an integer of `size` bytes at `offset` within `data`. We always read little-endian because
-/// we don't support big endian. Value is returned as an i64 since it's the largest type we support.
-fn load_var_int(offset: usize, size: usize, data: &[u8]) -> Result<i64, gimli::Error> {
-    if offset + size >= data.len() {
-        return Err(gimli::Error::InvalidAddressRange);
-    }
-    let bytes = &data[offset..offset + size];
-
-    Ok(match size {
-        0 => 0,
-        4 => i32::from_le_bytes(bytes.try_into().unwrap()) as i64,
-        8 => i64::from_le_bytes(bytes.try_into().unwrap()),
-        _ => panic!("Unimplemented data size {size}"),
-    })
-}
-
-/// Like `load_var_int`, but stores the supplied value rather than reading it. If `value` is too
-/// large to fit in `size` bytes, then wrapping is applied.
-fn store_var_int(
-    offset: usize,
-    size: usize,
-    data: &mut [u8],
-    value: i64,
-) -> Result<(), gimli::Error> {
-    if offset + size >= data.len() {
-        return Err(gimli::Error::InvalidAddressRange);
-    }
-    data[offset..offset + size].copy_from_slice(&value.to_le_bytes()[..size]);
-    Ok(())
-}
-
-fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -> &Path {
-    slice
-        .map(|dir| Path::new(OsStr::from_bytes(dir.slice())))
-        .unwrap_or_else(|| Path::new(""))
+    // TODO: Now that we're loading binaries rather than object files, we don't apply relocations.
+    // We might not need owned data here.
+    Ok(Cow::Owned(data.into_owned()))
 }
 
 impl Filetype {

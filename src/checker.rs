@@ -6,7 +6,6 @@ use crate::config::PermissionName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
 use crate::problem::ApiUsage;
-use crate::problem::MultipleSymbolsInSection;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
@@ -75,7 +74,7 @@ pub(crate) struct CrateInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Usage {
-    pub(crate) location: UsageLocation,
+    pub(crate) location: SourceLocation,
     pub(crate) from: Referee,
     pub(crate) to: Symbol,
 }
@@ -84,12 +83,6 @@ pub(crate) struct Usage {
 pub(crate) enum Referee {
     Symbol(Symbol),
     Section(SectionName),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum UsageLocation {
-    Source(SourceLocation),
-    Unknown(UnknownLocation),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -226,9 +219,11 @@ impl Checker {
         if info.is_build_script {
             problems.merge(self.verify_build_script_permitted(&info.package_name));
         }
-        problems.merge(
-            self.check_object_paths(&info.object_paths_under(&self.target_dir), check_state)?,
-        );
+        problems.merge(self.check_object_paths(
+            &info.object_paths_under(&self.target_dir),
+            &info.output_file,
+            check_state,
+        )?);
         let problems = problems.grouped_by_type_crate_and_api();
         info!(
             "Checking linker args for {} with {} objects. {} problems",
@@ -242,6 +237,7 @@ impl Checker {
     pub(crate) fn check_object_paths(
         &mut self,
         paths: &[PathBuf],
+        exe_path: &Path,
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
         if self.args.debug {
@@ -256,7 +252,7 @@ impl Checker {
         }
         if check_state.graph_outputs.is_none() {
             let start = std::time::Instant::now();
-            let graph_outputs = crate::symbol_graph::scan_objects(paths, self)?;
+            let graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
             if self.args.print_timing {
                 println!("Graph computation took {}ms", start.elapsed().as_millis());
             }
@@ -277,22 +273,6 @@ impl Checker {
 
     pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> ProblemList {
         Problem::DisallowedUnsafe(usage.clone()).into()
-    }
-
-    pub(crate) fn multiple_symbols_in_section(
-        &self,
-        defined_in: &Path,
-        symbols: &[Symbol],
-        section_name: &SectionName,
-        problems: &mut ProblemList,
-    ) {
-        problems.push(Problem::MultipleSymbolsInSection(
-            MultipleSymbolsInSection {
-                section_name: section_name.clone(),
-                symbols: symbols.to_owned(),
-                defined_in: defined_in.to_owned(),
-            },
-        ));
     }
 
     pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> ProblemList {
@@ -324,13 +304,6 @@ impl Checker {
                 )
             })
             .cloned()
-    }
-
-    pub(crate) fn ignore_unreachable(&self, crate_name: &CrateName) -> bool {
-        self.crate_infos
-            .get(crate_name)
-            .and_then(|info| info.ignore_unreachable)
-            .unwrap_or(self.config.common.ignore_unreachable)
     }
 
     pub(crate) fn report_crate_used(&mut self, crate_name: &CrateName) {
@@ -516,9 +489,9 @@ mod tests {
             usages.insert(
                 api,
                 vec![Usage {
-                    location: crate::checker::UsageLocation::Source(SourceLocation {
+                    location: SourceLocation {
                         filename: "lib.rs".into(),
-                    }),
+                    },
                     from: crate::checker::Referee::Symbol(Symbol::new(vec![])),
                     to: Symbol::new(vec![]),
                 }],

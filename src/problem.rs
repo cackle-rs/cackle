@@ -1,8 +1,8 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
+use crate::checker::SourceLocation;
 use crate::checker::Usage;
-use crate::checker::UsageLocation;
 use crate::config::CrateName;
 use crate::config::PermConfig;
 use crate::config::PermissionName;
@@ -14,7 +14,6 @@ use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Default, Debug, PartialEq, Clone)]
@@ -32,7 +31,6 @@ pub(crate) enum Problem {
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(CrateName),
     DisallowedApiUsage(ApiUsage),
-    MultipleSymbolsInSection(MultipleSymbolsInSection),
     BuildScriptFailed(BuildScriptFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(CrateName),
@@ -247,17 +245,6 @@ impl Display for Problem {
                 "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
-            Problem::MultipleSymbolsInSection(info) => {
-                writeln!(
-                    f,
-                    "The section `{}` in `{}` defines multiple symbols:",
-                    info.section_name,
-                    info.defined_in.display()
-                )?;
-                for sym in &info.symbols {
-                    writeln!(f, "  {sym}")?;
-                }
-            }
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
                 write!(
@@ -382,24 +369,13 @@ impl Display for BuildScriptFailed {
 }
 
 fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<(), std::fmt::Error> {
-    let mut by_location: BTreeMap<&UsageLocation, Vec<&Usage>> = BTreeMap::new();
+    let mut by_location: BTreeMap<&SourceLocation, Vec<&Usage>> = BTreeMap::new();
     for u in usages {
         by_location.entry(&u.location).or_default().push(u);
     }
     let mut by_from: BTreeMap<&crate::checker::Referee, Vec<&Symbol>> = BTreeMap::new();
     for (location, usages_for_location) in by_location {
-        match location {
-            UsageLocation::Source(location) => {
-                writeln!(f, "    {}", location.filename.display())?;
-            }
-            UsageLocation::Unknown(location) => {
-                write!(
-                    f,
-                    "[Unknown source location in `{}`]",
-                    to_relative_path(&location.object_path).display()
-                )?;
-            }
-        }
+        writeln!(f, "    {}", location.filename.display())?;
         by_from.clear();
         for usage in usages_for_location {
             by_from.entry(&usage.from).or_default().push(&usage.to);
@@ -431,16 +407,6 @@ impl std::hash::Hash for ApiUsage {
         }
         self.reachable.hash(state);
     }
-}
-
-/// Returns `input_path` relative to the current directory, or if that fails, falls back to
-/// `input_path`. Only works if `input_path` is absolute and is a subdirectory of the current
-/// directory - i.e. it won't use "..".
-fn to_relative_path(input_path: &Path) -> &std::path::Path {
-    std::env::current_dir()
-        .ok()
-        .and_then(|current_dir| input_path.strip_prefix(current_dir).ok())
-        .unwrap_or(input_path)
 }
 
 #[cfg(test)]
@@ -506,9 +472,9 @@ mod tests {
 
     fn create_usage(from: &str, to: &str) -> Usage {
         Usage {
-            location: crate::checker::UsageLocation::Source(SourceLocation {
+            location: SourceLocation {
                 filename: "lib.rs".into(),
-            }),
+            },
             from: crate::checker::Referee::Symbol(Symbol::new(from)),
             to: Symbol::new(to),
         }

@@ -29,6 +29,7 @@ indoc = "2.0.1"
 crossterm = "0.26.1"
 ratatui = "0.21.0"
 log = { version = "0.4.19", features = [ "std" ] }
+addr2line = { version = "0.20.0", default-features = false, features = [ "std" ] }
 
 [features]
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working
