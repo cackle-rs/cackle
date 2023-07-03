@@ -1,9 +1,10 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::config::SandboxKind;
+use crate::problem::ApiUsage;
 use crate::problem::AvailableApi;
-use crate::problem::DisallowedApiUsage;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
@@ -74,24 +75,24 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             }));
             if usage.reachable == Some(false) {
                 edits.push(Box::new(IgnoreUnreachable {
-                    pkg_name: usage.pkg_name.clone(),
+                    crate_name: usage.crate_name.clone(),
                 }));
                 edits.push(Box::new(IgnoreUnreachableGlobal));
             }
         }
-        Problem::IsProcMacro(pkg_name) => {
+        Problem::IsProcMacro(crate_name) => {
             edits.push(Box::new(AllowProcMacro {
-                pkg_name: pkg_name.clone(),
+                crate_name: crate_name.clone(),
             }));
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
                 edits.push(Box::new(DisableSandbox {
-                    pkg_name: failure.output.package_name.clone(),
+                    crate_name: failure.output.crate_name.clone(),
                 }));
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
-                        pkg_name: failure.output.package_name.clone(),
+                        crate_name: failure.output.crate_name.clone(),
                     }));
                 }
             }
@@ -100,7 +101,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             edits.append(&mut edits_for_build_instruction(failure));
         }
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
-            pkg_name: failure.crate_name.to_owned(),
+            crate_name: failure.crate_name.clone(),
         })),
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
@@ -134,8 +135,12 @@ impl ConfigEditor {
         self.document.to_string()
     }
 
-    fn pkg_table(&mut self, pkg_name: &str) -> Result<&mut toml_edit::Table> {
-        self.table(std::iter::once("pkg").chain(pkg_name.split('.')))
+    fn pkg_table(&mut self, crate_name: &CrateName) -> Result<&mut toml_edit::Table> {
+        self.table(pkg_path(crate_name))
+    }
+
+    fn pkg_sandbox_table(&mut self, crate_name: &CrateName) -> Result<&mut toml_edit::Table> {
+        self.table(pkg_path(crate_name).chain(std::iter::once("sandbox")))
     }
 
     fn common_table(&mut self) -> Result<&mut toml_edit::Table> {
@@ -210,6 +215,10 @@ impl ConfigEditor {
     }
 }
 
+fn pkg_path(crate_name: &CrateName) -> impl Iterator<Item = &str> + Clone {
+    std::iter::once("pkg").chain(crate_name.as_ref().split('.'))
+}
+
 fn edits_for_build_instruction(
     failure: &crate::problem::DisallowedBuildInstruction,
 ) -> Vec<Box<dyn Edit>> {
@@ -218,7 +227,7 @@ fn edits_for_build_instruction(
     let mut suffix = "";
     loop {
         out.push(Box::new(AllowBuildInstruction {
-            pkg_name: failure.pkg_name.clone(),
+            crate_name: failure.crate_name.clone(),
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
@@ -326,7 +335,7 @@ impl Edit for ImportApi {
     fn title(&self) -> String {
         format!(
             "Import API `{}` from package `{}`",
-            self.0.api, self.0.pkg_name
+            self.0.api, self.0.crate_name
         )
     }
 
@@ -337,7 +346,7 @@ impl Edit for ImportApi {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.0.pkg_name)?;
+        let table = editor.pkg_table(&self.0.crate_name)?;
         add_to_array(table, "import", &[&self.0.api.name])
     }
 }
@@ -374,7 +383,7 @@ impl Edit for InlineApi {
     fn title(&self) -> String {
         format!(
             "Inline API `{}` from package `{}`",
-            self.0.api, self.0.pkg_name
+            self.0.api, self.0.crate_name
         )
     }
 
@@ -460,7 +469,7 @@ impl Edit for IgnoreApi {
     fn title(&self) -> String {
         format!(
             "Ignore API `{}` provided by package `{}`",
-            self.0.api, self.0.pkg_name
+            self.0.api, self.0.crate_name
         )
     }
 
@@ -472,7 +481,7 @@ impl Edit for IgnoreApi {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         // Make sure the `import` table exists, otherwise we'll continue to warn about unused
         // imports.
-        let table = editor.pkg_table(&self.0.pkg_name)?;
+        let table = editor.pkg_table(&self.0.crate_name)?;
         get_or_create_array(table, "import")?;
         Ok(())
     }
@@ -483,7 +492,7 @@ impl Edit for IgnoreApi {
 }
 
 struct AllowApiUsage {
-    usage: DisallowedApiUsage,
+    usage: ApiUsage,
 }
 
 impl Edit for AllowApiUsage {
@@ -492,7 +501,7 @@ impl Edit for AllowApiUsage {
         sorted_keys.sort();
         format!(
             "Allow `{}` to use APIs: {}",
-            self.usage.pkg_name,
+            self.usage.crate_name,
             sorted_keys.join(", ")
         )
     }
@@ -502,7 +511,7 @@ impl Edit for AllowApiUsage {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.usage.pkg_name)?;
+        let table = editor.pkg_table(&self.usage.crate_name)?;
         let keys: Vec<_> = self.usage.usages.keys().map(|perm| &perm.name).collect();
         add_to_array(table, "allow_apis", &keys)
     }
@@ -522,7 +531,7 @@ impl Edit for RemoveUnusedAllowApis {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.unused.pkg_name)?;
+        let table = editor.pkg_table(&self.unused.crate_name)?;
         let allow_apis = get_or_create_array(table, "allow_apis")?;
         for api in &self.unused.permissions {
             let index_and_entry = allow_apis
@@ -557,12 +566,12 @@ fn create_string(value: String) -> Value {
 }
 
 struct IgnoreUnreachable {
-    pkg_name: String,
+    crate_name: CrateName,
 }
 
 impl Edit for IgnoreUnreachable {
     fn title(&self) -> String {
-        format!("Ignore unreachable code in package `{}`", self.pkg_name)
+        format!("Ignore unreachable code in package `{}`", self.crate_name)
     }
 
     fn help(&self) -> &'static str {
@@ -574,19 +583,19 @@ impl Edit for IgnoreUnreachable {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.pkg_name)?;
+        let table = editor.pkg_table(&self.crate_name)?;
         table["ignore_unreachable"] = toml_edit::value(true);
         Ok(())
     }
 }
 
 struct AllowProcMacro {
-    pkg_name: String,
+    crate_name: CrateName,
 }
 
 impl Edit for AllowProcMacro {
     fn title(&self) -> String {
-        format!("Allow proc macro `{}`", self.pkg_name)
+        format!("Allow proc macro `{}`", self.crate_name)
     }
 
     fn help(&self) -> &'static str {
@@ -595,7 +604,7 @@ impl Edit for AllowProcMacro {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.pkg_name)?;
+        let table = editor.pkg_table(&self.crate_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
         Ok(())
     }
@@ -620,7 +629,7 @@ impl Edit for IgnoreUnreachableGlobal {
 }
 
 struct AllowBuildInstruction {
-    pkg_name: String,
+    crate_name: CrateName,
     instruction: String,
 }
 
@@ -628,7 +637,7 @@ impl Edit for AllowBuildInstruction {
     fn title(&self) -> String {
         format!(
             "Allow build script for `{}` to emit instruction `{}`",
-            self.pkg_name, self.instruction
+            self.crate_name, self.instruction
         )
     }
 
@@ -639,18 +648,18 @@ impl Edit for AllowBuildInstruction {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&format!("{}.build", self.pkg_name))?;
+        let table = editor.pkg_table(&self.crate_name)?;
         add_to_array(table, "allow_build_instructions", &[&self.instruction])
     }
 }
 
 struct DisableSandbox {
-    pkg_name: String,
+    crate_name: CrateName,
 }
 
 impl Edit for DisableSandbox {
     fn title(&self) -> String {
-        format!("Disable sandbox for `{}`", self.pkg_name)
+        format!("Disable sandbox for `{}`", self.crate_name)
     }
 
     fn help(&self) -> &'static str {
@@ -660,19 +669,19 @@ impl Edit for DisableSandbox {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&format!("{}.build.sandbox", self.pkg_name))?;
+        let table = editor.pkg_sandbox_table(&self.crate_name)?;
         table["kind"] = toml_edit::value("Disabled");
         Ok(())
     }
 }
 
 struct AllowUnsafe {
-    pkg_name: String,
+    crate_name: CrateName,
 }
 
 impl Edit for AllowUnsafe {
     fn title(&self) -> String {
-        format!("Allow package `{}` to use unsafe code", self.pkg_name)
+        format!("Allow package `{}` to use unsafe code", self.crate_name)
     }
 
     fn help(&self) -> &'static str {
@@ -684,19 +693,19 @@ impl Edit for AllowUnsafe {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.pkg_name)?;
+        let table = editor.pkg_table(&self.crate_name)?;
         table["allow_unsafe"] = toml_edit::value(true);
         Ok(())
     }
 }
 
 struct SandboxAllowNetwork {
-    pkg_name: String,
+    crate_name: CrateName,
 }
 
 impl Edit for SandboxAllowNetwork {
     fn title(&self) -> String {
-        format!("Permit network from sandbox for `{}`", self.pkg_name)
+        format!("Permit network from sandbox for `{}`", self.crate_name)
     }
 
     fn help(&self) -> &'static str {
@@ -705,7 +714,7 @@ impl Edit for SandboxAllowNetwork {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&format!("{}.build.sandbox", self.pkg_name))?;
+        let table = editor.pkg_sandbox_table(&self.crate_name)?;
         table["allow_network"] = toml_edit::value(true);
         Ok(())
     }
@@ -726,10 +735,11 @@ mod tests {
     use super::Edit;
     use super::InlineStdApi;
     use crate::config::Config;
+    use crate::config::CrateName;
     use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
-    use crate::problem::DisallowedApiUsage;
+    use crate::problem::ApiUsage;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::proxy::errors::UnsafeUsage;
@@ -737,8 +747,8 @@ mod tests {
     use indoc::indoc;
 
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
-        Problem::DisallowedApiUsage(DisallowedApiUsage {
-            pkg_name: pkg_name.to_owned(),
+        Problem::DisallowedApiUsage(ApiUsage {
+            crate_name: pkg_name.into(),
             usages: apis
                 .iter()
                 .map(|n| (PermissionName::from(*n), vec![]))
@@ -792,7 +802,7 @@ mod tests {
     #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-            pkg_name: "crab1".to_owned(),
+            crate_name: CrateName::for_build_script("crab1"),
             instruction: "cargo:rustc-env=SOME_VAR=/home/some-path".to_owned(),
         });
         check(
@@ -853,7 +863,7 @@ mod tests {
     fn fix_allow_proc_macro() {
         check(
             "",
-            &[(0, Problem::IsProcMacro("crab1".to_owned()))],
+            &[(0, Problem::IsProcMacro("crab1".into()))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_proc_macro = true
@@ -869,7 +879,7 @@ mod tests {
             &[(
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
-                    crate_name: "crab1".to_owned(),
+                    crate_name: "crab1".into(),
                     error_info: UnsafeUsage {
                         file_name: "main.rs".into(),
                         start_line: 10,
@@ -891,7 +901,7 @@ mod tests {
                 exit_code: 1,
                 stdout: Vec::new(),
                 stderr: Vec::new(),
-                package_name: "crab1".to_owned(),
+                crate_name: CrateName::for_build_script("crab1"),
                 sandbox_config: SandboxConfig {
                     kind: crate::config::SandboxKind::Bubblewrap,
                     allow_read: vec![],
@@ -924,7 +934,7 @@ mod tests {
     #[test]
     fn unused_allow_api() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
-            pkg_name: "crab1.build".to_owned(),
+            crate_name: "crab1.build".into(),
             permissions: vec![PermissionName::new("fs"), PermissionName::new("net")],
         });
         check(

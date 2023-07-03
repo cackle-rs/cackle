@@ -8,7 +8,6 @@ use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
@@ -28,11 +27,17 @@ pub(crate) struct Config {
     pub(crate) apis: BTreeMap<PermissionName, PermConfig>,
 
     #[serde(default, rename = "pkg")]
-    pub(crate) packages: BTreeMap<String, PackageConfig>,
+    pub(crate) packages: BTreeMap<CrateName, PackageConfig>,
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
 }
+
+/// The name of a crate. Sort of. It's actually somewhere between a package and a crate. It's the
+/// package name except if it's a build script, in which case it's `{package_name}.build`.
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
+#[serde(transparent)]
+pub(crate) struct CrateName(Arc<str>);
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -70,16 +75,23 @@ pub(crate) struct SandboxConfig {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
-    pub(crate) include: Vec<String>,
+    pub(crate) include: Vec<ApiPath>,
 
     #[serde(default)]
-    pub(crate) exclude: Vec<String>,
+    pub(crate) exclude: Vec<ApiPath>,
 }
 
-#[derive(Deserialize, Serialize, Default, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Deserialize, Serialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(transparent)]
 pub(crate) struct PermissionName {
-    pub(crate) name: Cow<'static, str>,
+    pub(crate) name: Arc<str>,
+}
+
+/// A path prefix to some API. e.g. `std::net`.
+#[derive(Deserialize, Serialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[serde(transparent)]
+pub(crate) struct ApiPath {
+    pub(crate) prefix: Arc<str>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
@@ -158,7 +170,7 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
 
 impl Config {
     fn load_imports(&mut self, crate_index: &CrateIndex) -> Result<()> {
-        for (pkg_name, pkg_config) in &mut self.packages {
+        for (crate_name, pkg_config) in &mut self.packages {
             // If imports are specified, then we leave an empty list of imports. This ensures that
             // later in unused_imports, we can determine whether each package specified imports or
             // not. Although we leave an empty Vec, we can't leave a non-empty Vec, because then
@@ -171,14 +183,14 @@ impl Config {
             if imports.is_empty() {
                 continue;
             }
-            let pkg_exports = exported_config_for_package(pkg_name, crate_index)?;
+            let pkg_exports = exported_config_for_package(crate_name, crate_index)?;
             for (api_name, api_def) in &pkg_exports.apis {
                 if !imports.iter().any(|imp| imp == api_name.name.as_ref()) {
                     // The user didn't request importing this API, so skip it.
                     continue;
                 }
                 let qualified_api_name = PermissionName {
-                    name: format!("{}::{}", pkg_name, api_name).into(),
+                    name: format!("{}::{}", crate_name, api_name).into(),
                 };
                 if self
                     .apis
@@ -187,7 +199,7 @@ impl Config {
                 {
                     bail!(
                         "[pkg.{}.api.{}] is defined multiple times",
-                        pkg_name,
+                        crate_name,
                         api_name
                     );
                 }
@@ -205,22 +217,22 @@ impl Config {
     /// to import any APIs from this package, by listing `import = []`.
     pub(crate) fn unused_imports(&self, crate_index: &CrateIndex) -> ProblemList {
         let mut problems = ProblemList::default();
-        for pkg_name in crate_index.package_names() {
+        for crate_name in crate_index.package_names() {
             // If our config lists any import for this package, even empty, then we skip this.
             if self
                 .packages
-                .get(pkg_name)
+                .get(crate_name)
                 .map(|config| config.import.is_some())
                 .unwrap_or(false)
             {
                 continue;
             }
-            let Ok(pkg_exports) = exported_config_for_package(pkg_name, crate_index) else {
+            let Ok(pkg_exports) = exported_config_for_package(crate_name, crate_index) else {
                 continue;
             };
             for (api, config) in &pkg_exports.apis {
                 problems.push(Problem::AvailableApi(AvailableApi {
-                    pkg_name: pkg_name.to_owned(),
+                    crate_name: crate_name.to_owned(),
                     api: api.clone(),
                     config: config.clone(),
                 }))
@@ -230,10 +242,13 @@ impl Config {
     }
 }
 
-fn exported_config_for_package(pkg_name: &str, crate_index: &CrateIndex) -> Result<Arc<Config>> {
+fn exported_config_for_package(
+    crate_name: &CrateName,
+    crate_index: &CrateIndex,
+) -> Result<Arc<Config>> {
     let pkg_dir = crate_index
-        .pkg_dir(pkg_name)
-        .ok_or_else(|| anyhow!("Missing pkg_dir for package `{pkg_name}`"))?;
+        .pkg_dir(crate_name)
+        .ok_or_else(|| anyhow!("Missing pkg_dir for package `{crate_name}`"))?;
     parse_file(
         pkg_dir.join("cackle").join("export.toml").as_std_path(),
         crate_index,
@@ -245,7 +260,7 @@ fn flatten(config: &mut Config) {
     for (name, crate_config) in &config.packages {
         let mut crate_config = crate_config.clone();
         if let Some(build_config) = crate_config.build.take() {
-            crates_by_name.insert(format!("{name}.build"), *build_config);
+            crates_by_name.insert(format!("{name}.build").as_str().into(), *build_config);
         }
         crates_by_name.insert(name.clone(), crate_config);
     }
@@ -273,7 +288,7 @@ impl PermissionName {
 }
 
 impl Config {
-    pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &str) -> bool {
+    pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &CrateName) -> bool {
         self.packages
             .get(crate_name)
             .map(|crate_config| crate_config.allow_unsafe)
@@ -281,12 +296,12 @@ impl Config {
     }
 
     pub(crate) fn sandbox_config_for_build_script(&self, package_name: &str) -> SandboxConfig {
-        self.sandbox_config_for_package(&format!("{package_name}.build"))
+        self.sandbox_config_for_package(&format!("{package_name}.build").as_str().into())
     }
 
     /// Returns the configuration for `package_name`, inheriting options from the default sandbox
     /// configuration as appropriate.
-    pub(crate) fn sandbox_config_for_package(&self, package_name: &str) -> SandboxConfig {
+    pub(crate) fn sandbox_config_for_package(&self, package_name: &CrateName) -> SandboxConfig {
         let mut config = self.sandbox.clone();
         let Some(pkg_sandbox_config) = self.packages.get(package_name).and_then(|c| c.sandbox.as_ref()) else {
             return config;
@@ -319,6 +334,58 @@ pub(crate) fn flattened_config_path(target_dir: &Path) -> PathBuf {
     target_dir
         .join(crate::proxy::cargo::PROFILE_NAME)
         .join("flattened_cackle.toml")
+}
+
+impl ApiPath {
+    pub(crate) fn from_str(prefix: &str) -> Self {
+        Self {
+            prefix: Arc::from(prefix),
+        }
+    }
+}
+
+impl AsRef<str> for PermissionName {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
+impl AsRef<str> for ApiPath {
+    fn as_ref(&self) -> &str {
+        &self.prefix
+    }
+}
+
+impl From<&str> for CrateName {
+    fn from(value: &str) -> Self {
+        Self(Arc::from(value))
+    }
+}
+
+impl AsRef<str> for CrateName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl CrateName {
+    pub(crate) fn for_build_script(crate_name: &str) -> Self {
+        Self(Arc::from(format!("{crate_name}.build").as_str()))
+    }
+
+    pub(crate) fn package_name(&self) -> &str {
+        if let Some(dot_index) = self.0.find('.') {
+            &self.0[..dot_index]
+        } else {
+            self.as_ref()
+        }
+    }
+}
+
+impl Display for CrateName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 #[cfg(test)]
@@ -411,7 +478,7 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(config.packages.contains_key("foo.build"));
+        assert!(config.packages.contains_key(&"foo.build".into()));
     }
 
     #[test]
@@ -442,12 +509,12 @@ mod tests {
         )
         .unwrap();
 
-        let sandbox_a = config.sandbox_config_for_package("a.build");
+        let sandbox_a = config.sandbox_config_for_package(&"a.build".into());
         assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
         assert_eq!(sandbox_a.allow_read, vec!["/foo", "/bar", "/baz"]);
         assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
 
-        let sandbox_b = config.sandbox_config_for_package("b.build");
+        let sandbox_b = config.sandbox_config_for_package(&"b.build".into());
         assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
     }
 

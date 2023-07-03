@@ -1,3 +1,4 @@
+use super::ApiPath;
 use super::PermConfig;
 use super::PermissionName;
 use std::collections::BTreeMap;
@@ -69,7 +70,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
 
 fn perm(include: &[&str], exclude: &[&str]) -> PermConfig {
     PermConfig {
-        include: include.iter().map(|s| s.to_string()).collect(),
-        exclude: exclude.iter().map(|s| s.to_string()).collect(),
+        include: include.iter().map(|s| ApiPath::from_str(s)).collect(),
+        exclude: exclude.iter().map(|s| ApiPath::from_str(s)).collect(),
     }
 }

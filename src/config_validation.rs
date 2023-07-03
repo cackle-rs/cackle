@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::config::MAX_VERSION;
 use std::collections::HashSet;
@@ -16,7 +17,7 @@ pub(crate) struct InvalidConfig {
 enum Problem {
     UnknownPermission(PermissionName),
     DuplicateAllowedApi(PermissionName),
-    DisallowedSandboxConfig(String),
+    DisallowedSandboxConfig(CrateName),
     UnsupportedVersion(i64),
 }
 
@@ -36,7 +37,7 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
                 problems.push(Problem::DuplicateAllowedApi(permission_name.clone()))
             }
         }
-        if crate_config.sandbox.is_some() && !name.ends_with(".build") {
+        if crate_config.sandbox.is_some() && !name.as_ref().ends_with(".build") {
             problems.push(Problem::DisallowedSandboxConfig(name.clone()))
         }
     }
@@ -62,9 +63,9 @@ impl Display for InvalidConfig {
                 Problem::UnsupportedVersion(version) => {
                     write!(f, "  Unsupported version '{version}'")?
                 }
-                Problem::DisallowedSandboxConfig(pkg_name) => write!(
+                Problem::DisallowedSandboxConfig(crate_name) => write!(
                     f,
-                    "  Sandbox config for regular package `{pkg_name}` isn't permitted"
+                    "  Sandbox config for regular package `{crate_name}` isn't permitted"
                 )?,
             }
         }

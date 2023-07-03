@@ -207,8 +207,7 @@ impl SymGraph {
             let crate_names =
                 checker.crate_names_from_source_path(source_filename, &section.defined_in)?;
             for crate_name in crate_names {
-                let crate_id = checker.crate_id_from_name(&crate_name);
-                if checker.ignore_unreachable(crate_id) && !section.reachable {
+                if checker.ignore_unreachable(&crate_name) && !section.reachable {
                     // The only way we could get here without reachability having been computed would be
                     // if there was an inconsistency between `Checker::ignore_unreachable` and
                     // `Config::needs_reachability`. i.e. a bug, but a bad enough bug that it's better
@@ -228,7 +227,7 @@ impl SymGraph {
                             // it.
                             if name_parts
                                 .first()
-                                .map(|name_start| &crate_name == name_start)
+                                .map(|name_start| crate_name.as_ref() == name_start)
                                 .unwrap_or(false)
                             {
                                 continue;
@@ -241,7 +240,7 @@ impl SymGraph {
                                 })
                             };
                             checker.path_used(
-                                crate_id,
+                                &crate_name,
                                 &name_parts,
                                 &mut problems,
                                 reachable,

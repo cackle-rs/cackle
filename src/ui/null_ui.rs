@@ -84,8 +84,8 @@ fn test_null_ui_with_warning() {
         }
     });
     let mut problems = crate::problem::ProblemList::default();
-    problems.push(UnusedPackageConfig("crab1".to_owned()));
-    problems.push(UnusedPackageConfig("crab2".to_owned()));
+    problems.push(UnusedPackageConfig("crab1".into()));
+    problems.push(UnusedPackageConfig("crab2".into()));
     let outcome = problem_store.fix_problems(problems);
     assert_eq!(outcome, crate::outcome::Outcome::Continue);
     event_send.send(AppEvent::Shutdown).unwrap();

@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::config::CrateName;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -11,20 +12,19 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> ProblemList
         })
         .into();
     }
-    let pkg_name = &outputs.package_name;
-    let crate_name = format!("{}.build", outputs.package_name);
+    let crate_name = &outputs.crate_name;
     let allow_build_instructions = config
         .packages
-        .get(&crate_name)
+        .get(crate_name)
         .map(|cfg| cfg.allow_build_instructions.as_slice())
         .unwrap_or(&[]);
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
-        return Problem::new(format!("The package `{pkg_name}`'s build script emitted invalid UTF-8")).into();
+        return Problem::new(format!("The build script `{crate_name}` emitted invalid UTF-8")).into();
     };
     let mut problems = ProblemList::default();
     for line in stdout.lines() {
         if line.starts_with("cargo:") {
-            problems.merge(check_directive(line, pkg_name, allow_build_instructions));
+            problems.merge(check_directive(line, crate_name, allow_build_instructions));
         }
     }
     problems
@@ -36,7 +36,7 @@ const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:r
 
 fn check_directive(
     instruction: &str,
-    pkg_name: &str,
+    crate_name: &CrateName,
     allow_build_instructions: &[String],
 ) -> ProblemList {
     if ALWAYS_PERMITTED
@@ -52,7 +52,7 @@ fn check_directive(
         return ProblemList::default();
     }
     Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-        pkg_name: pkg_name.to_owned(),
+        crate_name: crate_name.to_owned(),
         instruction: instruction.to_owned(),
     })
     .into()
@@ -71,6 +71,7 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::config;
+    use crate::config::CrateName;
     use crate::config::SandboxConfig;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
@@ -84,7 +85,7 @@ mod tests {
             exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
-            package_name: "my_pkg".to_owned(),
+            crate_name: CrateName::for_build_script("my_pkg"),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
         };
@@ -109,7 +110,7 @@ mod tests {
         assert_eq!(
             check("cargo:rustc-link-search=some_directory", ""),
             Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-                pkg_name: "my_pkg".to_owned(),
+                crate_name: CrateName::for_build_script("my_pkg"),
                 instruction: "cargo:rustc-link-search=some_directory".to_owned(),
             })
             .into()

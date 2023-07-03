@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::config::CrateName;
 use crate::config::PackageConfig;
 use crate::crate_index::CrateIndex;
 use clap::Parser;
@@ -37,24 +38,22 @@ pub(crate) struct SummaryOptions {
 }
 
 struct PackageSummary {
-    name: String,
+    name: CrateName,
     permissions: Vec<String>,
 }
 
 impl Summary {
     pub(crate) fn new(crate_index: &CrateIndex, config: &Config) -> Self {
-        let pkg_configs: HashMap<&str, &PackageConfig> = config
-            .packages
-            .iter()
-            .map(|(k, v)| (k.as_str(), v))
-            .collect();
+        let pkg_configs: HashMap<&CrateName, &PackageConfig> =
+            config.packages.iter().map(|(k, v)| (k, v)).collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_names()
             .map(|name| {
                 let mut permissions = Vec::new();
-                for (crate_name, suffix) in
-                    [(name, ""), (format!("{name}.build").as_str(), "[build]")]
-                {
+                for (crate_name, suffix) in [
+                    (name, ""),
+                    (&CrateName::for_build_script(name.as_ref()), "[build]"),
+                ] {
                     if let Some(pkg_config) = pkg_configs.get(crate_name) {
                         if pkg_config.allow_proc_macro {
                             permissions.push(format!("proc_macro{suffix}"));
@@ -109,13 +108,13 @@ impl Summary {
     }
 
     fn print_by_permission(&self) {
-        let mut by_permission: BTreeMap<&String, Vec<&str>> = BTreeMap::new();
+        let mut by_permission: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for pkg in &self.packages {
             for perm in &pkg.permissions {
                 by_permission
                     .entry(perm)
                     .or_default()
-                    .push(pkg.name.as_str());
+                    .push(pkg.name.as_ref());
             }
         }
         for (perm, packages) in by_permission {

@@ -1,5 +1,10 @@
 //! Defines the communication protocol between the proxy subprocesses and the parent process.
 
+use super::errors;
+use crate::config::CrateName;
+use crate::config::SandboxConfig;
+use crate::link_info::LinkInfo;
+use crate::outcome::Outcome;
 use anyhow::Context;
 use anyhow::Result;
 use serde::de::DeserializeOwned;
@@ -9,12 +14,6 @@ use std::io::Read;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-
-use crate::config::SandboxConfig;
-use crate::link_info::LinkInfo;
-use crate::outcome::Outcome;
-
-use super::errors;
 
 /// A communication channel to the main Cackle process.
 pub(crate) struct RpcClient {
@@ -29,21 +28,21 @@ impl RpcClient {
     /// Advises the parent process that the specified crate uses unsafe.
     pub(crate) fn crate_uses_unsafe(
         &self,
-        crate_name: &str,
+        crate_name: &CrateName,
         error_info: errors::UnsafeUsage,
     ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
-            crate_name: crate_name.to_owned(),
+            crate_name: crate_name.clone(),
             error_info,
         });
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn rustc_started(&self, crate_name: &str) -> Result<Outcome> {
+    pub(crate) fn rustc_started(&self, crate_name: &CrateName) -> Result<Outcome> {
         let mut ipc = self.connect()?;
-        let request = Request::RustcStarted(crate_name.to_owned());
+        let request = Request::RustcStarted(crate_name.clone());
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
     }
@@ -85,7 +84,7 @@ pub(crate) enum Request {
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
     BuildScriptComplete(BuildScriptOutput),
-    RustcStarted(String),
+    RustcStarted(CrateName),
     RustcComplete(RustcOutput),
 }
 
@@ -94,20 +93,20 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) exit_code: i32,
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
-    pub(crate) package_name: String,
+    pub(crate) crate_name: CrateName,
     pub(crate) sandbox_config: SandboxConfig,
     pub(crate) build_script: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct RustcOutput {
-    pub(crate) crate_name: String,
+    pub(crate) crate_name: CrateName,
     pub(crate) source_paths: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
-    pub(crate) crate_name: String,
+    pub(crate) crate_name: CrateName,
     pub(crate) error_info: errors::UnsafeUsage,
 }
 
@@ -134,7 +133,7 @@ pub(crate) fn read_from_stream<T: DeserializeOwned>(stream: &mut impl Read) -> R
 impl BuildScriptOutput {
     pub(crate) fn new(
         value: &std::process::Output,
-        package_name: String,
+        package_name: CrateName,
         exit_status: &std::process::ExitStatus,
         sandbox_config: SandboxConfig,
         build_script: PathBuf,
@@ -143,7 +142,7 @@ impl BuildScriptOutput {
             exit_code: exit_status.code().unwrap_or(-1),
             stdout: value.stdout.clone(),
             stderr: value.stderr.clone(),
-            package_name,
+            crate_name: package_name,
             sandbox_config,
             build_script,
         }
@@ -157,7 +156,7 @@ mod tests {
     #[test]
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
-            crate_name: "foo".to_owned(),
+            crate_name: "foo".into(),
             error_info: errors::UnsafeUsage {
                 file_name: PathBuf::from("src/main.rs"),
                 start_line: 42,

@@ -229,8 +229,8 @@ mod tests {
 
     fn create_problems() -> ProblemList {
         let mut problems = ProblemList::default();
-        problems.push(Problem::UsesBuildScript("crab1".to_owned()));
-        problems.push(Problem::UsesBuildScript("crab2".to_owned()));
+        problems.push(Problem::UsesBuildScript("crab1".into()));
+        problems.push(Problem::UsesBuildScript("crab2".into()));
         problems
     }
 
@@ -245,19 +245,19 @@ mod tests {
         let mut iter = store.iterate_with_duplicates();
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab1".to_owned()))
+            Some(&Problem::UsesBuildScript("crab1".into()))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab2".to_owned()))
+            Some(&Problem::UsesBuildScript("crab2".into()))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab1".to_owned()))
+            Some(&Problem::UsesBuildScript("crab1".into()))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab2".to_owned()))
+            Some(&Problem::UsesBuildScript("crab2".into()))
         );
         assert_eq!(iter.next().map(|(_, v)| v), None);
 

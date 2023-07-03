@@ -187,13 +187,8 @@ impl Cackle {
             crate_index.clone(),
             config_path.clone(),
         );
-        for crate_name in crate_index.crate_names() {
-            let crate_id = checker.crate_id_from_name(crate_name);
-            checker.report_crate_used(crate_id);
-        }
         for crate_name in &crate_index.proc_macros {
-            let crate_id = checker.crate_id_from_name(crate_name);
-            checker.report_proc_macro(crate_id);
+            checker.report_proc_macro(crate_name);
         }
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
         let problem_store = crate::problem_store::create(event_sender.clone());
@@ -267,10 +262,20 @@ impl Cackle {
             self.problem_store
                 .fix_problems(config.unused_imports(&crate_index)),
         );
-        // The following call to load_config is only really necessary if we fixed unused-import
-        // problems above. It might be worthwhile at some point refactoring so that we don't do an
-        // unnecessary reload here.
-        self.checker.lock().unwrap().load_config()?;
+
+        {
+            let mut checker = self.checker.lock().unwrap();
+
+            // The following call to load_config is only really necessary if we fixed unused-import
+            // problems above. It might be worthwhile at some point refactoring so that we don't do an
+            // unnecessary reload here.
+            checker.load_config()?;
+
+            for crate_name in self.crate_index.crate_names() {
+                checker.report_crate_used(crate_name);
+            }
+        }
+
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result = if initial_outcome == Outcome::Continue {

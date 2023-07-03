@@ -9,6 +9,7 @@ use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::Config;
+use crate::config::CrateName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
 use crate::outcome::Outcome;
@@ -121,7 +122,7 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         let output = sandbox.run(&orig_build_script)?;
         let rpc_response = rpc_client.build_script_complete(BuildScriptOutput::new(
             &output,
-            package_name,
+            CrateName::for_build_script(&package_name),
             &output.status,
             sandbox_config,
             orig_build_script.clone(),
@@ -227,9 +228,9 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
         let crate_name = if is_build_script {
-            format!("{pkg_name}.build")
+            CrateName::for_build_script(&pkg_name)
         } else {
-            pkg_name
+            CrateName::from(pkg_name.as_str())
         };
         let unsafe_permitted = config.unsafe_permitted_for_crate(&crate_name);
         if !unsafe_permitted {
