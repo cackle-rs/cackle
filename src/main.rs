@@ -20,7 +20,6 @@ pub(crate) mod problem;
 pub(crate) mod problem_store;
 mod proxy;
 mod sandbox;
-pub(crate) mod section_name;
 mod summary;
 pub(crate) mod symbol;
 mod symbol_graph;

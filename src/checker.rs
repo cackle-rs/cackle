@@ -11,7 +11,6 @@ use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
-use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use crate::Args;
 use crate::CheckState;
@@ -21,7 +20,6 @@ use anyhow::Result;
 use log::info;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -72,14 +70,8 @@ pub(crate) struct CrateInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Usage {
     pub(crate) location: SourceLocation,
-    pub(crate) from: Referee,
+    pub(crate) from: Symbol,
     pub(crate) to: Symbol,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum Referee {
-    Symbol(Symbol),
-    Section(SectionName),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -386,23 +378,11 @@ impl Checker {
     }
 }
 
-impl Display for Referee {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Referee::Symbol(sym) => {
-                write!(f, "{sym}")
-            }
-            Referee::Section(name) => {
-                write!(f, "{name}")
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use std::fmt::Debug;
+    use std::fmt::Display;
 
     use super::*;
     use crate::config::testing::parse;
@@ -488,7 +468,7 @@ mod tests {
                     location: SourceLocation {
                         filename: "lib.rs".into(),
                     },
-                    from: crate::checker::Referee::Symbol(Symbol::new(vec![])),
+                    from: Symbol::new(vec![]),
                     to: Symbol::new(vec![]),
                 }],
             );

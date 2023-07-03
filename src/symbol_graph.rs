@@ -6,20 +6,19 @@
 //! from.
 
 use crate::checker::Checker;
-use crate::checker::Referee;
 use crate::checker::SourceLocation;
 use crate::checker::Usage;
 use crate::problem::ApiUsage;
 use crate::problem::ProblemList;
-use crate::section_name::SectionName;
 use crate::symbol::Symbol;
+use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
-use log::info;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
@@ -28,8 +27,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::ops::Index;
-use std::ops::IndexMut;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -39,51 +36,9 @@ enum Filetype {
     Other,
 }
 
-struct Reference {
-    target: ReferenceTarget,
-    filename: Option<String>,
-}
-
-enum ReferenceTarget {
-    Section(SectionIndex),
-    Name(Symbol),
-}
-
 #[derive(Default)]
-struct SectionInfo {
-    name: SectionName,
-
-    /// The object file that this section was contained in.
-    defined_in: PathBuf,
-
-    /// Outgoing references from this section.
-    references: Vec<Reference>,
-
-    /// Symbols that this section defines. Generally there should be exactly one, at least with the
-    /// compilation settings that we should be using.
-    definitions: Vec<SymbolInSection>,
-}
-
-struct SymbolInSection {
-    symbol: Symbol,
-    // Offset of the symbol within the section.
-    offset: u64,
-}
-
-#[derive(Default)]
-struct SymGraph {
-    sections: Vec<SectionInfo>,
-
-    /// The index of the section in which each non-private symbol is defined.
-    symbol_to_section: HashMap<Symbol, SectionIndex>,
-
-    /// The index of the section in which each private symbol is defined. Cleared with each object
-    /// file that we parse.
-    sym_to_local_section: HashMap<Symbol, SectionIndex>,
-
-    /// For each symbol that has two or more definitions, stores the indices of the sections that
-    /// defined that symbol.
-    duplicate_symbol_section_indexes: HashMap<Symbol, Vec<SectionIndex>>,
+struct ApiUsageCollector {
+    outputs: GraphOutputs,
 
     exe: ExeInfo,
 }
@@ -95,6 +50,7 @@ struct ExeInfo {
     symbol_addresses: HashMap<Symbol, u64>,
 }
 
+#[derive(Default)]
 pub(crate) struct GraphOutputs {
     api_usages: Vec<ApiUsage>,
 
@@ -103,8 +59,12 @@ pub(crate) struct GraphOutputs {
     base_problems: ProblemList,
 }
 
-#[derive(Clone, Copy)]
-struct SectionIndex(usize);
+struct ObjectIndex<'obj, 'data> {
+    obj: &'obj object::File<'data>,
+
+    /// For each section, stores a symbol defined at the start of that section, if any.
+    section_index_to_symbol: Vec<Option<Symbol>>,
+}
 
 pub(crate) fn scan_objects(
     paths: &[PathBuf],
@@ -120,14 +80,15 @@ pub(crate) fn scan_objects(
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed to process {}", exe_path.display()))?;
 
-    let mut graph = SymGraph::default();
+    let mut graph = ApiUsageCollector::default();
     graph.exe.load_symbols(&obj)?;
     for path in paths {
         graph
-            .process_file(path, &ctx)
+            .process_file(path, &ctx, checker)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
-    graph.api_usages(checker)
+
+    Ok(graph.outputs)
 }
 
 impl GraphOutputs {
@@ -141,11 +102,12 @@ impl GraphOutputs {
     }
 }
 
-impl SymGraph {
+impl ApiUsageCollector {
     fn process_file(
         &mut self,
         filename: &Path,
         ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+        checker: &Checker,
     ) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
@@ -155,217 +117,136 @@ impl SymGraph {
                     let Ok(mut entry) = entry_result else { continue; };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
-                    self.process_file_bytes(filename, &buffer, ctx)?;
+                    self.process_object_file_bytes(filename, &buffer, ctx, checker)?;
                 }
             }
             Filetype::Other => {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
-                self.process_file_bytes(filename, &file_bytes, ctx)?;
+                self.process_object_file_bytes(filename, &file_bytes, ctx, checker)?;
             }
         }
         Ok(())
     }
 
-    fn api_usages(&self, checker: &Checker) -> Result<GraphOutputs> {
-        let mut api_usages = Vec::new();
-        let mut problems = ProblemList::default();
-        if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
-            problems.push(format!(
-                "Multiple definitions for {} symbols, e.g. {}",
-                self.duplicate_symbol_section_indexes.len(),
-                dup
-            ));
-        }
-        for section in &self.sections {
-            if section.name.is_empty() {
-                // TODO: Determine if it's OK to just ignore this.
-                info!("Got empty section name");
-                continue;
-            }
-            for reference in &section.references {
-                let Some(source_filename) = reference.filename.as_ref() else {
+    /// Processes an unlinked object file - as opposed to an executable or a shared object, which
+    /// has been linked.
+    fn process_object_file_bytes(
+        &mut self,
+        filename: &Path,
+        file_bytes: &[u8],
+        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+        checker: &Checker,
+    ) -> Result<()> {
+        let obj = object::File::parse(file_bytes)
+            .with_context(|| format!("Failed to parse {}", filename.display()))?;
+        let object_index = ObjectIndex::new(&obj);
+        for section in obj.sections() {
+            let Some(section_start_symbol) = object_index
+                .section_index_to_symbol
+                .get(section.index().0)
+                .and_then(Option::as_ref) else {
                     continue;
                 };
-                let source_filename = Path::new(source_filename);
+            let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol) else {
+                continue;
+            };
+            for (offset, rel) in section.relocations() {
+                let location = ctx
+                    .find_location(section_start_in_exe + offset)
+                    .context("find_location failed")?;
+                let Some(target_symbol) = object_index.target_symbol(&rel)? else {
+                    continue;
+                };
+                let source_filename = location.and_then(|l| l.file);
+                let Some(source_filename) = source_filename else {
+                    continue;
+                };
+
                 // Ignore sources from the rust standard library and precompiled crates that are bundled
                 // with the standard library (e.g. hashbrown).
+                let source_filename = Path::new(&source_filename);
                 if source_filename.starts_with("/rustc/")
                     || source_filename.starts_with("/cargo/registry")
                 {
                     continue;
                 }
                 let crate_names =
-                    checker.crate_names_from_source_path(source_filename, &section.defined_in)?;
+                    checker.crate_names_from_source_path(source_filename, filename)?;
+                let mut api_usages = Vec::new();
                 for crate_name in crate_names {
-                    if let Some(ref_name) = self.referenced_symbol(&reference.target) {
-                        for name_parts in ref_name.parts()? {
-                            // If a package references another symbol within the same package, ignore
-                            // it.
-                            if name_parts
-                                .first()
-                                .map(|name_start| crate_name.as_ref() == name_start)
-                                .unwrap_or(false)
-                            {
-                                continue;
-                            }
-                            let location = SourceLocation {
-                                filename: source_filename.to_owned(),
-                            };
-                            for permission in checker.apis_for_path(&name_parts) {
-                                let mut usages = BTreeMap::new();
-                                usages.insert(
-                                    permission.clone(),
-                                    vec![Usage {
-                                        location: location.clone(),
-                                        from: section.as_referee(),
-                                        to: ref_name.clone(),
-                                    }],
-                                );
-                                api_usages.push(ApiUsage {
-                                    crate_name: crate_name.clone(),
-                                    usages,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(GraphOutputs {
-            api_usages,
-            base_problems: problems,
-        })
-    }
-
-    fn referenced_symbol<'a>(&'a self, reference: &'a ReferenceTarget) -> Option<&'a Symbol> {
-        match reference {
-            ReferenceTarget::Section(section_index) => self.sections[*section_index]
-                .definitions
-                .first()
-                .map(|d| &d.symbol),
-            ReferenceTarget::Name(symbol) => Some(symbol),
-        }
-    }
-
-    fn process_file_bytes(
-        &mut self,
-        filename: &Path,
-        file_bytes: &[u8],
-        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
-    ) -> Result<()> {
-        let obj = object::File::parse(file_bytes)
-            .with_context(|| format!("Failed to parse {}", filename.display()))?;
-        self.process_object_relocations(&obj, filename, ctx)?;
-        for (sym, indexes) in &self.duplicate_symbol_section_indexes {
-            println!("Duplicate symbol `{sym}` defined in:");
-            for i in indexes {
-                println!("  {}", self.sections[i.0].name);
-            }
-        }
-        Ok(())
-    }
-
-    fn process_object_relocations(
-        &mut self,
-        obj: &object::File,
-        filename: &Path,
-        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
-    ) -> Result<()> {
-        let mut section_name_to_index = HashMap::new();
-        for section in obj.sections() {
-            if let Ok(name) = section.name() {
-                let index = SectionIndex(self.sections.len());
-                section_name_to_index.insert(name.to_owned(), index);
-                self.sections.push(SectionInfo::new(filename, name));
-            }
-        }
-        self.sym_to_local_section.clear();
-        for sym in obj.symbols() {
-            let name = sym.name_bytes().unwrap_or_default();
-            if name.is_empty() {
-                continue;
-            }
-            let Some(section_name) = section_name_for_symbol(&sym, obj) else { continue };
-            let Some(&index) = section_name_to_index.get(&section_name) else { continue };
-            self.sections[index].definitions.push(SymbolInSection {
-                symbol: Symbol::new(name),
-                offset: sym.address(),
-            });
-            if sym.is_local() {
-                self.sym_to_local_section.insert(Symbol::new(name), index);
-            } else if let Some(old_index) = self.symbol_to_section.insert(Symbol::new(name), index)
-            {
-                if !(self.is_duplicate_symbol_ok(index, name)) {
-                    let dup_indexes = self
-                        .duplicate_symbol_section_indexes
-                        .entry(Symbol::new(name))
-                        .or_default();
-                    dup_indexes.push(index);
-                    dup_indexes.push(old_index);
-                }
-            }
-        }
-        for section in obj.sections() {
-            let Ok(section_name) = section.name() else { continue };
-            let Some(&section_index) = section_name_to_index.get(section_name) else { continue };
-            let section_info = &mut self.sections[section_index];
-            let section_start_in_exe =
-                section_info
-                    .definitions
-                    .get(0)
-                    .and_then(|first_def_in_section| {
-                        self.exe
-                            .symbol_addresses
-                            .get(&first_def_in_section.symbol)
-                            .map(|section_start| section_start - first_def_in_section.offset)
-                    });
-            let Some(section_start_in_exe) = section_start_in_exe else { continue };
-            for (offset, rel) in section.relocations() {
-                let location = ctx
-                    .find_location(section_start_in_exe + offset)
-                    .context("find_location failed")?;
-                let source_filename = location.and_then(|l| l.file).map(|f| f.to_owned());
-                let object::RelocationTarget::Symbol(symbol_index) = rel.target() else { continue };
-                let Ok(symbol) = obj.symbol_by_index(symbol_index) else { continue };
-                let name = symbol.name_bytes().unwrap_or_default();
-                // TODO: There's a bit of duplication in the following code that needs fixing.
-                if name.is_empty() {
-                    if let Some(section_name) = section_name_for_symbol(&symbol, obj) {
-                        if let Some(section_index) =
-                            section_name_to_index.get(section_name.as_str())
+                    for name_parts in target_symbol.parts()? {
+                        // If a package references another symbol within the same package, ignore
+                        // it.
+                        if name_parts
+                            .first()
+                            .map(|name_start| crate_name.as_ref() == name_start)
+                            .unwrap_or(false)
                         {
-                            section_info.references.push(Reference {
-                                target: ReferenceTarget::Section(*section_index),
-                                filename: source_filename,
+                            continue;
+                        }
+                        let location = SourceLocation {
+                            filename: source_filename.to_owned(),
+                        };
+                        for permission in checker.apis_for_path(&name_parts) {
+                            let mut usages = BTreeMap::new();
+                            usages.insert(
+                                permission.clone(),
+                                vec![Usage {
+                                    location: location.clone(),
+                                    from: section_start_symbol.clone(),
+                                    to: target_symbol.clone(),
+                                }],
+                            );
+                            api_usages.push(ApiUsage {
+                                crate_name: crate_name.clone(),
+                                usages,
                             });
                         }
                     }
-                } else {
-                    let symbol = Symbol::new(name);
-
-                    if let Some(local_index) = self.sym_to_local_section.get(&symbol) {
-                        section_info.references.push(Reference {
-                            target: ReferenceTarget::Section(*local_index),
-                            filename: source_filename,
-                        });
-                    } else {
-                        section_info.references.push(Reference {
-                            target: ReferenceTarget::Name(symbol),
-                            filename: source_filename,
-                        });
-                    }
                 }
+                self.outputs.api_usages.append(&mut api_usages);
             }
         }
         Ok(())
     }
+}
 
-    /// Returns whether it's allowed that we encountered a duplicate symbol `name` in the specified
-    /// section.
-    fn is_duplicate_symbol_ok(&mut self, index: SectionIndex, name: &[u8]) -> bool {
-        &self.sections[index.0].name == ".data.DW.ref.rust_eh_personality"
-            && name == b"DW.ref.rust_eh_personality"
+impl<'obj, 'data> ObjectIndex<'obj, 'data> {
+    fn new(obj: &'obj object::File<'data>) -> Self {
+        let max_section_index = obj.sections().map(|s| s.index().0).max().unwrap_or(0);
+        let mut first_symbol_by_section = vec![None; max_section_index + 1];
+        for symbol in obj.symbols() {
+            let name = symbol.name_bytes().unwrap_or_default();
+            if symbol.address() != 0 || name.is_empty() {
+                continue;
+            }
+            let Some(section_index) = symbol.section_index() else {
+                continue;
+            };
+            first_symbol_by_section[section_index.0] = Some(Symbol::new(name));
+        }
+        Self {
+            obj,
+            section_index_to_symbol: first_symbol_by_section,
+        }
+    }
+
+    fn target_symbol(&self, rel: &object::Relocation) -> Result<Option<Symbol>> {
+        let object::RelocationTarget::Symbol(symbol_index) = rel.target() else { bail!("Unsupported relocation kind"); };
+        let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else { bail!("Invalid symbol index in object file"); };
+        let name = symbol.name_bytes().unwrap_or_default();
+        if !name.is_empty() {
+            return Ok(Some(Symbol::new(name)));
+        }
+        let Some(section_index) = symbol.section_index() else {
+            bail!("Relocation target has empty name and no section index");
+        };
+        Ok(self
+            .section_index_to_symbol
+            .get(section_index.0)
+            .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?
+            .clone())
     }
 }
 
@@ -377,45 +258,6 @@ impl ExeInfo {
         }
         Ok(())
     }
-}
-
-impl Index<SectionIndex> for Vec<SectionInfo> {
-    type Output = SectionInfo;
-
-    fn index(&self, index: SectionIndex) -> &Self::Output {
-        &self[index.0]
-    }
-}
-
-impl IndexMut<SectionIndex> for Vec<SectionInfo> {
-    fn index_mut(&mut self, index: SectionIndex) -> &mut Self::Output {
-        &mut self[index.0]
-    }
-}
-
-impl SectionInfo {
-    fn new(defined_in: &Path, name: &str) -> Self {
-        Self {
-            name: SectionName::new(name.as_bytes()),
-            defined_in: defined_in.to_owned(),
-            ..Default::default()
-        }
-    }
-
-    fn as_referee(&self) -> Referee {
-        if let Some(sym) = self.definitions.first() {
-            Referee::Symbol(sym.symbol.clone())
-        } else {
-            Referee::Section(self.name.clone())
-        }
-    }
-}
-
-fn section_name_for_symbol(symbol: &object::Symbol, obj: &object::File) -> Option<String> {
-    symbol
-        .section_index()
-        .and_then(|section_index| obj.section_by_index(section_index).ok())
-        .and_then(|section| section.name().ok().map(|name| name.to_owned()))
 }
 
 /// Loads section `id` from `obj`.

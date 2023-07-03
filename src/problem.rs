@@ -8,7 +8,6 @@ use crate::config::PermConfig;
 use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
-use crate::section_name::SectionName;
 use crate::symbol::Symbol;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
@@ -74,13 +73,6 @@ pub(crate) struct AvailableApi {
     pub(crate) crate_name: CrateName,
     pub(crate) api: PermissionName,
     pub(crate) config: PermConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct MultipleSymbolsInSection {
-    pub(crate) section_name: SectionName,
-    pub(crate) symbols: Vec<Symbol>,
-    pub(crate) defined_in: PathBuf,
 }
 
 impl ProblemList {
@@ -364,7 +356,7 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
     for u in usages {
         by_location.entry(&u.location).or_default().push(u);
     }
-    let mut by_from: BTreeMap<&crate::checker::Referee, Vec<&Symbol>> = BTreeMap::new();
+    let mut by_from: BTreeMap<&Symbol, Vec<&Symbol>> = BTreeMap::new();
     for (location, usages_for_location) in by_location {
         writeln!(f, "    {}", location.filename.display())?;
         by_from.clear();
@@ -464,7 +456,7 @@ mod tests {
             location: SourceLocation {
                 filename: "lib.rs".into(),
             },
-            from: crate::checker::Referee::Symbol(Symbol::new(from)),
+            from: Symbol::new(from),
             to: Symbol::new(to),
         }
     }
