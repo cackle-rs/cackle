@@ -106,30 +106,6 @@ allow_apis = [
 If you're the owner of a crate that provides APIs that you'd like classified, you can create
 `cackle/export.toml` in your crate.
 
-## Ignoring unreachable code
-
-If you're using a package that uses some sensitive APIs, but you're not using the parts of the
-package that use those APIs, you can opt to ignore unreachable code in that package. e.g.
-
-```toml
-[pkg.some-dependency]
-ignore_unreachable = true
-```
-
-It's worth noting though, that if there's a bug in our code to compute reachability, then this may
-mean that API usage gets ignored when it shouldn't be. For this reason, it's only recommended to use
-this when you've checked that the API usage is in a part of the package that you're sure isn't being
-used.
-
-Reachability is computed based on the graph of symbol references starting from some roots (e.g.
-main).
-
-This option currently won't work if you're compiling a shared object (other than a proc macro),
-since we haven't yet implemented a way to find the roots of a shared object for the purposes of
-computing reachability.
-
-Reachability only ever applies to API usage. Reachability doesn't affect checking for unsafe code.
-
 ## Specifying features
 
 Features to be be passed to `cargo build` can be specified in `cackle.toml` as follows:

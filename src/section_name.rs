@@ -18,10 +18,6 @@ impl SectionName {
     pub(crate) fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
-
-    pub(crate) fn raw_bytes(&self) -> &[u8] {
-        self.bytes.as_slice()
-    }
 }
 
 impl Display for SectionName {

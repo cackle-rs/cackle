@@ -73,12 +73,6 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             edits.push(Box::new(AllowApiUsage {
                 usage: usage.clone(),
             }));
-            if usage.reachable == Some(false) {
-                edits.push(Box::new(IgnoreUnreachable {
-                    crate_name: usage.crate_name.clone(),
-                }));
-                edits.push(Box::new(IgnoreUnreachableGlobal));
-            }
         }
         Problem::IsProcMacro(crate_name) => {
             edits.push(Box::new(AllowProcMacro {
@@ -565,30 +559,6 @@ fn create_string(value: String) -> Value {
     Value::String(Formatted::new(value)).decorated("\n    ", "")
 }
 
-struct IgnoreUnreachable {
-    crate_name: CrateName,
-}
-
-impl Edit for IgnoreUnreachable {
-    fn title(&self) -> String {
-        format!("Ignore unreachable code in package `{}`", self.crate_name)
-    }
-
-    fn help(&self) -> &'static str {
-        "Allow this package to use any APIs provided they're not used in code that is reachable \
-         from the entry point of your binary (e.g. main). This can be a good option if one of \
-         your dependencies has APIs that read or write files, but you don't use those particular \
-         APIs. It does slightly increase the risk of missing API usage, since if we get \
-         reachability incorrect then we may think that code isn't reachable when it actually is."
-    }
-
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.crate_name)?;
-        table["ignore_unreachable"] = toml_edit::value(true);
-        Ok(())
-    }
-}
-
 struct AllowProcMacro {
     crate_name: CrateName,
 }
@@ -606,24 +576,6 @@ impl Edit for AllowProcMacro {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&self.crate_name)?;
         table["allow_proc_macro"] = toml_edit::value(true);
-        Ok(())
-    }
-}
-
-struct IgnoreUnreachableGlobal;
-
-impl Edit for IgnoreUnreachableGlobal {
-    fn title(&self) -> String {
-        "Ignore unreachable by default".to_string()
-    }
-
-    fn help(&self) -> &'static str {
-        "Ignore APIs in unreachable code in all packages."
-    }
-
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.common_table()?;
-        table["ignore_unreachable"] = toml_edit::value(true);
         Ok(())
     }
 }
@@ -753,7 +705,6 @@ mod tests {
                 .iter()
                 .map(|n| (PermissionName::from(*n), vec![]))
                 .collect(),
-            reachable: None,
         })
     }
 

@@ -67,9 +67,6 @@ pub(crate) struct CrateInfo {
 
     /// Whether this crate is allowed to be a proc macro according to our config.
     allow_proc_macro: bool,
-
-    /// Whether to ignore references from dead code in this crate.
-    ignore_unreachable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,7 +162,6 @@ impl Checker {
                 .or_default();
             crate_info.has_config = true;
             crate_info.allow_proc_macro = crate_config.allow_proc_macro;
-            crate_info.ignore_unreachable = crate_config.ignore_unreachable;
             for perm in &crate_config.allow_apis {
                 if crate_info.allowed_perms.insert(perm.clone()) {
                     crate_info.unused_allowed_perms.insert(perm.clone());
@@ -499,7 +495,6 @@ mod tests {
             let api_usage = ApiUsage {
                 crate_name: crate_name.clone(),
                 usages,
-                reachable: None,
             };
             checker.permission_used(&api_usage, &mut problems);
         }

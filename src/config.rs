@@ -52,9 +52,6 @@ pub(crate) struct CommonConfig {
 
     #[serde(default)]
     pub(crate) features: Vec<String>,
-
-    #[serde(default)]
-    pub(crate) ignore_unreachable: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
@@ -128,9 +125,6 @@ pub(crate) struct PackageConfig {
 
     #[serde(default)]
     pub(crate) import: Option<Vec<String>>,
-
-    #[serde(default)]
-    pub(crate) ignore_unreachable: Option<bool>,
 }
 
 pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Arc<Config>> {

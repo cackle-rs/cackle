@@ -13,8 +13,6 @@ use crate::problem::ApiUsage;
 use crate::problem::ProblemList;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
-use crate::Args;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
@@ -64,9 +62,6 @@ struct SectionInfo {
     /// Symbols that this section defines. Generally there should be exactly one, at least with the
     /// compilation settings that we should be using.
     definitions: Vec<SymbolInSection>,
-
-    /// Whether this section is reachable by following references from a root (e.g. `main`).
-    reachable: bool,
 }
 
 struct SymbolInSection {
@@ -89,9 +84,6 @@ struct SymGraph {
     /// For each symbol that has two or more definitions, stores the indices of the sections that
     /// defined that symbol.
     duplicate_symbol_section_indexes: HashMap<Symbol, Vec<SectionIndex>>,
-
-    /// Whether `compute_reachability` has been called and it has suceeded.
-    reachabilty_computed: bool,
 
     exe: ExeInfo,
 }
@@ -135,7 +127,6 @@ pub(crate) fn scan_objects(
             .process_file(path, &ctx)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
-    graph.compute_reachability(&checker.args)?;
     graph.api_usages(checker)
 }
 
@@ -176,62 +167,6 @@ impl SymGraph {
         Ok(())
     }
 
-    fn compute_reachability(&mut self, args: &Args) -> Result<()> {
-        if self.reachabilty_computed {
-            return Ok(());
-        }
-        let start = std::time::Instant::now();
-        let mut queue = Vec::with_capacity(100);
-        const ROOT_PREFIXES: &[&str] = &[".text.main", ".data.rel.ro.__rustc_proc_macro_decls"];
-        queue.extend(
-            self.sections
-                .iter()
-                .enumerate()
-                .filter_map(|(index, section)| {
-                    if ROOT_PREFIXES
-                        .iter()
-                        .any(|prefix| section.name.raw_bytes().starts_with(prefix.as_bytes()))
-                    {
-                        Some(SectionIndex(index))
-                    } else {
-                        None
-                    }
-                }),
-        );
-        if queue.is_empty() {
-            if args.verbose_errors {
-                println!("Sections names:");
-                for section in &self.sections {
-                    println!("  {}", section.name);
-                }
-            }
-            bail!("No roots found when computing reachability, but ignore_unreachable is set");
-        }
-        while let Some(section_index) = queue.pop() {
-            if self.sections[section_index.0].reachable {
-                // We've already visited this node in the graph.
-                continue;
-            }
-            self.sections[section_index.0].reachable = true;
-            let section = &self.sections[section_index.0];
-            for reference in &section.references {
-                let next_section_index = match &reference.target {
-                    ReferenceTarget::Section(section_index) => Some(*section_index),
-                    ReferenceTarget::Name(symbol) => self.symbol_to_section.get(symbol).cloned(),
-                };
-                queue.extend(next_section_index.into_iter());
-            }
-        }
-        if args.print_timing {
-            println!(
-                "Reachability computation took {}ms",
-                start.elapsed().as_millis()
-            );
-        }
-        self.reachabilty_computed = true;
-        Ok(())
-    }
-
     fn api_usages(&self, checker: &Checker) -> Result<GraphOutputs> {
         let mut api_usages = Vec::new();
         let mut problems = ProblemList::default();
@@ -248,11 +183,6 @@ impl SymGraph {
                 info!("Got empty section name");
                 continue;
             }
-            let reachable = if self.reachabilty_computed {
-                Some(section.reachable)
-            } else {
-                None
-            };
             for reference in &section.references {
                 let Some(source_filename) = reference.filename.as_ref() else {
                     continue;
@@ -295,7 +225,6 @@ impl SymGraph {
                                 api_usages.push(ApiUsage {
                                     crate_name: crate_name.clone(),
                                     usages,
-                                    reachable,
                                 });
                             }
                         }

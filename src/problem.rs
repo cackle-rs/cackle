@@ -55,7 +55,6 @@ pub(crate) struct BuildScriptFailed {
 pub(crate) struct ApiUsage {
     pub(crate) crate_name: CrateName,
     pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
-    pub(crate) reachable: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -288,15 +287,7 @@ impl Display for Problem {
 impl Display for ApiUsage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            if self.reachable == Some(false) {
-                writeln!(
-                    f,
-                    "Crate '{}' uses disallowed APIs, but only from apparently dead code:",
-                    self.crate_name
-                )?;
-            } else {
-                writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_name)?;
-            }
+            writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_name)?;
             for (perm_name, usages) in &self.usages {
                 writeln!(f, "  {perm_name}:")?;
                 display_usages(f, usages)?;
@@ -405,7 +396,6 @@ impl std::hash::Hash for ApiUsage {
         for perm in self.usages.keys() {
             perm.hash(state);
         }
-        self.reachable.hash(state);
     }
 }
 
@@ -466,7 +456,6 @@ mod tests {
         Problem::DisallowedApiUsage(super::ApiUsage {
             crate_name: CrateName::from(package),
             usages,
-            reachable: None,
         })
     }
 

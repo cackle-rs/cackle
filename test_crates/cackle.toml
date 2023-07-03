@@ -17,7 +17,6 @@ kind = "Bubblewrap"
 
 [pkg.crab1]
 allow_unsafe = true
-ignore_unreachable = true
 import = [
     "fs",
 ]
