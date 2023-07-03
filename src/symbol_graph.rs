@@ -233,25 +233,22 @@ impl SymGraph {
                             {
                                 continue;
                             }
+                            let location = if let Some(filename) = section.source_filename.clone() {
+                                UsageLocation::Source(SourceLocation { filename })
+                            } else {
+                                UsageLocation::Unknown(UnknownLocation {
+                                    object_path: section.defined_in.clone(),
+                                })
+                            };
                             checker.path_used(
                                 crate_id,
                                 &name_parts,
                                 &mut problems,
                                 reachable,
-                                || {
-                                    let location =
-                                        if let Some(filename) = section.source_filename.clone() {
-                                            UsageLocation::Source(SourceLocation { filename })
-                                        } else {
-                                            UsageLocation::Unknown(UnknownLocation {
-                                                object_path: section.defined_in.clone(),
-                                            })
-                                        };
-                                    Usage {
-                                        location,
-                                        from: section.as_referee(),
-                                        to: ref_name.clone(),
-                                    }
+                                &Usage {
+                                    location,
+                                    from: section.as_referee(),
+                                    to: ref_name.clone(),
                                 },
                             );
                         }

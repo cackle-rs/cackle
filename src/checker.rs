@@ -411,18 +411,10 @@ impl Checker {
         name_parts: &[String],
         problems: &mut ProblemList,
         reachable: Option<bool>,
-        mut compute_usage_fn: impl FnMut() -> Usage,
+        usage: &Usage,
     ) {
-        // TODO: If compute_usage_fn is not expensive, then just pass it in instead of using a
-        // closure.
         for perm_id in self.apis_for_path(name_parts) {
-            self.permission_id_used(
-                crate_id,
-                perm_id,
-                problems,
-                reachable,
-                &mut compute_usage_fn,
-            );
+            self.permission_id_used(crate_id, perm_id, problems, reachable, usage);
         }
     }
 
@@ -451,7 +443,7 @@ impl Checker {
         perm_id: PermId,
         problems: &mut ProblemList,
         reachable: Option<bool>,
-        mut compute_usage_fn: impl FnMut() -> Usage,
+        usage: &Usage,
     ) {
         let crate_info = &mut self.crate_infos[crate_id.0];
         crate_info.unused_allowed_perms.remove(&perm_id);
@@ -463,7 +455,7 @@ impl Checker {
             let pkg_name = pkg_name.clone();
             let permission_name = self.permission_name(&perm_id).clone();
             let mut usages = BTreeMap::new();
-            usages.insert(permission_name, vec![compute_usage_fn()]);
+            usages.insert(permission_name, vec![usage.clone()]);
             problems.push(Problem::DisallowedApiUsage(DisallowedApiUsage {
                 pkg_name,
                 usages,
@@ -606,7 +598,7 @@ mod tests {
             ],
             &mut problems,
             None,
-            || Usage {
+            &Usage {
                 location: crate::checker::UsageLocation::Source(SourceLocation {
                     filename: "lib.rs".into(),
                 }),
