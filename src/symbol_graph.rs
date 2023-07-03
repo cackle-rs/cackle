@@ -11,6 +11,7 @@ use crate::checker::SourceLocation;
 use crate::checker::UnknownLocation;
 use crate::checker::Usage;
 use crate::checker::UsageLocation;
+use crate::problem::ApiUsage;
 use crate::problem::ProblemList;
 use crate::section_name::SectionName;
 use crate::symbol::Symbol;
@@ -25,6 +26,7 @@ use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt::Display;
@@ -86,6 +88,14 @@ pub(crate) struct SymGraph {
 
     /// Whether `compute_reachability` has been called and it has suceeded.
     reachabilty_computed: bool,
+}
+
+struct GraphOutputs {
+    api_usages: Vec<ApiUsage>,
+
+    /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
+    /// once computed, they won't be recomputed.
+    base_problems: ProblemList,
 }
 
 #[derive(Clone, Copy)]
@@ -170,6 +180,17 @@ impl SymGraph {
     }
 
     pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
+        let graph_outputs = self.api_usages(checker)?;
+        let mut problems = graph_outputs.base_problems;
+        for api_usage in graph_outputs.api_usages {
+            checker.permission_used(api_usage, &mut problems);
+        }
+
+        Ok(problems)
+    }
+
+    fn api_usages(&self, checker: &mut Checker) -> Result<GraphOutputs> {
+        let mut api_usages = Vec::new();
         let mut problems = ProblemList::default();
         if let Some((dup, _)) = self.duplicate_symbol_section_indexes.iter().next() {
             problems.push(format!(
@@ -239,23 +260,31 @@ impl SymGraph {
                                     object_path: section.defined_in.clone(),
                                 })
                             };
-                            checker.path_used(
-                                &crate_name,
-                                &name_parts,
-                                &mut problems,
-                                reachable,
-                                &Usage {
-                                    location,
-                                    from: section.as_referee(),
-                                    to: ref_name.clone(),
-                                },
-                            );
+                            for permission in checker.apis_for_path(&name_parts) {
+                                let mut usages = BTreeMap::new();
+                                usages.insert(
+                                    permission.clone(),
+                                    vec![Usage {
+                                        location: location.clone(),
+                                        from: section.as_referee(),
+                                        to: ref_name.clone(),
+                                    }],
+                                );
+                                api_usages.push(ApiUsage {
+                                    crate_name: crate_name.clone(),
+                                    usages,
+                                    reachable,
+                                });
+                            }
                         }
                     }
                 }
             }
         }
-        Ok(problems)
+        Ok(GraphOutputs {
+            api_usages,
+            base_problems: problems,
+        })
     }
 
     fn referenced_symbol<'a>(&'a self, reference: &'a Reference) -> Option<&'a Symbol> {

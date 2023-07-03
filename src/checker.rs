@@ -21,7 +21,6 @@ use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use log::info;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -370,22 +369,10 @@ impl Checker {
             .is_proc_macro = true;
     }
 
-    /// Report that the specified crate used the path constructed by joining
-    /// `name_parts` with "::".
-    pub(crate) fn path_used(
-        &mut self,
-        crate_name: &CrateName,
-        name_parts: &[String],
-        problems: &mut ProblemList,
-        reachable: Option<bool>,
-        usage: &Usage,
-    ) {
-        for permission in self.apis_for_path(name_parts) {
-            self.permission_used(crate_name, permission, problems, reachable, usage);
-        }
-    }
-
-    fn apis_for_path(&self, name_parts: &[String]) -> HashSet<PermissionName> {
+    /// Returns all permissions that are matched by `name_parts`, where `name_parts` are the parts
+    /// of a name that was separated by "::". e.g. `name_parts` might be `["std", "fs", "write"]`
+    /// and the returned permissions might be `{"net"}`
+    pub(crate) fn apis_for_path(&self, name_parts: &[String]) -> HashSet<PermissionName> {
         let mut matched = HashSet::new();
         let mut name = String::new();
         for name_part in name_parts {
@@ -405,24 +392,15 @@ impl Checker {
         matched
     }
 
-    fn permission_used(
-        &mut self,
-        crate_name: &CrateName,
-        permission: PermissionName,
-        problems: &mut ProblemList,
-        reachable: Option<bool>,
-        usage: &Usage,
-    ) {
-        let crate_info = &mut self.crate_infos.entry(crate_name.clone()).or_default();
-        let mut usages = BTreeMap::new();
-        usages.insert(permission.clone(), vec![usage.clone()]);
-        let api_usage = ApiUsage {
-            crate_name: crate_name.clone(),
-            usages,
-            reachable,
-        };
-        if crate_info.allowed_perms.contains(&permission) {
-            crate_info.unused_allowed_perms.remove(&permission);
+    pub(crate) fn permission_used(&mut self, api_usage: ApiUsage, problems: &mut ProblemList) {
+        assert_eq!(api_usage.usages.keys().count(), 1);
+        let permission = api_usage.usages.keys().next().unwrap();
+        let crate_info = &mut self
+            .crate_infos
+            .entry(api_usage.crate_name.clone())
+            .or_default();
+        if crate_info.allowed_perms.contains(permission) {
+            crate_info.unused_allowed_perms.remove(permission);
         } else {
             problems.push(Problem::DisallowedApiUsage(api_usage));
         }
@@ -477,6 +455,7 @@ impl Display for Referee {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fmt::Debug;
 
     use super::*;
@@ -545,23 +524,35 @@ mod tests {
 
         let crate_name = CrateName::from("foo");
         checker.report_crate_used(&crate_name);
-        checker.path_used(
-            &crate_name,
-            &[
-                "std".to_owned(),
-                "fs".to_owned(),
-                "read_to_string".to_owned(),
-            ],
-            &mut problems,
-            None,
-            &Usage {
-                location: crate::checker::UsageLocation::Source(SourceLocation {
-                    filename: "lib.rs".into(),
-                }),
-                from: crate::checker::Referee::Symbol(Symbol::new(vec![])),
-                to: Symbol::new(vec![]),
-            },
+        let permissions = checker.apis_for_path(&[
+            "std".to_owned(),
+            "fs".to_owned(),
+            "read_to_string".to_owned(),
+        ]);
+        assert_eq!(permissions.len(), 1);
+        assert_eq!(
+            permissions.iter().next().unwrap(),
+            &PermissionName::from("fs")
         );
+        for api in permissions {
+            let mut usages = BTreeMap::new();
+            usages.insert(
+                api,
+                vec![Usage {
+                    location: crate::checker::UsageLocation::Source(SourceLocation {
+                        filename: "lib.rs".into(),
+                    }),
+                    from: crate::checker::Referee::Symbol(Symbol::new(vec![])),
+                    to: Symbol::new(vec![]),
+                }],
+            );
+            let api_usage = ApiUsage {
+                crate_name: crate_name.clone(),
+                usages,
+                reachable: None,
+            };
+            checker.permission_used(api_usage, &mut problems);
+        }
 
         assert!(problems.is_empty());
         assert!(checker.check_unused().is_empty());
