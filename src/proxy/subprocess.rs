@@ -303,19 +303,22 @@ fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Option<UnsafeUsage>> {
     Ok(None)
 }
 
-/// Advises our parent process that the linker has been invoked, then once it is done checking the
-/// object files, proceeds to run the actual linker or fails.
+/// Runs the real linker, then advises our parent process of all input files to the linker as well
+/// as the output file. If the parent process says that all checks have been satisfied, then we
+/// return, otherwise we exit.
 fn proxy_linker(
     link_info: LinkInfo,
     rpc_client: RpcClient,
     args: std::iter::Peekable<std::env::Args>,
 ) -> Result<ExitCode, anyhow::Error> {
+    // Invoke the actual linker first, since the parent process uses the output file to aid with
+    // analysis.
+    let exit_status = invoke_real_linker(args)?;
     let build_script_bin = link_info
         .is_build_script
         .then(|| link_info.output_file.clone());
     match rpc_client.linker_invoked(link_info)? {
         Outcome::Continue => {
-            let exit_status = invoke_real_linker(args)?;
             if exit_status.is_ok() {
                 if let Some(build_script_bin) = build_script_bin {
                     setup_build_script_wrapper(&build_script_bin)?;
