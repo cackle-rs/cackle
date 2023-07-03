@@ -5,13 +5,11 @@ use anyhow::Result;
 use cargo_metadata::camino::Utf8PathBuf;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt::Display;
 use std::path::Path;
-use std::path::PathBuf;
 
 #[derive(Default, Debug)]
 pub(crate) struct CrateIndex {
-    path_to_crate_name: HashMap<PathBuf, String>,
+    crate_names: HashSet<Box<str>>,
     pub(crate) proc_macros: HashSet<String>,
     name_to_dir: HashMap<String, Utf8PathBuf>,
 }
@@ -23,27 +21,22 @@ impl CrateIndex {
             .exec()?;
         let mut mapping = Self::default();
         for package in metadata.packages {
-            for dep in package.dependencies {
-                if let Some(path) = dep.path {
-                    mapping.path_to_crate_name.insert(path.into(), dep.name);
-                }
-            }
             for target in package.targets {
-                if let Some(target_dir) = target.src_path.into_std_path_buf().parent() {
-                    let name = if target.name.starts_with("build-script-") {
-                        format!("{}.build", package.name)
-                    } else {
-                        package.name.clone()
-                    };
-                    mapping.path_to_crate_name.insert(target_dir.into(), name);
-                }
+                if target.name.starts_with("build-script-") {
+                    mapping
+                        .crate_names
+                        .insert(format!("{}.build", package.name).into_boxed_str());
+                };
                 if target.kind.iter().any(|kind| kind == "proc-macro") {
                     mapping.proc_macros.insert(package.name.clone());
                 }
             }
             if let Some(dir) = package.manifest_path.parent() {
-                mapping.name_to_dir.insert(package.name, dir.to_path_buf());
+                mapping
+                    .name_to_dir
+                    .insert(package.name.clone(), dir.to_path_buf());
             }
+            mapping.crate_names.insert(package.name.into_boxed_str());
         }
         Ok(mapping)
     }
@@ -56,20 +49,7 @@ impl CrateIndex {
         self.name_to_dir.keys().map(String::as_str)
     }
 
-    pub(crate) fn crate_names(&self) -> HashSet<&str> {
-        self.path_to_crate_name
-            .values()
-            .map(String::as_str)
-            .collect()
-    }
-}
-
-// TODO: Consider removing this if it isn't used.
-impl Display for CrateIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (path, name) in &self.path_to_crate_name {
-            writeln!(f, "{} -> {name}", path.display())?;
-        }
-        Ok(())
+    pub(crate) fn crate_names(&self) -> impl Iterator<Item = &str> {
+        self.crate_names.iter().map(|n| n.as_ref())
     }
 }
