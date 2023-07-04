@@ -36,18 +36,17 @@ enum Filetype {
     Other,
 }
 
-#[derive(Default)]
-struct ApiUsageCollector {
+struct ApiUsageCollector<'input> {
     outputs: GraphOutputs,
 
-    exe: ExeInfo,
+    exe: ExeInfo<'input>,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
 /// object (so).
-#[derive(Default)]
-struct ExeInfo {
+struct ExeInfo<'input> {
     symbol_addresses: HashMap<Symbol, u64>,
+    ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
 }
 
 #[derive(Default)]
@@ -80,15 +79,21 @@ pub(crate) fn scan_objects(
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed to process {}", exe_path.display()))?;
 
-    let mut graph = ApiUsageCollector::default();
-    graph.exe.load_symbols(&obj)?;
+    let mut collector = ApiUsageCollector {
+        outputs: Default::default(),
+        exe: ExeInfo {
+            symbol_addresses: Default::default(),
+            ctx,
+        },
+    };
+    collector.exe.load_symbols(&obj)?;
     for path in paths {
-        graph
-            .process_file(path, &ctx, checker)
+        collector
+            .process_file(path, checker)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
 
-    Ok(graph.outputs)
+    Ok(collector.outputs)
 }
 
 impl GraphOutputs {
@@ -102,13 +107,8 @@ impl GraphOutputs {
     }
 }
 
-impl ApiUsageCollector {
-    fn process_file(
-        &mut self,
-        filename: &Path,
-        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
-        checker: &Checker,
-    ) -> Result<()> {
+impl<'input> ApiUsageCollector<'input> {
+    fn process_file(&mut self, filename: &Path, checker: &Checker) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
             Filetype::Archive => {
@@ -117,13 +117,13 @@ impl ApiUsageCollector {
                     let Ok(mut entry) = entry_result else { continue; };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
-                    self.process_object_file_bytes(filename, &buffer, ctx, checker)?;
+                    self.process_object_file_bytes(filename, &buffer, checker)?;
                 }
             }
             Filetype::Other => {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
-                self.process_object_file_bytes(filename, &file_bytes, ctx, checker)?;
+                self.process_object_file_bytes(filename, &file_bytes, checker)?;
             }
         }
         Ok(())
@@ -135,7 +135,6 @@ impl ApiUsageCollector {
         &mut self,
         filename: &Path,
         file_bytes: &[u8],
-        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
         checker: &Checker,
     ) -> Result<()> {
         let obj = object::File::parse(file_bytes)
@@ -152,7 +151,9 @@ impl ApiUsageCollector {
                 continue;
             };
             for (offset, rel) in section.relocations() {
-                let location = ctx
+                let location = self
+                    .exe
+                    .ctx
                     .find_location(section_start_in_exe + offset)
                     .context("find_location failed")?;
                 let Some(target_symbol) = object_index.target_symbol(&rel)? else {
@@ -250,7 +251,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     }
 }
 
-impl ExeInfo {
+impl<'input> ExeInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
         for symbol in obj.symbols() {
             self.symbol_addresses
