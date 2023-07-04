@@ -250,16 +250,21 @@ impl<'input> ExeInfo<'input> {
     }
 
     fn find_location(&self, offset: u64) -> Result<Option<SourceLocation>> {
-        let location = self
+        use addr2line::Location;
+
+        let Some(location) = self
             .ctx
             .find_location(offset)
-            .context("find_location failed")?;
-        let filename = location.and_then(|l| l.file);
-        let Some(filename) = filename else {
+            .context("find_location failed")? else {
+                return Ok(None);
+            };
+        let Location {file: Some(file), line: Some(line), column: Some(column)} = location else {
             return Ok(None);
         };
         Ok(Some(SourceLocation {
-            filename: PathBuf::from(filename),
+            filename: PathBuf::from(file),
+            line,
+            column,
         }))
     }
 }

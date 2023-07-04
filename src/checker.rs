@@ -82,6 +82,8 @@ pub(crate) struct UnknownLocation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
+    pub(crate) line: u32,
+    pub(crate) column: u32,
 }
 
 #[derive(Default, PartialEq, Eq)]
@@ -481,6 +483,8 @@ mod tests {
                 vec![Usage {
                     location: SourceLocation {
                         filename: "lib.rs".into(),
+                        line: 1,
+                        column: 1,
                     },
                     from: Symbol::new(vec![]),
                     to: Symbol::new(vec![]),

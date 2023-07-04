@@ -1,7 +1,6 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
-use crate::checker::SourceLocation;
 use crate::checker::Usage;
 use crate::config::CrateName;
 use crate::config::PermConfig;
@@ -13,6 +12,7 @@ use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Default, Debug, PartialEq, Clone)]
@@ -352,21 +352,28 @@ impl Display for BuildScriptFailed {
 }
 
 fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<(), std::fmt::Error> {
-    let mut by_location: BTreeMap<&SourceLocation, Vec<&Usage>> = BTreeMap::new();
+    let mut by_source_filename: BTreeMap<&Path, Vec<&Usage>> = BTreeMap::new();
     for u in usages {
-        by_location.entry(&u.location).or_default().push(u);
+        by_source_filename
+            .entry(&u.location.filename)
+            .or_default()
+            .push(u);
     }
-    let mut by_from: BTreeMap<&Symbol, Vec<&Symbol>> = BTreeMap::new();
-    for (location, usages_for_location) in by_location {
-        writeln!(f, "    {}", location.filename.display())?;
+    let mut by_from: BTreeMap<&Symbol, Vec<&Usage>> = BTreeMap::new();
+    for (filename, usages_for_location) in by_source_filename {
+        writeln!(f, "    {}", filename.display())?;
         by_from.clear();
         for usage in usages_for_location {
-            by_from.entry(&usage.from).or_default().push(&usage.to);
+            by_from.entry(&usage.from).or_default().push(usage);
         }
-        for (from, symbols) in &by_from {
+        for (from, local_usages) in &by_from {
             writeln!(f, "      {from}")?;
-            for sym in symbols {
-                writeln!(f, "        -> {sym}")?;
+            for u in local_usages {
+                writeln!(
+                    f,
+                    "        -> {} [{}:{}]",
+                    u.to, u.location.line, u.location.column
+                )?;
             }
         }
     }
@@ -455,6 +462,8 @@ mod tests {
         Usage {
             location: SourceLocation {
                 filename: "lib.rs".into(),
+                line: 1,
+                column: 1,
             },
             from: Symbol::new(from),
             to: Symbol::new(to),
