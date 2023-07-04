@@ -265,19 +265,17 @@ impl<'input> ExeInfo<'input> {
 }
 
 /// Loads section `id` from `obj`.
-fn load_section(
-    obj: &object::File,
+fn load_section<'data>(
+    obj: &object::File<'data>,
     id: gimli::SectionId,
-) -> Result<Cow<'static, [u8]>, gimli::Error> {
+) -> Result<Cow<'data, [u8]>, gimli::Error> {
     let Some(section) = obj.section_by_name(id.name()) else {
         return Ok(Cow::Borrowed([].as_slice()));
     };
     let Ok(data) = section.uncompressed_data() else {
         return Ok(Cow::Borrowed([].as_slice()));
     };
-    // TODO: Now that we're loading binaries rather than object files, we don't apply relocations.
-    // We might not need owned data here.
-    Ok(Cow::Owned(data.into_owned()))
+    Ok(data)
 }
 
 impl Filetype {
