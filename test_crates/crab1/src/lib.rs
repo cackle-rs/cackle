@@ -43,3 +43,10 @@ extern "C" fn before_main() {
 #[link_section = ".init_array"]
 #[used]
 static INIT_ARRAY: [extern "C" fn(); 1] = [before_main];
+
+/// Makes sure that we attribute this call to abort to this crate, not the crate that calls this
+/// function, even though it's marked as inline(always).
+#[inline(always)]
+pub fn inlined_abort() {
+    std::process::abort();
+}
