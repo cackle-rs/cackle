@@ -19,6 +19,7 @@ use ar::Archive;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
+use log::info;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
@@ -141,13 +142,18 @@ impl<'input> ApiUsageCollector<'input> {
             .with_context(|| format!("Failed to parse {}", filename.display()))?;
         let object_index = ObjectIndex::new(&obj);
         for section in obj.sections() {
+            let section_name = section.name().unwrap_or("");
             let Some(section_start_symbol) = object_index
                 .section_index_to_symbol
                 .get(section.index().0)
                 .and_then(Option::as_ref) else {
+                    info!("Skipping section `{}` because it doesn't define a symbol",
+                        section_name);
                     continue;
                 };
             let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol) else {
+                info!("Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
+                    section_name, section_start_symbol);
                 continue;
             };
             for (offset, rel) in section.relocations() {
