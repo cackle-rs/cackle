@@ -143,10 +143,7 @@ impl<'input> ApiUsageCollector<'input> {
         let object_index = ObjectIndex::new(&obj);
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
-            let Some(section_start_symbol) = object_index
-                .section_index_to_symbol
-                .get(section.index().0)
-                .and_then(Option::as_ref) else {
+            let Some(section_start_symbol) = object_index.start_symbol(&section) else {
                     info!("Skipping section `{}` because it doesn't define a symbol",
                         section_name);
                     continue;
@@ -172,9 +169,9 @@ impl<'input> ApiUsageCollector<'input> {
 
                 let crate_names =
                     checker.crate_names_from_source_path(&location.filename, filename)?;
-                let mut api_usages = Vec::new();
+                let target_symbol_parts = target_symbol.parts()?;
                 for crate_name in crate_names {
-                    for name_parts in target_symbol.parts()? {
+                    for name_parts in &target_symbol_parts {
                         // If a package references another symbol within the same package, ignore
                         // it.
                         if name_parts
@@ -184,7 +181,7 @@ impl<'input> ApiUsageCollector<'input> {
                         {
                             continue;
                         }
-                        for permission in checker.apis_for_path(&name_parts) {
+                        for permission in checker.apis_for_path(name_parts) {
                             let mut usages = BTreeMap::new();
                             usages.insert(
                                 permission.clone(),
@@ -194,14 +191,13 @@ impl<'input> ApiUsageCollector<'input> {
                                     to: target_symbol.clone(),
                                 }],
                             );
-                            api_usages.push(ApiUsage {
+                            self.outputs.api_usages.push(ApiUsage {
                                 crate_name: crate_name.clone(),
                                 usages,
                             });
                         }
                     }
                 }
-                self.outputs.api_usages.append(&mut api_usages);
             }
         }
         Ok(())
@@ -243,6 +239,13 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .get(section_index.0)
             .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?
             .clone())
+    }
+
+    /// Returns a symbol that starts at address 0 of the supplied section.
+    fn start_symbol(&self, section: &object::Section) -> Option<&Symbol> {
+        self.section_index_to_symbol
+            .get(section.index().0)
+            .and_then(Option::as_ref)
     }
 }
 
