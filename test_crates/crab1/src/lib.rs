@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 mod impl1;
 
@@ -33,3 +34,12 @@ pub fn do_network_stuff() {
 pub extern "C" fn crab1_entry() {
     println!("{:?}", std::env::var("HOME"));
 }
+
+/// This function runs before main. Make sure that we detect that it uses filesystem APIs.
+extern "C" fn before_main() {
+    println!("Does / exist?: {:?}", Path::new("/").exists());
+}
+
+#[link_section = ".init_array"]
+#[used]
+static INIT_ARRAY: [extern "C" fn(); 1] = [before_main];
