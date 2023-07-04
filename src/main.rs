@@ -47,7 +47,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 use summary::SummaryOptions;
-use symbol_graph::GraphOutputs;
+use symbol_graph::ScanOutputs;
 
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
@@ -344,7 +344,7 @@ impl Args {
 
 #[derive(Default)]
 struct CheckState {
-    graph_outputs: Option<GraphOutputs>,
+    graph_outputs: Option<ScanOutputs>,
 }
 
 struct RequestHandler {

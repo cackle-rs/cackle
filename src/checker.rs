@@ -384,6 +384,14 @@ impl Checker {
     }
 }
 
+impl SourceLocation {
+    // Returns whether this source location is from the rust standard library or precompiled crates
+    // that are bundled with the standard library (e.g. hashbrown).
+    pub(crate) fn is_in_rust_std(&self) -> bool {
+        self.filename.starts_with("/rustc/") || self.filename.starts_with("/cargo/registry")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
