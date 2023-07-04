@@ -283,7 +283,14 @@ impl Checker {
         ref_path: &Path,
     ) -> Result<Vec<CrateName>> {
         self.path_to_crate
-            .get(Path::new(source_path))
+            .get(source_path)
+            .cloned()
+            .or_else(|| {
+                // Fall-back to just finding the crate that contains the source path.
+                self.crate_index
+                    .crate_name_for_path(source_path)
+                    .map(|crate_name| vec![crate_name.clone()])
+            })
             .ok_or_else(|| {
                 anyhow!(
                     "Couldn't find crate name for {} referenced from {}",
@@ -291,7 +298,6 @@ impl Checker {
                     ref_path.display()
                 )
             })
-            .cloned()
     }
 
     pub(crate) fn report_crate_used(&mut self, crate_name: &CrateName) {
