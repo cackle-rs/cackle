@@ -2,16 +2,17 @@ use anyhow::Result;
 use rustc_demangle::demangle;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::sync::Arc;
 
 #[derive(Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub(crate) struct Symbol {
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
 }
 
 impl Symbol {
     pub(crate) fn new<T: Into<Vec<u8>>>(bytes: T) -> Self {
         Self {
-            bytes: bytes.into(),
+            bytes: Arc::from(bytes.into()),
         }
     }
 
