@@ -15,6 +15,14 @@ impl Symbol {
         }
     }
 
+    /// Splits the name of this symbol into parts. Each part is further split on "::". For example:
+    /// a symbol that when demangled produces
+    /// "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>" would split into:
+    /// [
+    ///   ["core", "ptr", "drop_in_place"],
+    ///   ["std", "rt", "lang_start"],
+    ///   ["{{closure}}"],
+    /// ]
     pub(crate) fn parts(&self) -> Result<Vec<Vec<String>>> {
         let name = demangle(std::str::from_utf8(&self.bytes)?).to_string();
         let mut all_parts = Vec::new();
