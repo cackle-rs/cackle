@@ -1,7 +1,7 @@
 pmacro1::create_write_to_file!();
 
 fn main() {
-    let values = [1, 2, 42];
+    let values = [1, 2, crab6::add(40, 2)];
     // This unsafe is here to make sure that we handle unsafe code in packages with hyphens in their
     // name correctly. This is easy to mess up since the crate name passed to rustc will have an
     // underscore instead of a hyphen.
