@@ -8,6 +8,7 @@ fn main() {
     let value = crab1::crab1(*unsafe { values.get_unchecked(2) });
     println!("{value}");
     non_mangled_function();
+    println!("HOME: {:?}", crab4::get_home());
     write_to_file("a.txt", "Hello");
     crab2::stuff::do_stuff();
     crab4::access_file();

@@ -1,6 +1,7 @@
 //! This crate helps test having multiple uses of the same API. It also tests that we can get
 //! results from this crate in parallel to crab1, since neither depends on the other.
 
+use std::ffi::OsString;
 use std::path::Path;
 
 pub fn access_file() {
@@ -27,4 +28,13 @@ fn f3() {
 
 fn f4() {
     let _ = Path::new("a.txt").exists();
+}
+
+// Make sure that we can't circumvent checks by accessing a function via a function pointer instead
+// of a direct function call.
+static GET_ENV: &[&(dyn (Fn(&'static str) -> Option<OsString>) + Sync + 'static)] =
+    &[&std::env::var_os::<&'static str>];
+
+pub fn get_home() -> Option<OsString> {
+    (GET_ENV[0])("HOME")
 }

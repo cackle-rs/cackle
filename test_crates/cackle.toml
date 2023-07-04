@@ -26,6 +26,11 @@ allow_apis = [
     "terminate",
 ]
 
+[pkg.crab1.build]
+allow_apis = [
+    "net",
+]
+
 [pkg.crab2]
 allow_apis = [
     "env",
@@ -81,6 +86,7 @@ kind = "Disabled"
 
 [pkg.crab4]
 allow_apis = [
+    "env",
     "fs",
 ]
 allow_unsafe = true

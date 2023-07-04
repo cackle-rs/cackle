@@ -24,9 +24,12 @@ use log::info;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
+use object::RelocationTarget;
+use object::SectionIndex;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -65,8 +68,16 @@ pub(crate) struct ScanOutputs {
 struct ObjectIndex<'obj, 'data> {
     obj: &'obj object::File<'data>,
 
-    /// For each section, stores a symbol defined at the start of that section, if any.
-    section_index_to_symbol: Vec<Option<Symbol>>,
+    section_infos: Vec<SectionInfo>,
+}
+
+#[derive(Default, Clone)]
+struct SectionInfo {
+    /// The symbol defined at the start of the section, if any.
+    symbol: Option<Symbol>,
+
+    /// Whether `symbol` is a local in the current object file.
+    symbol_is_local: bool,
 }
 
 pub(crate) fn scan_objects(
@@ -156,10 +167,8 @@ impl<'input> ApiUsageCollector<'input> {
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
             let Some(section_start_symbol) = object_index.start_symbol(&section) else {
-                    info!("Skipping section `{}` because it doesn't define a symbol",
-                        section_name);
-                    continue;
-                };
+                continue;
+            };
             let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol) else {
                 info!("Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
                     section_name, section_start_symbol);
@@ -171,42 +180,42 @@ impl<'input> ApiUsageCollector<'input> {
                     // them and can be safely ignored.
                     continue;
                 };
-                let Some(target_symbol) = object_index.target_symbol(&rel)? else {
-                    continue;
-                };
-                // Ignore references that come from code in the rust standard library.
-                if location.is_in_rust_std() {
-                    continue;
-                }
+                for target_symbol in object_index.target_symbols(&rel)? {
+                    info!("{section_start_symbol} -> {target_symbol}");
+                    // Ignore references that come from code in the rust standard library.
+                    if location.is_in_rust_std() {
+                        continue;
+                    }
 
-                let crate_names =
-                    checker.crate_names_from_source_path(&location.filename, filename)?;
-                let target_symbol_parts = target_symbol.parts()?;
-                for crate_name in crate_names {
-                    for name_parts in &target_symbol_parts {
-                        // If a package references another symbol within the same package, ignore
-                        // it.
-                        if name_parts
-                            .first()
-                            .map(|name_start| crate_name.as_ref() == name_start)
-                            .unwrap_or(false)
-                        {
-                            continue;
-                        }
-                        for permission in checker.apis_for_path(name_parts) {
-                            let mut usages = BTreeMap::new();
-                            usages.insert(
-                                permission.clone(),
-                                vec![Usage {
-                                    location: location.clone(),
-                                    from: section_start_symbol.clone(),
-                                    to: target_symbol.clone(),
-                                }],
-                            );
-                            self.outputs.api_usages.push(ApiUsage {
-                                crate_name: crate_name.clone(),
-                                usages,
-                            });
+                    let crate_names =
+                        checker.crate_names_from_source_path(&location.filename, filename)?;
+                    let target_symbol_parts = target_symbol.parts()?;
+                    for crate_name in crate_names {
+                        for name_parts in &target_symbol_parts {
+                            // If a package references another symbol within the same package,
+                            // ignore it.
+                            if name_parts
+                                .first()
+                                .map(|name_start| crate_name.as_ref() == name_start)
+                                .unwrap_or(false)
+                            {
+                                continue;
+                            }
+                            for permission in checker.apis_for_path(name_parts) {
+                                let mut usages = BTreeMap::new();
+                                usages.insert(
+                                    permission.clone(),
+                                    vec![Usage {
+                                        location: location.clone(),
+                                        from: section_start_symbol.clone(),
+                                        to: target_symbol.clone(),
+                                    }],
+                                );
+                                self.outputs.api_usages.push(ApiUsage {
+                                    crate_name: crate_name.clone(),
+                                    usages,
+                                });
+                            }
                         }
                     }
                 }
@@ -219,8 +228,11 @@ impl<'input> ApiUsageCollector<'input> {
 impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn new(obj: &'obj object::File<'data>) -> Self {
         let max_section_index = obj.sections().map(|s| s.index().0).max().unwrap_or(0);
-        let mut first_symbol_by_section = vec![None; max_section_index + 1];
+        let mut section_infos = vec![SectionInfo::default(); max_section_index + 1];
         for symbol in obj.symbols() {
+            if !symbol.is_definition() {
+                continue;
+            }
             let name = symbol.name_bytes().unwrap_or_default();
             if symbol.address() != 0 || name.is_empty() {
                 continue;
@@ -228,36 +240,85 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             let Some(section_index) = symbol.section_index() else {
                 continue;
             };
-            first_symbol_by_section[section_index.0] = Some(Symbol::new(name));
+            let section_info = &mut section_infos[section_index.0];
+            section_info.symbol_is_local = symbol.is_local();
+            section_info.symbol = Some(Symbol::new(name));
         }
-        Self {
-            obj,
-            section_index_to_symbol: first_symbol_by_section,
-        }
+        Self { obj, section_infos }
     }
 
-    fn target_symbol(&self, rel: &object::Relocation) -> Result<Option<Symbol>> {
-        let object::RelocationTarget::Symbol(symbol_index) = rel.target() else { bail!("Unsupported relocation kind"); };
-        let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else { bail!("Invalid symbol index in object file"); };
-        let name = symbol.name_bytes().unwrap_or_default();
-        if !name.is_empty() {
-            return Ok(Some(Symbol::new(name)));
+    /// Returns the symbol or symbols that `rel` refers to. If `rel` refers to a section that
+    /// doesn't define a non-local symbol at address 0, then all outgoing references from that
+    /// section will be included and so on recursively.
+    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol>> {
+        let mut symbols_out = Vec::new();
+        self.add_target_symbols(rel, &mut symbols_out, &mut HashSet::new())?;
+        Ok(symbols_out)
+    }
+
+    fn add_target_symbols(
+        &self,
+        rel: &object::Relocation,
+        symbols_out: &mut Vec<Symbol>,
+        visited: &mut HashSet<SectionIndex>,
+    ) -> Result<()> {
+        let (symbol, section_index) = self.get_symbol_and_section(rel.target())?;
+        if let Some(symbol) = symbol {
+            symbols_out.push(symbol);
         }
-        let Some(section_index) = symbol.section_index() else {
-            bail!("Relocation target has empty name and no section index");
+        if let Some(section_index) = section_index {
+            if !visited.insert(section_index) {
+                // We've already visited this section.
+                return Ok(());
+            }
+            let section = self.obj.section_by_index(section_index)?;
+            for (_, rel) in section.relocations() {
+                self.add_target_symbols(&rel, symbols_out, visited)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the symbol and section index for a relocation target. If we have a symbol, we always
+    /// return it. If the symbol is a global definition, then we only return the symbol. If we have
+    /// no symbol, or the symbol is local to the current object file, then we return a section
+    /// index.
+    fn get_symbol_and_section(
+        &self,
+        target_in: RelocationTarget,
+    ) -> Result<(Option<Symbol>, Option<SectionIndex>)> {
+        let section_index = match target_in {
+            RelocationTarget::Symbol(symbol_index) => {
+                let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else { bail!("Invalid symbol index in object file"); };
+                let name = symbol.name_bytes().unwrap_or_default();
+                if !name.is_empty() {
+                    return Ok((Some(Symbol::new(name)), None));
+                }
+                symbol.section_index().ok_or_else(|| {
+                    anyhow!("Relocation target has empty name an no section index")
+                })?
+            }
+            RelocationTarget::Section(_) => todo!(),
+            _ => bail!("Unsupported relocation kind {target_in:?}"),
         };
-        Ok(self
-            .section_index_to_symbol
+        let section_info = &self
+            .section_infos
             .get(section_index.0)
-            .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?
-            .clone())
+            .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?;
+        if let Some(symbol) = section_info.symbol.as_ref() {
+            if section_info.symbol_is_local {
+                return Ok((Some(symbol.clone()), Some(section_index)));
+            }
+            return Ok((Some(symbol.clone()), None));
+        }
+        Ok((None, Some(section_index)))
     }
 
     /// Returns a symbol that starts at address 0 of the supplied section.
     fn start_symbol(&self, section: &object::Section) -> Option<&Symbol> {
-        self.section_index_to_symbol
+        self.section_infos
             .get(section.index().0)
-            .and_then(Option::as_ref)
+            .and_then(|section_info| section_info.symbol.as_ref())
     }
 }
 

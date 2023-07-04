@@ -24,24 +24,53 @@ impl Symbol {
     ///   ["std", "rt", "lang_start"],
     ///   ["{{closure}}"],
     /// ]
+    /// "<alloc::string::String as std::fmt::Debug>::fmt" would split into:
+    /// [
+    ///   ["alloc", "string", "String"],
+    ///   ["std", "fmt", "Debug", "fmt"],
+    /// ]
     pub(crate) fn parts(&self) -> Result<Vec<Vec<String>>> {
         let name = demangle(std::str::from_utf8(&self.bytes)?).to_string();
         let mut all_parts = Vec::new();
         let mut part = String::new();
         let mut parts = Vec::new();
-        for ch in name.chars() {
+        let mut chars = name.chars();
+        // True if we encountered " as ". When we subsequently encounter '>', we'll ignore it so
+        // that the subsequent name part gets added to whatever part came after the " as ".
+        let mut as_active = false;
+        while let Some(ch) = chars.next() {
             if ch == '(' || ch == ')' {
                 // Ignore parenthesis.
             } else if ch == '<' || ch == '>' {
-                if !part.is_empty() {
-                    parts.push(std::mem::take(&mut part));
-                }
-                if !parts.is_empty() {
-                    all_parts.push(std::mem::take(&mut parts));
+                if as_active {
+                    as_active = false;
+                } else {
+                    if !part.is_empty() {
+                        parts.push(std::mem::take(&mut part));
+                    }
+                    if !parts.is_empty() {
+                        all_parts.push(std::mem::take(&mut parts));
+                    }
                 }
             } else if ch == ':' {
                 if !part.is_empty() {
                     parts.push(std::mem::take(&mut part));
+                }
+            } else if ch == ' ' {
+                let mut ahead = chars.clone();
+                if let (Some('a'), Some('s'), Some(' ')) =
+                    (ahead.next(), ahead.next(), ahead.next())
+                {
+                    chars = ahead;
+                    as_active = true;
+                    if !part.is_empty() {
+                        parts.push(std::mem::take(&mut part));
+                    }
+                    if !parts.is_empty() {
+                        all_parts.push(std::mem::take(&mut parts));
+                    }
+                } else {
+                    part.push(ch);
                 }
             } else {
                 part.push(ch);
@@ -54,14 +83,18 @@ impl Symbol {
             all_parts.push(std::mem::take(&mut parts));
         }
         // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
-        if let Some(last_parts) = all_parts.last() {
-            if let [last] = last_parts.as_slice() {
-                if all_parts.len() >= 2
-                    && last.len() == 17
-                    && last.starts_with('h')
-                    && u64::from_str_radix(&last[1..], 16).is_ok()
-                {
-                    all_parts.pop();
+        if all_parts.len() >= 2 {
+            if let Some(last_parts) = all_parts.last_mut() {
+                if let Some(last) = last_parts.last() {
+                    if last.len() == 17
+                        && last.starts_with('h')
+                        && u64::from_str_radix(&last[1..], 16).is_ok()
+                    {
+                        last_parts.pop();
+                        if last_parts.is_empty() {
+                            all_parts.pop();
+                        }
+                    }
                 }
             }
         }
@@ -113,7 +146,19 @@ fn test_parts() {
             vec!["{{closure}}"],
         ]
     );
+
+    let symbol = Symbol::new(
+        *b"_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
+    );
+    assert_eq!(
+        borrow(&symbol.parts().unwrap()),
+        vec![
+            vec!["alloc", "string", "String"],
+            vec!["core", "fmt", "Debug", "fmt"]
+        ]
+    );
 }
+
 #[test]
 fn test_display() {
     let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
