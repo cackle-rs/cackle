@@ -12,6 +12,7 @@ use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
+use crate::symbol_graph::object_file_path::ObjectFilePath;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
@@ -282,7 +283,7 @@ impl Checker {
     pub(crate) fn crate_names_from_source_path(
         &self,
         source_path: &Path,
-        ref_path: &Path,
+        ref_path: &ObjectFilePath,
     ) -> Result<Vec<CrateName>> {
         self.path_to_crate
             .get(source_path)
@@ -295,9 +296,8 @@ impl Checker {
             })
             .ok_or_else(|| {
                 anyhow!(
-                    "Couldn't find crate name for {} referenced from {}",
+                    "Couldn't find crate name for {} referenced from {ref_path}",
                     source_path.display(),
-                    ref_path.display()
                 )
             })
     }

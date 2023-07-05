@@ -5,6 +5,7 @@
 //! We also parse the Dwarf debug information to determine what source file each linker section came
 //! from.
 
+use self::object_file_path::ObjectFilePath;
 use crate::checker::Checker;
 use crate::checker::SourceLocation;
 use crate::checker::Usage;
@@ -30,6 +31,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+
+pub(crate) mod object_file_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Filetype {
@@ -118,13 +121,21 @@ impl<'input> ApiUsageCollector<'input> {
                     let Ok(mut entry) = entry_result else { continue; };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
-                    self.process_object_file_bytes(filename, &buffer, checker)?;
+                    self.process_object_file_bytes(
+                        &ObjectFilePath::in_archive(filename, &entry)?,
+                        &buffer,
+                        checker,
+                    )?;
                 }
             }
             Filetype::Other => {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
-                self.process_object_file_bytes(filename, &file_bytes, checker)?;
+                self.process_object_file_bytes(
+                    &ObjectFilePath::non_archive(filename),
+                    &file_bytes,
+                    checker,
+                )?;
             }
         }
         Ok(())
@@ -134,12 +145,13 @@ impl<'input> ApiUsageCollector<'input> {
     /// has been linked.
     fn process_object_file_bytes(
         &mut self,
-        filename: &Path,
+        filename: &ObjectFilePath,
         file_bytes: &[u8],
         checker: &Checker,
     ) -> Result<()> {
+        info!("Processing object file {}", filename);
         let obj = object::File::parse(file_bytes)
-            .with_context(|| format!("Failed to parse {}", filename.display()))?;
+            .with_context(|| format!("Failed to parse {}", filename))?;
         let object_index = ObjectIndex::new(&obj);
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
