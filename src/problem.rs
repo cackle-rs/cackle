@@ -134,7 +134,9 @@ impl ProblemList {
                 Problem::DisallowedApiUsage(usage) => {
                     match disallowed_by_crate_name.entry(group_fn(&usage)) {
                         Entry::Occupied(entry) => {
-                            let Problem::DisallowedApiUsage(existing) = &mut merged.problems[*entry.get()] else {
+                            let Problem::DisallowedApiUsage(existing) =
+                                &mut merged.problems[*entry.get()]
+                            else {
                                 panic!("Problems::condense internal error");
                             };
                             for (k, mut v) in usage.usages {

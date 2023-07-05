@@ -129,7 +129,9 @@ impl<'input> ApiUsageCollector<'input> {
             Filetype::Archive => {
                 let mut archive = Archive::new(File::open(filename)?);
                 while let Some(entry_result) = archive.next_entry() {
-                    let Ok(mut entry) = entry_result else { continue; };
+                    let Ok(mut entry) = entry_result else {
+                        continue;
+                    };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
                     self.process_object_file_bytes(
@@ -169,9 +171,12 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(section_start_symbol) = object_index.start_symbol(&section) else {
                 continue;
             };
-            let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol) else {
-                info!("Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
-                    section_name, section_start_symbol);
+            let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol)
+            else {
+                info!(
+                    "Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
+                    section_name, section_start_symbol
+                );
                 continue;
             };
             for (offset, rel) in section.relocations() {
@@ -289,7 +294,9 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     ) -> Result<(Option<Symbol>, Option<SectionIndex>)> {
         let section_index = match target_in {
             RelocationTarget::Symbol(symbol_index) => {
-                let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else { bail!("Invalid symbol index in object file"); };
+                let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else {
+                    bail!("Invalid symbol index in object file");
+                };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
                     return Ok((Some(Symbol::new(name)), None));
@@ -337,10 +344,16 @@ impl<'input> ExeInfo<'input> {
         let Some(location) = self
             .ctx
             .find_location(offset)
-            .context("find_location failed")? else {
-                return Ok(None);
-            };
-        let Location {file: Some(file), line: Some(line), column: Some(column)} = location else {
+            .context("find_location failed")?
+        else {
+            return Ok(None);
+        };
+        let Location {
+            file: Some(file),
+            line: Some(line),
+            column: Some(column),
+        } = location
+        else {
             return Ok(None);
         };
         Ok(Some(SourceLocation {
@@ -367,8 +380,7 @@ fn load_section<'data>(
 
 impl Filetype {
     fn from_filename(filename: &Path) -> Self {
-        let Some(extension) = filename
-        .extension() else {
+        let Some(extension) = filename.extension() else {
             return Filetype::Other;
         };
         if extension == "rlib" || extension == ".a" {

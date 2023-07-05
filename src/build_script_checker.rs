@@ -19,7 +19,10 @@ pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> ProblemList
         .map(|cfg| cfg.allow_build_instructions.as_slice())
         .unwrap_or(&[]);
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
-        return Problem::new(format!("The build script `{crate_name}` emitted invalid UTF-8")).into();
+        return Problem::new(format!(
+            "The build script `{crate_name}` emitted invalid UTF-8"
+        ))
+        .into();
     };
     let mut problems = ProblemList::default();
     for line in stdout.lines() {

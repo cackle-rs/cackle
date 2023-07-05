@@ -21,7 +21,9 @@ pub(crate) struct UnsafeUsage {
 /// --error-format=json.
 pub(crate) fn get_error(output: &str) -> Option<ErrorKind> {
     for line in output.lines() {
-        let Ok(message) = serde_json::from_str::<Message>(line) else { continue };
+        let Ok(message) = serde_json::from_str::<Message>(line) else {
+            continue;
+        };
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
                 return Some(ErrorKind::Unsafe(UnsafeUsage {

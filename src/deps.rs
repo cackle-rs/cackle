@@ -13,7 +13,7 @@ pub(crate) fn source_files_from_rustc_args(
     args: impl Iterator<Item = String>,
 ) -> Result<Vec<PathBuf>> {
     let Some(deps_path) = deps_path_from_rustc_args(args)? else {
-        return Ok(vec![])
+        return Ok(vec![]);
     };
     let deps = std::fs::read_to_string(&deps_path)
         .with_context(|| format!("Failed to read deps file `{}`", deps_path.display()))?;

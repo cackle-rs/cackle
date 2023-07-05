@@ -297,7 +297,11 @@ impl Config {
     /// configuration as appropriate.
     pub(crate) fn sandbox_config_for_package(&self, package_name: &CrateName) -> SandboxConfig {
         let mut config = self.sandbox.clone();
-        let Some(pkg_sandbox_config) = self.packages.get(package_name).and_then(|c| c.sandbox.as_ref()) else {
+        let Some(pkg_sandbox_config) = self
+            .packages
+            .get(package_name)
+            .and_then(|c| c.sandbox.as_ref())
+        else {
             return config;
         };
         if pkg_sandbox_config.kind != SandboxKind::Inherit {
