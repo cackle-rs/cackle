@@ -18,3 +18,7 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     })?;
     Ok(())
 }
+
+pub(crate) fn read_to_string(path: &Path) -> Result<String> {
+    std::fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))
+}

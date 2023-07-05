@@ -1,6 +1,7 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
+use crate::checker::SourceLocation;
 use crate::checker::Usage;
 use crate::config::CrateName;
 use crate::config::PermConfig;
@@ -380,6 +381,18 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
         }
     }
     Ok(())
+}
+
+impl Display for SourceLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} [{}:{}]",
+            self.filename.display(),
+            self.line,
+            self.column
+        )
+    }
 }
 
 impl From<Problem> for ProblemList {

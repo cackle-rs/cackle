@@ -4,12 +4,15 @@ use super::message_area;
 use super::render_list;
 use super::split_vertical;
 use super::update_counter;
+use crate::checker::Usage;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
+use crate::problem::Problem;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -37,6 +40,7 @@ pub(super) struct ProblemsUi {
     modes: Vec<Mode>,
     problem_index: usize,
     edit_index: usize,
+    usage_index: usize,
     config_path: PathBuf,
     accept_single_enabled: bool,
 }
@@ -45,6 +49,7 @@ pub(super) struct ProblemsUi {
 enum Mode {
     SelectProblem,
     SelectEdit,
+    SelectUsage,
     PromptAutoAccept,
     Help,
 }
@@ -63,14 +68,21 @@ impl ProblemsUi {
         for mode in self.modes.iter() {
             match mode {
                 Mode::SelectProblem => {
-                    // If we're selecting an edit, then we don't show details, since they both use
-                    // the same area.
-                    if !self.modes.contains(&Mode::SelectEdit) {
+                    // If we're selecting an edit or a usage, then we don't show details, since they
+                    // both use the same area.
+                    if !self
+                        .modes
+                        .iter()
+                        .any(|mode| [Mode::SelectEdit, Mode::SelectUsage].contains(mode))
+                    {
                         self.render_details(f, bottom_left);
                     }
                 }
                 Mode::SelectEdit => {
                     self.render_edit_help_and_diff(f, bottom_left)?;
+                }
+                Mode::SelectUsage => {
+                    self.render_usage_details(f, bottom_left)?;
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::Help => render_help(f, previous_mode),
@@ -97,12 +109,23 @@ impl ProblemsUi {
                 let num_edits = self.edits().len();
                 update_counter(&mut self.edit_index, key.code, num_edits);
             }
+            (Mode::SelectUsage, KeyCode::Up | KeyCode::Down) => {
+                let num_usages = self.usages().len();
+                update_counter(&mut self.usage_index, key.code, num_usages);
+            }
             (Mode::SelectProblem, KeyCode::Char('f')) => {
                 if self.edits().is_empty() {
                     bail!("Sorry. No automatic edits exist for this problem");
                 }
                 self.modes.push(Mode::SelectEdit);
                 self.edit_index = 0;
+            }
+            (Mode::SelectProblem, KeyCode::Char('d')) => {
+                if self.usages().is_empty() {
+                    bail!("Sorry. No additional details available for this problem");
+                }
+                self.modes.push(Mode::SelectUsage);
+                self.usage_index = 0;
             }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
@@ -138,6 +161,7 @@ impl ProblemsUi {
             modes: vec![Mode::SelectProblem],
             problem_index: 0,
             edit_index: 0,
+            usage_index: 0,
             config_path,
             accept_single_enabled: false,
         }
@@ -188,29 +212,46 @@ impl ProblemsUi {
         }
         let mut items = Vec::new();
         let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
+        let is_usage_mode = self.modes.contains(&Mode::SelectUsage);
         for (index, (_, problem)) in pstore_lock.deduplicated_into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
-            if is_edit_mode && index == self.problem_index {
-                let edits = edits_for_problem(pstore_lock, self.problem_index);
-                items.extend(
-                    edits
-                        .iter()
-                        .map(|fix| ListItem::new(format!("  {}", fix.title()))),
-                );
+            if index == self.problem_index {
+                if is_edit_mode {
+                    let edits = edits_for_problem(pstore_lock, self.problem_index);
+                    items.extend(
+                        edits
+                            .iter()
+                            .map(|fix| ListItem::new(format!("  {}", fix.title()))),
+                    );
+                } else if is_usage_mode {
+                    let usages = usages_for_problem(pstore_lock, self.problem_index);
+                    items.extend(
+                        usages.iter().map(|usage| {
+                            ListItem::new(format!("  {} -> {}", usage.from, usage.to))
+                        }),
+                    );
+                }
             }
         }
         let mut index = self.problem_index;
+        let title;
         if is_edit_mode {
+            title = "Select edit";
             index += self.edit_index + 1
+        } else if is_usage_mode {
+            title = "Select usage";
+            index += self.usage_index + 1
+        } else {
+            title = "Problems";
         }
 
         render_list(
             f,
-            "Problems",
+            title,
             items.into_iter(),
             matches!(
                 self.modes.last(),
-                Some(&Mode::SelectProblem | &Mode::SelectEdit)
+                Some(&Mode::SelectProblem | &Mode::SelectEdit | &Mode::SelectUsage)
             ),
             area,
             index,
@@ -233,6 +274,10 @@ impl ProblemsUi {
 
     fn edits(&self) -> Vec<Box<dyn Edit>> {
         edits_for_problem(&self.problem_store.lock(), self.problem_index)
+    }
+
+    fn usages(&self) -> Vec<Usage> {
+        usages_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
     fn render_edit_help_and_diff(
@@ -276,6 +321,41 @@ impl ProblemsUi {
         Ok(())
     }
 
+    fn render_usage_details(
+        &self,
+        f: &mut Frame<CrosstermBackend<Stdout>>,
+        area: Rect,
+    ) -> Result<()> {
+        let usages = self.usages();
+        let Some(usage) = usages.get(self.usage_index) else {
+            return Ok(());
+        };
+
+        let mut lines = Vec::new();
+        lines.push(Line::from(format!("{}", usage.location.filename.display())));
+        let source = crate::fs::read_to_string(&usage.location.filename)?;
+        let relevant_line = source
+            .lines()
+            .nth(usage.location.line as usize - 1)
+            .ok_or_else(|| anyhow!("Line number not found in file"))?;
+        let gutter_width = 5;
+        lines.push(Line::from(format!(
+            "{:gutter_width$}: {relevant_line}",
+            usage.location.line
+        )));
+        let column = usage.location.column as usize + 1;
+        lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+
+        let block = Block::default()
+            .title("Usage details")
+            .borders(Borders::ALL);
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
+        f.render_widget(paragraph, area);
+        Ok(())
+    }
+
     /// Applies the currently selected edit and resolves the problem that produced that edit.
     fn apply_selected_edit(&self) -> Result<()> {
         let mut pstore_lock = self.problem_store.lock();
@@ -311,6 +391,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             keys.extend(
                 [
                     ("f", "Show available automatic fixes for this problem"),
+                    ("d", "Select and show details of each usage (API only)"),
                     ("up", "Select previous problem"),
                     ("down", "Select next problem"),
                     ("a", "Enable auto-apply for problems with only one edit"),
@@ -377,4 +458,16 @@ fn edits_for_problem(
         return Vec::new();
     };
     config_editor::fixes_for_problem(problem)
+}
+
+fn usages_for_problem(pstore_lock: &MutexGuard<ProblemStore>, problem_index: usize) -> Vec<Usage> {
+    let mut usages_out = Vec::new();
+    if let Some((_, Problem::DisallowedApiUsage(usages))) =
+        pstore_lock.deduplicated_into_iter().nth(problem_index)
+    {
+        for usages in usages.usages.values() {
+            usages_out.extend(usages.iter().cloned());
+        }
+    }
+    usages_out
 }
