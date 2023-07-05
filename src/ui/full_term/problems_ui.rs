@@ -97,14 +97,14 @@ impl ProblemsUi {
                 let num_edits = self.edits().len();
                 update_counter(&mut self.edit_index, key.code, num_edits);
             }
-            (Mode::SelectProblem, KeyCode::Char(' ') | KeyCode::Enter) => {
+            (Mode::SelectProblem, KeyCode::Char('f')) => {
                 if self.edits().is_empty() {
                     bail!("Sorry. No automatic edits exist for this problem");
                 }
                 self.modes.push(Mode::SelectEdit);
                 self.edit_index = 0;
             }
-            (Mode::SelectEdit, KeyCode::Char(' ') | KeyCode::Enter) => {
+            (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
                 if self.problem_index >= self.problem_store.lock().len() {
                     self.problem_index = 0;
@@ -310,7 +310,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             title = "Help for select-problem";
             keys.extend(
                 [
-                    ("space/enter", "Show available edits for this problem"),
+                    ("f", "Show available automatic fixes for this problem"),
                     ("up", "Select previous problem"),
                     ("down", "Select next problem"),
                     ("a", "Enable auto-apply for problems with only one edit"),
@@ -322,7 +322,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             title = "Help for select-edit";
             keys.extend(
                 [
-                    ("space/enter", "Apply this edit"),
+                    ("space/enter/f", "Apply this edit"),
                     ("up", "Select previous edit"),
                     ("down", "Select next edit"),
                 ]
