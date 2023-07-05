@@ -76,21 +76,10 @@ pub(crate) struct Usage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct UnknownLocation {
-    pub(crate) object_path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
     pub(crate) line: u32,
     pub(crate) column: u32,
-}
-
-#[derive(Default, PartialEq, Eq)]
-pub(crate) struct UnusedConfig {
-    unknown_crates: Vec<String>,
-    unused_allow_apis: HashMap<String, Vec<PermissionName>>,
 }
 
 impl Checker {
