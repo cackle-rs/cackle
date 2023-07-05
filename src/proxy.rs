@@ -94,6 +94,11 @@ pub(crate) fn invoke_cargo_build(
         .env(CONFIG_PATH_ENV, config_path)
         .env("RUSTC_WRAPPER", cackle_exe()?);
 
+    // Don't pass through environment variables that might have been set by `cargo run`. If we do,
+    // then they might still be set in our subprocesses, which might then get confused and think
+    // they're proxying the build of "cackle" itself.
+    command.env_remove("CARGO_PKG_NAME");
+
     let cargo_thread: JoinHandle<Result<process::Output>> =
         std::thread::spawn(move || -> Result<process::Output> {
             // TODO: Rather than collecting all output, we should read cargo's stdout/stderr as it
