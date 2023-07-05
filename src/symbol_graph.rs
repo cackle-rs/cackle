@@ -20,7 +20,9 @@ use ar::Archive;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
+use log::debug;
 use log::info;
+use log::trace;
 use object::Object;
 use object::ObjectSection;
 use object::ObjectSymbol;
@@ -162,7 +164,7 @@ impl<'input> ApiUsageCollector<'input> {
         file_bytes: &[u8],
         checker: &Checker,
     ) -> Result<()> {
-        info!("Processing object file {}", filename);
+        debug!("Processing object file {}", filename);
         let obj = object::File::parse(file_bytes)
             .with_context(|| format!("Failed to parse {}", filename))?;
         let object_index = ObjectIndex::new(&obj);
@@ -186,7 +188,7 @@ impl<'input> ApiUsageCollector<'input> {
                     continue;
                 };
                 for target_symbol in object_index.target_symbols(&rel)? {
-                    info!("{section_start_symbol} -> {target_symbol}");
+                    trace!("{section_start_symbol} -> {target_symbol}");
                     // Ignore references that come from code in the rust standard library.
                     if location.is_in_rust_std() {
                         continue;

@@ -106,6 +106,10 @@ struct Args {
     #[clap(long)]
     log_file: Option<PathBuf>,
 
+    /// How detailed the logs should be.
+    #[clap(long, default_value = "info")]
+    log_level: logging::LevelFilter,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -134,7 +138,7 @@ fn main() -> Result<()> {
     let mut args = Args::parse();
     args.colour = args.colour.detect();
     if let Some(log_file) = &args.log_file {
-        logging::init(log_file)?;
+        logging::init(log_file, args.log_level)?;
     }
     let cackle = Cackle::new(args)?;
     let exit_code = cackle.run_and_report_errors();
