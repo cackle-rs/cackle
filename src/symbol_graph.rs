@@ -48,6 +48,7 @@ struct ApiUsageCollector<'input> {
     outputs: ScanOutputs,
 
     exe: ExeInfo<'input>,
+    debug_enabled: bool,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
@@ -101,6 +102,7 @@ pub(crate) fn scan_objects(
             symbol_addresses: Default::default(),
             ctx,
         },
+        debug_enabled: checker.args.debug,
     };
     collector.exe.load_symbols(&obj)?;
     for path in paths {
@@ -164,6 +166,7 @@ impl<'input> ApiUsageCollector<'input> {
         checker: &Checker,
     ) -> Result<()> {
         debug!("Processing object file {}", filename);
+
         let obj = object::File::parse(file_bytes)
             .with_context(|| format!("Failed to parse {}", filename))?;
         let object_index = ObjectIndex::new(&obj);
@@ -208,13 +211,18 @@ impl<'input> ApiUsageCollector<'input> {
                                 continue;
                             }
                             for permission in checker.apis_for_path(name_parts) {
+                                let debug_data = self.debug_enabled.then(|| UsageDebugData {
+                                    object_file_path: filename.clone(),
+                                    section_name: section_name.to_owned(),
+                                });
                                 let mut usages = BTreeMap::new();
                                 usages.insert(
                                     permission.clone(),
                                     vec![Usage {
-                                        location: location.clone(),
+                                        source_location: location.clone(),
                                         from: section_start_symbol.clone(),
                                         to: target_symbol.clone(),
+                                        debug_data,
                                     }],
                                 );
                                 self.outputs.api_usages.push(ApiUsage {
@@ -390,4 +398,12 @@ impl Filetype {
             Filetype::Other
         }
     }
+}
+
+/// Additional information that might be useful for debugging. Only available when --debug is
+/// passed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UsageDebugData {
+    object_file_path: ObjectFilePath,
+    section_name: String,
 }

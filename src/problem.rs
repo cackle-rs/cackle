@@ -358,7 +358,7 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
     let mut by_source_filename: BTreeMap<&Path, Vec<&Usage>> = BTreeMap::new();
     for u in usages {
         by_source_filename
-            .entry(&u.location.filename)
+            .entry(&u.source_location.filename)
             .or_default()
             .push(u);
     }
@@ -375,7 +375,7 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
                 writeln!(
                     f,
                     "        -> {} [{}:{}]",
-                    u.to, u.location.line, u.location.column
+                    u.to, u.source_location.line, u.source_location.column
                 )?;
             }
         }
@@ -475,13 +475,14 @@ mod tests {
 
     fn create_usage(from: &str, to: &str) -> Usage {
         Usage {
-            location: SourceLocation {
+            source_location: SourceLocation {
                 filename: "lib.rs".into(),
                 line: 1,
                 column: 1,
             },
             from: Symbol::new(from),
             to: Symbol::new(to),
+            debug_data: None,
         }
     }
 }

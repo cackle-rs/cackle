@@ -13,6 +13,7 @@ use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
 use crate::symbol_graph::object_file_path::ObjectFilePath;
+use crate::symbol_graph::UsageDebugData;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
@@ -70,9 +71,10 @@ pub(crate) struct CrateInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Usage {
-    pub(crate) location: SourceLocation,
+    pub(crate) source_location: SourceLocation,
     pub(crate) from: Symbol,
     pub(crate) to: Symbol,
+    pub(crate) debug_data: Option<UsageDebugData>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -220,16 +222,6 @@ impl Checker {
         exe_path: &Path,
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
-        if self.args.debug {
-            println!(
-                "{}",
-                paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-        }
         if check_state.graph_outputs.is_none() {
             let start = std::time::Instant::now();
             let graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
@@ -470,13 +462,14 @@ mod tests {
             usages.insert(
                 api,
                 vec![Usage {
-                    location: SourceLocation {
+                    source_location: SourceLocation {
                         filename: "lib.rs".into(),
                         line: 1,
                         column: 1,
                     },
                     from: Symbol::new(vec![]),
                     to: Symbol::new(vec![]),
+                    debug_data: None,
                 }],
             );
             let api_usage = ApiUsage {

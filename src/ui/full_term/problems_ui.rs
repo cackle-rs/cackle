@@ -332,19 +332,29 @@ impl ProblemsUi {
         };
 
         let mut lines = Vec::new();
-        lines.push(Line::from(format!("{}", usage.location.filename.display())));
-        let source = crate::fs::read_to_string(&usage.location.filename)?;
+        lines.push(Line::from(format!(
+            "{}",
+            usage.source_location.filename.display()
+        )));
+        let source = crate::fs::read_to_string(&usage.source_location.filename)?;
         let relevant_line = source
             .lines()
-            .nth(usage.location.line as usize - 1)
+            .nth(usage.source_location.line as usize - 1)
             .ok_or_else(|| anyhow!("Line number not found in file"))?;
         let gutter_width = 5;
         lines.push(Line::from(format!(
             "{:gutter_width$}: {relevant_line}",
-            usage.location.line
+            usage.source_location.line
         )));
-        let column = usage.location.column as usize + 1;
+        let column = usage.source_location.column as usize + 1;
         lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+
+        if let Some(debug_data) = usage.debug_data.as_ref() {
+            lines.push(Line::from(""));
+            for line in format!("{debug_data:#?}").lines() {
+                lines.push(Line::from(line.to_owned()));
+            }
+        }
 
         let block = Block::default()
             .title("Usage details")
