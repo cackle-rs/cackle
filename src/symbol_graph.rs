@@ -21,7 +21,6 @@ use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
 use log::debug;
-use log::info;
 use log::trace;
 use object::Object;
 use object::ObjectSection;
@@ -175,7 +174,7 @@ impl<'input> ApiUsageCollector<'input> {
             };
             let Some(section_start_in_exe) = self.exe.symbol_addresses.get(section_start_symbol)
             else {
-                info!(
+                debug!(
                     "Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
                     section_name, section_start_symbol
                 );
