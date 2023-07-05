@@ -6,7 +6,19 @@ use std::process::Command;
 
 #[test]
 fn integration_test() -> Result<()> {
-    let status = Command::new(cackle_exe())
+    let mut command = Command::new(cackle_exe());
+    // Remove cargo and rust-releated environment variables. In particular we want to remove
+    // variables that cargo sets, but which won't always be set. For example CARGO_PKG_NAME is set
+    // by cargo when it invokes rustc, but only when it's compiling a package, not when it queries
+    // rustc for version information. If we allow such variables to pass through, then our code that
+    // proxies rustc can appear to work from the test, but only because the test itself was run from
+    // cargo.
+    for (var, _) in std::env::vars() {
+        if var.starts_with("CARGO") || var.starts_with("RUST") {
+            command.env_remove(var);
+        }
+    }
+    let status = command
         .arg("--fail-on-warnings")
         .arg("--path")
         .arg(crate_root().join("test_crates"))

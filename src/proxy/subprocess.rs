@@ -175,10 +175,13 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
         let mut is_linking = false;
         let mut args = std::env::args().skip(2).peekable();
         let config = get_config_from_env()?;
-        let pkg_name =
-            std::env::var("CARGO_PKG_NAME").map_err(|_| anyhow!("CARGO_PKG_NAME not set"))?;
-
         let mut command = Command::new("rustc");
+        let Ok(pkg_name) = std::env::var("CARGO_PKG_NAME") else {
+            // If CARGO_PKG_NAME isn't set, then cargo is probably just invoking rustc to query
+            // version information etc, just run it.
+            return Ok(command.args(args).status()?.into());
+        };
+
         let mut linker_arg = OsString::new();
         let mut orig_linker_arg = None;
         let is_build_script = std::env::var("CARGO_CRATE_NAME")
