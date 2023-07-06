@@ -88,6 +88,7 @@ kind = "Disabled"
 allow_apis = [
     "env",
     "fs",
+    "process",
 ]
 allow_unsafe = true
 

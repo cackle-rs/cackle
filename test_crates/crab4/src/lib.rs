@@ -30,11 +30,14 @@ fn f4() {
     let _ = Path::new("a.txt").exists();
 }
 
-// Make sure that we can't circumvent checks by accessing a function via a function pointer instead
-// of a direct function call.
+/// Make sure that we can't circumvent checks by accessing a function via a function pointer instead
+/// of a direct function call.
 static GET_ENV: &[&(dyn (Fn(&'static str) -> Option<OsString>) + Sync + 'static)] =
     &[&std::env::var_os::<&'static str>];
 
 pub fn get_home() -> Option<OsString> {
     (GET_ENV[0])("HOME")
 }
+
+/// Same thing as `GET_ENV`, but make sure it works across crate boundaries.
+pub static GET_PID: &[&(dyn (Fn() -> u32) + Sync + 'static)] = &[&std::process::id];

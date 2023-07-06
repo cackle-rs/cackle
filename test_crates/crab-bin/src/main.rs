@@ -10,8 +10,10 @@ fn main() {
     non_mangled_function();
     println!("HOME: {:?}", crab4::get_home());
     write_to_file("a.txt", "Hello");
-    crab2::stuff::do_stuff();
+    println!("pid={}", (crab4::GET_PID[0])());
     crab4::access_file();
+    // Note, the following call exits
+    crab2::stuff::do_stuff();
 }
 
 #[no_mangle]
