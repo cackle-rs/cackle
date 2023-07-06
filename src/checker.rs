@@ -81,7 +81,7 @@ pub(crate) struct Usage {
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
     pub(crate) line: u32,
-    pub(crate) column: u32,
+    pub(crate) column: Option<u32>,
 }
 
 impl Checker {
@@ -465,7 +465,7 @@ mod tests {
                     source_location: SourceLocation {
                         filename: "lib.rs".into(),
                         line: 1,
-                        column: 1,
+                        column: None,
                     },
                     from: Symbol::new(vec![]),
                     to: Symbol::new(vec![]),

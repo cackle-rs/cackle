@@ -346,8 +346,10 @@ impl ProblemsUi {
             "{:gutter_width$}: {relevant_line}",
             usage.source_location.line
         )));
-        let column = usage.source_location.column as usize + 1;
-        lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+        if let Some(column) = usage.source_location.column {
+            let column = column as usize + 1;
+            lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+        }
 
         if let Some(debug_data) = usage.debug_data.as_ref() {
             lines.push(Line::from(""));

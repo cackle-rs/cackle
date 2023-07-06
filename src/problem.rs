@@ -372,11 +372,11 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
         for (from, local_usages) in &by_from {
             writeln!(f, "      {from}")?;
             for u in local_usages {
-                writeln!(
-                    f,
-                    "        -> {} [{}:{}]",
-                    u.to, u.source_location.line, u.source_location.column
-                )?;
+                write!(f, "        -> {} [{}", u.to, u.source_location.line,)?;
+                if let Some(column) = u.source_location.column {
+                    write!(f, ":{}", column)?;
+                }
+                writeln!(f, "]")?;
             }
         }
     }
@@ -385,13 +385,11 @@ fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<()
 
 impl Display for SourceLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} [{}:{}]",
-            self.filename.display(),
-            self.line,
-            self.column
-        )
+        write!(f, "{} [{}", self.filename.display(), self.line)?;
+        if let Some(column) = self.column {
+            write!(f, ":{}", column)?;
+        }
+        write!(f, "]")
     }
 }
 
@@ -501,7 +499,7 @@ mod tests {
             source_location: SourceLocation {
                 filename: "lib.rs".into(),
                 line: 1,
-                column: 1,
+                column: None,
             },
             from: Symbol::new(from),
             to: Symbol::new(to),

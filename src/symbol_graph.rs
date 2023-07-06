@@ -393,7 +393,7 @@ impl<'input> ExeInfo<'input> {
         let Location {
             file: Some(file),
             line: Some(line),
-            column: Some(column),
+            column,
         } = location
         else {
             return Ok(None);
