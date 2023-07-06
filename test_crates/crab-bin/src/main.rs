@@ -12,6 +12,7 @@ fn main() {
     write_to_file("a.txt", "Hello");
     println!("pid={}", (crab4::GET_PID[0])());
     crab4::access_file();
+    crab7::do_something();
     // Note, the following call exits
     crab2::stuff::do_stuff();
 }

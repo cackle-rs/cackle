@@ -6,6 +6,7 @@ members = [
     "crab4",
     "crab5",
     "crab6",
+    "crab7",
     "crab-bin",
     "pmacro1",
     "shared1",
