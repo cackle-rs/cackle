@@ -116,8 +116,10 @@ impl Display for Symbol {
 impl Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(sym_string) = std::str::from_utf8(&self.bytes) {
-            // For valid UTF-8, we pretend to be a tuple struct containing the string.
-            f.debug_tuple("Symbol").field(&sym_string).finish()
+            // For valid UTF-8, we just print as a string. We want something that fits on one line,
+            // even when using the alternate format, so that we can efficiently display lists of
+            // symbols.
+            Debug::fmt(sym_string, f)
         } else {
             // For invalid UTF-8, fall back to a default debug formatting.
             f.debug_struct("Symbol")
