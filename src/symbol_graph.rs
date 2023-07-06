@@ -170,6 +170,7 @@ impl<'input> ApiUsageCollector<'input> {
         let obj = object::File::parse(file_bytes)
             .with_context(|| format!("Failed to parse {}", filename))?;
         let object_index = ObjectIndex::new(&obj);
+        let mut new_api_usages: HashMap<_, Vec<ApiUsage>> = HashMap::new();
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
             let Some(section_start_symbol) = object_index.start_symbol(&section) else {
@@ -225,14 +226,28 @@ impl<'input> ApiUsageCollector<'input> {
                                         debug_data,
                                     }],
                                 );
-                                self.outputs.api_usages.push(ApiUsage {
+                                let api_usage = ApiUsage {
                                     crate_name: crate_name.clone(),
                                     usages,
-                                });
+                                };
+                                new_api_usages
+                                    .entry(api_usage.deduplication_key())
+                                    .or_default()
+                                    .push(api_usage);
                             }
                         }
                     }
                 }
+            }
+        }
+        // New API usages are grouped by their deduplication key, which doesn't include the target
+        // symbol. We then output only the API usage with the shortest target symbol.
+        for api_usages in new_api_usages.into_values() {
+            if let Some(shortest_target_usage) = api_usages
+                .into_iter()
+                .min_by_key(|u| u.first_usage().unwrap().to.len())
+            {
+                self.outputs.api_usages.push(shortest_target_usage);
             }
         }
         Ok(())

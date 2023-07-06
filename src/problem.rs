@@ -413,6 +413,29 @@ impl std::hash::Hash for ApiUsage {
     }
 }
 
+impl ApiUsage {
+    /// Returns an opaque key that can be used in a HashMap for deduplication. Notably, doesn't
+    /// include the target or debug data. The idea is to collect several usages that are identical
+    /// except for the target, then pick the shortest of them to show to the user. For example if we
+    /// have targets of `std::path::PathBuf` and `core::ptr::drop_in_place<std::path::PathBuf>` then
+    /// the second is redundant. Even if the longer target didn't contain the symbol of the shorter
+    /// target, it's probably unnecessary to show them all. Panics if called on an empty instance.
+    pub(crate) fn deduplication_key(&self) -> impl std::hash::Hash + Eq + PartialEq {
+        let (permission, usages) = self.usages.iter().next().unwrap();
+        let usage = &usages[0];
+        (
+            self.crate_name.clone(),
+            permission.clone(),
+            usage.from.clone(),
+            usage.source_location.clone(),
+        )
+    }
+
+    pub(crate) fn first_usage(&self) -> Option<&Usage> {
+        self.usages.values().next().and_then(|u| u.get(0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Problem;

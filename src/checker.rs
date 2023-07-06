@@ -77,7 +77,7 @@ pub(crate) struct Usage {
     pub(crate) debug_data: Option<UsageDebugData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
     pub(crate) line: u32,

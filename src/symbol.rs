@@ -100,6 +100,10 @@ impl Symbol {
         }
         Ok(all_parts)
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.bytes.len()
+    }
 }
 
 impl Display for Symbol {
