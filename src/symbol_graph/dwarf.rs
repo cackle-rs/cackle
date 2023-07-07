@@ -12,10 +12,18 @@ use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 
-pub(super) fn get_symbol_to_locations(
+pub(crate) struct SymbolDebugInfo {
+    pub(crate) source_location: SourceLocation,
+    // The name of what this symbol refers to. This is sometimes, but not always the demangled
+    // version of the symbol. In particular, when generics are involved, the symbol often doesn't
+    // include them, but this does.
+    pub(crate) name: Option<String>,
+}
+
+pub(super) fn get_symbol_debug_info(
     dwarf: &Dwarf<EndianSlice<LittleEndian>>,
-) -> Result<HashMap<Symbol, SourceLocation>> {
-    let mut locations = HashMap::new();
+) -> Result<HashMap<Symbol, SymbolDebugInfo>> {
+    let mut output: HashMap<Symbol, SymbolDebugInfo> = HashMap::new();
     let mut units = dwarf.units();
     while let Some(unit_header) = units.next()? {
         let unit = dwarf.unit(unit_header)?;
@@ -26,7 +34,19 @@ pub(super) fn get_symbol_to_locations(
         let compdir = path_from_opt_slice(unit.comp_dir);
         let mut entries = unit.entries();
         while let Some((_, entry)) = entries.next_dfs()? {
-            let Some(name) = entry.attr_value(gimli::DW_AT_linkage_name)? else {
+            let name = entry
+                .attr_value(gimli::DW_AT_name)?
+                .map(|name| dwarf.attr_string(&unit, name))
+                .transpose()?
+                .map(|name| name.to_string())
+                .transpose()?
+                .map(|name| name.to_owned());
+            // When `linkage_name` and `name` would be the same (symbol is not mangled), then
+            // `linkage_name` is omitted, so we use `name` as a fallback.
+            let Some(linkage_name) = entry
+                .attr_value(gimli::DW_AT_linkage_name)?
+                .or_else(|| entry.attr_value(gimli::DW_AT_name).ok().flatten())
+            else {
                 continue;
             };
             let Some(line) = entry
@@ -41,7 +61,7 @@ pub(super) fn get_symbol_to_locations(
                 .map(|v| v as u32);
             let symbol = Symbol::new(
                 dwarf
-                    .attr_string(&unit, name)
+                    .attr_string(&unit, linkage_name)
                     .context("symbol invalid")?
                     .to_slice()?,
             );
@@ -62,17 +82,20 @@ pub(super) fn get_symbol_to_locations(
                 dwarf.attr_string(&unit, file.path_name())?.as_ref(),
             ));
 
-            locations.insert(
+            output.insert(
                 symbol,
-                SourceLocation {
-                    filename: path,
-                    line: line as u32,
-                    column,
+                SymbolDebugInfo {
+                    source_location: SourceLocation {
+                        filename: path,
+                        line: line as u32,
+                        column,
+                    },
+                    name,
                 },
             );
         }
     }
-    Ok(locations)
+    Ok(output)
 }
 
 fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -> &Path {

@@ -91,6 +91,12 @@ impl Debug for Name {
     }
 }
 
+impl Name {
+    pub(crate) fn starts_with(&self, ignored_name: &Name) -> bool {
+        self.parts.starts_with(&ignored_name.parts)
+    }
+}
+
 #[test]
 fn test_split_names() {
     fn borrow(input: &[Name]) -> Vec<Vec<&str>> {

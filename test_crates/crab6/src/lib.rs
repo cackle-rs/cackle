@@ -4,6 +4,10 @@ pub fn add(left: u32, right: u32) -> u32 {
     left + right
 }
 
+pub fn print_default<T: Default + std::fmt::Debug>() {
+    println!("default: {:?}", T::default());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
