@@ -9,6 +9,13 @@ pub(crate) struct Symbol {
     bytes: Arc<[u8]>,
 }
 
+/// A name of something. e.g. `std::path::Path`.
+#[derive(Eq, PartialEq, Hash, Clone)]
+pub(crate) struct Name {
+    /// The components of this name. e.g. ["std", "path", "Path"]
+    pub(crate) parts: Vec<String>,
+}
+
 impl Symbol {
     pub(crate) fn new<T: Into<Vec<u8>>>(bytes: T) -> Self {
         Self {
@@ -16,7 +23,7 @@ impl Symbol {
         }
     }
 
-    /// Splits the name of this symbol into parts. Each part is further split on "::". For example:
+    /// Splits the name of this symbol into names. Each name is further split on "::". For example:
     /// a symbol that when demangled produces
     /// "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>" would split into:
     /// [
@@ -29,9 +36,9 @@ impl Symbol {
     ///   ["alloc", "string", "String"],
     ///   ["std", "fmt", "Debug", "fmt"],
     /// ]
-    pub(crate) fn parts(&self) -> Result<Vec<Vec<String>>> {
+    pub(crate) fn names(&self) -> Result<Vec<Name>> {
         let name = demangle(std::str::from_utf8(&self.bytes)?).to_string();
-        let mut all_parts = Vec::new();
+        let mut all_names: Vec<Name> = Vec::new();
         let mut part = String::new();
         let mut parts = Vec::new();
         let mut chars = name.chars();
@@ -49,7 +56,9 @@ impl Symbol {
                         parts.push(std::mem::take(&mut part));
                     }
                     if !parts.is_empty() {
-                        all_parts.push(std::mem::take(&mut parts));
+                        all_names.push(Name {
+                            parts: std::mem::take(&mut parts),
+                        });
                     }
                 }
             } else if ch == ':' {
@@ -67,7 +76,9 @@ impl Symbol {
                         parts.push(std::mem::take(&mut part));
                     }
                     if !parts.is_empty() {
-                        all_parts.push(std::mem::take(&mut parts));
+                        all_names.push(Name {
+                            parts: std::mem::take(&mut parts),
+                        });
                     }
                 } else {
                     part.push(ch);
@@ -80,25 +91,27 @@ impl Symbol {
             parts.push(std::mem::take(&mut part));
         }
         if !parts.is_empty() {
-            all_parts.push(std::mem::take(&mut parts));
+            all_names.push(Name {
+                parts: std::mem::take(&mut parts),
+            });
         }
         // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
-        if all_parts.len() >= 2 {
-            if let Some(last_parts) = all_parts.last_mut() {
-                if let Some(last) = last_parts.last() {
+        if all_names.len() >= 2 {
+            if let Some(last_name) = all_names.last_mut() {
+                if let Some(last) = last_name.parts.last() {
                     if last.len() == 17
                         && last.starts_with('h')
                         && u64::from_str_radix(&last[1..], 16).is_ok()
                     {
-                        last_parts.pop();
-                        if last_parts.is_empty() {
-                            all_parts.pop();
+                        last_name.parts.pop();
+                        if last_name.parts.is_empty() {
+                            all_names.pop();
                         }
                     }
                 }
             }
         }
-        Ok(all_parts)
+        Ok(all_names)
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -133,19 +146,31 @@ impl Debug for Symbol {
     }
 }
 
+impl Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.parts.join("::"))
+    }
+}
+
+impl Debug for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Name({})", self.parts.join("::"))
+    }
+}
+
 #[test]
-fn test_parts() {
-    fn borrow(input: &[Vec<String>]) -> Vec<Vec<&str>> {
+fn test_names() {
+    fn borrow(input: &[Name]) -> Vec<Vec<&str>> {
         input
             .iter()
-            .map(|part| part.iter().map(|s| s.as_str()).collect())
+            .map(|name| name.parts.iter().map(|s| s.as_str()).collect())
             .collect()
     }
 
     let symbol = Symbol::new(*b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
     println!("{symbol}");
     assert_eq!(
-        borrow(&symbol.parts().unwrap()),
+        borrow(&symbol.names().unwrap()),
         vec![
             vec!["core", "ptr", "drop_in_place"],
             vec!["std", "rt", "lang_start"],
@@ -157,7 +182,7 @@ fn test_parts() {
         *b"_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
     );
     assert_eq!(
-        borrow(&symbol.parts().unwrap()),
+        borrow(&symbol.names().unwrap()),
         vec![
             vec!["alloc", "string", "String"],
             vec!["core", "fmt", "Debug", "fmt"]

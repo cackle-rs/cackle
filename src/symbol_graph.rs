@@ -224,19 +224,20 @@ impl<'input> ApiUsageCollector<'input> {
 
                     let crate_names =
                         checker.crate_names_from_source_path(&location.filename, filename)?;
-                    let target_symbol_parts = target_symbol.parts()?;
+                    let target_symbol_names = target_symbol.names()?;
                     for crate_name in crate_names {
-                        for name_parts in &target_symbol_parts {
+                        for name in &target_symbol_names {
                             // If a package references another symbol within the same package,
                             // ignore it.
-                            if name_parts
+                            if name
+                                .parts
                                 .first()
                                 .map(|name_start| crate_name.as_ref() == name_start)
                                 .unwrap_or(false)
                             {
                                 continue;
                             }
-                            for permission in checker.apis_for_path(name_parts) {
+                            for permission in checker.apis_for_path(&name.parts) {
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {
                                     object_file_path: filename.clone(),
                                     section_name: section_name.to_owned(),
