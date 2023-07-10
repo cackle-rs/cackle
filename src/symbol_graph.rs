@@ -207,10 +207,15 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(from_name) = debug_info.name.as_ref() else {
                 continue;
             };
-            let local_generics: Vec<_> = crate::names::split_names(from_name)
-                .into_iter()
-                .skip(1)
-                .collect();
+
+            // Compute what APIs would be used by a function that referenced our from-symbol, based
+            // only on the generics of our from-symbol. We then ignore API usages within our
+            // function for those same APIs.
+            let mut from_generics_apis = HashSet::new();
+            for name in crate::names::split_names(from_name).into_iter().skip(1) {
+                from_generics_apis.extend(checker.apis_for_name(&name).into_iter());
+            }
+
             for (offset, rel) in section.relocations() {
                 let location = self
                     .exe
@@ -229,16 +234,6 @@ impl<'input> ApiUsageCollector<'input> {
                     let target_symbol_names = self.exe.names_from_symbol(&target_symbol)?;
                     for crate_name in &crate_names {
                         for name in &target_symbol_names {
-                            // All names in the from-symbol other than the first name are considered
-                            // generics of the current function. If we reference any functions that
-                            // start with the name of things that we're generic over, then ignore
-                            // those.
-                            if local_generics
-                                .iter()
-                                .any(|ignored_name| name.starts_with(ignored_name))
-                            {
-                                continue;
-                            }
                             // If a package references another symbol within the same package,
                             // ignore it.
                             if name
@@ -250,6 +245,9 @@ impl<'input> ApiUsageCollector<'input> {
                                 continue;
                             }
                             for permission in checker.apis_for_name(name) {
+                                if from_generics_apis.contains(&permission) {
+                                    continue;
+                                }
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {
                                     object_file_path: filename.clone(),
                                     section_name: section_name.to_owned(),
