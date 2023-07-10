@@ -12,10 +12,6 @@ pub fn access_file() {
     let mut s = std::mem::ManuallyDrop::new("Hello".to_owned());
     let s2 = unsafe { String::from_raw_parts(s.as_mut_ptr(), s.len(), s.capacity()) };
     println!("{s2}");
-
-    // Instantiate cra6::print_default with a PathBuf. This shouldn't count as crab6 using the fs
-    // API.
-    crab6::print_default::<std::path::PathBuf>();
 }
 
 fn f1() {

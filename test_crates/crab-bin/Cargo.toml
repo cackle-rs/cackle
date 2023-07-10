@@ -9,6 +9,7 @@ crab2 = { path = "../crab2" }
 crab4 = { path = "../crab4" }
 crab6 = { path = "../crab6" }
 crab7 = { path = "../crab7" }
+crab8 = { path = "../crab8" }
 pmacro1 = { path = "../pmacro1" }
 
 [features]

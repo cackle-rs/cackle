@@ -10,6 +10,7 @@ use self::object_file_path::ObjectFilePath;
 use crate::checker::Checker;
 use crate::checker::SourceLocation;
 use crate::checker::Usage;
+use crate::names::Name;
 use crate::problem::ApiUsage;
 use crate::problem::ProblemList;
 use crate::symbol::Symbol;
@@ -224,7 +225,7 @@ impl<'input> ApiUsageCollector<'input> {
 
                     let crate_names =
                         checker.crate_names_from_source_path(&location.filename, filename)?;
-                    let target_symbol_names = target_symbol.names()?;
+                    let target_symbol_names = self.exe.names_from_symbol(&target_symbol)?;
                     for crate_name in crate_names {
                         for name in &target_symbol_names {
                             // All names in the from-symbol other than the first name are considered
@@ -403,6 +404,24 @@ impl<'input> ExeInfo<'input> {
                 .insert(Symbol::new(symbol.name_bytes()?), symbol.address());
         }
         Ok(())
+    }
+
+    /// Returns names present either in `symbol` or in the debug info for `symbol`. Generally the
+    /// former is fully qualified, while the latter contains generics, so we need both.
+    fn names_from_symbol(&self, symbol: &Symbol) -> Result<Vec<Name>> {
+        let mut names = symbol.names()?;
+        if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
+            if let Some(name) = &target_symbol_debug.name {
+                // This is O(n^2) in the number of names, but we expect N to be in the range 1..3
+                // and rarely more than 5, so using a hashmap or similar seems like overkill.
+                for name in crate::names::split_names(name) {
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+        Ok(names)
     }
 
     fn find_location(&self, offset: u64) -> Result<Option<SourceLocation>> {

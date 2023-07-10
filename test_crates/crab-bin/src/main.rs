@@ -13,6 +13,7 @@ fn main() {
     println!("pid={}", (crab4::GET_PID[0])());
     crab4::access_file();
     crab7::do_something();
+    crab8::print_defaults();
     // Note, the following call exits
     crab2::stuff::do_stuff();
 }
