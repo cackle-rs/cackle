@@ -29,43 +29,47 @@ pub(crate) fn split_names(composite: &str) -> Vec<Name> {
     // that the subsequent name part gets added to whatever part came after the " as ".
     let mut as_active = false;
     while let Some(ch) = chars.next() {
+        let mut end_part = false;
         if ch == '(' || ch == ')' {
             // Ignore parenthesis.
-        } else if ch == '<' || ch == '>' {
+        } else if ch == '<' || ch == '>' || ch == ',' {
             if as_active {
                 as_active = false;
             } else {
-                if !part.is_empty() {
-                    parts.push(std::mem::take(&mut part));
-                }
-                if !parts.is_empty() {
-                    all_names.push(Name {
-                        parts: std::mem::take(&mut parts),
-                    });
-                }
+                end_part = true;
             }
         } else if ch == ':' {
             if !part.is_empty() {
                 parts.push(std::mem::take(&mut part));
             }
+        } else if ch == '&' {
+            continue;
         } else if ch == ' ' {
             let mut ahead = chars.clone();
             if let (Some('a'), Some('s'), Some(' ')) = (ahead.next(), ahead.next(), ahead.next()) {
                 chars = ahead;
                 as_active = true;
-                if !part.is_empty() {
-                    parts.push(std::mem::take(&mut part));
-                }
-                if !parts.is_empty() {
-                    all_names.push(Name {
-                        parts: std::mem::take(&mut parts),
-                    });
-                }
+                end_part = true;
             } else {
-                part.push(ch);
+                end_part = true;
             }
         } else {
             part.push(ch);
+        }
+
+        if end_part {
+            if part == "mut" {
+                part.clear();
+                continue;
+            }
+            if !part.is_empty() {
+                parts.push(std::mem::take(&mut part));
+            }
+            if !parts.is_empty() {
+                all_names.push(Name {
+                    parts: std::mem::take(&mut parts),
+                });
+            }
         }
     }
     if !part.is_empty() {
@@ -106,9 +110,10 @@ fn test_split_names() {
             .collect()
     }
 
-    let composite = "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>";
     assert_eq!(
-        borrow(&split_names(composite)),
+        borrow(&split_names(
+            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
+        )),
         vec![
             vec!["core", "ptr", "drop_in_place"],
             vec!["std", "rt", "lang_start"],
@@ -116,12 +121,29 @@ fn test_split_names() {
         ]
     );
 
-    let composite = "<alloc::string::String as core::fmt::Debug>::fmt";
     assert_eq!(
-        borrow(&split_names(composite)),
+        borrow(&split_names(
+            "<alloc::string::String as core::fmt::Debug>::fmt"
+        )),
         vec![
             vec!["alloc", "string", "String"],
-            vec!["core", "fmt", "Debug", "fmt"]
+            vec!["core", "fmt", "Debug", "fmt"],
         ]
+    );
+
+    assert_eq!(
+        borrow(&split_names(
+            "HashMap<std::string::String, std::path::PathBuf>"
+        )),
+        vec![
+            vec!["HashMap"],
+            vec!["std", "string", "String"],
+            vec!["std", "path", "PathBuf"],
+        ]
+    );
+
+    assert_eq!(
+        borrow(&split_names("Vec<&mut std::string::String>")),
+        vec![vec!["Vec"], vec!["std", "string", "String"],]
     );
 }
