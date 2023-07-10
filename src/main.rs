@@ -15,6 +15,7 @@ pub(crate) mod events;
 pub(crate) mod fs;
 pub(crate) mod link_info;
 mod logging;
+mod names;
 mod outcome;
 pub(crate) mod problem;
 pub(crate) mod problem_store;
