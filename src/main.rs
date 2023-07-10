@@ -269,10 +269,6 @@ impl Cackle {
             // problems above. It might be worthwhile at some point refactoring so that we don't do an
             // unnecessary reload here.
             checker.load_config()?;
-
-            for crate_name in self.crate_index.crate_names() {
-                checker.report_crate_used(crate_name);
-            }
         }
 
         let root_path = self.root_path.clone();

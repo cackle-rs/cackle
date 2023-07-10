@@ -51,11 +51,6 @@ pub(crate) struct CrateInfo {
     /// Whether the config file mentions this crate.
     has_config: bool,
 
-    /// Whether a crate with this name was found in the tree. Used to issue a
-    /// warning or error if the config refers to a crate that isn't in the
-    /// dependency tree.
-    used: bool,
-
     /// Permissions that are allowed for this crate according to cackle.toml.
     allowed_perms: HashSet<PermissionName>,
 
@@ -256,7 +251,6 @@ impl Checker {
         let crate_name = CrateName::from(format!("{package_name}.build").as_str());
         if let Some(crate_info) = self.crate_infos.get_mut(&crate_name) {
             if crate_info.has_config {
-                crate_info.used = true;
                 return ProblemList::default();
             }
         }
@@ -283,12 +277,6 @@ impl Checker {
                     source_path.display(),
                 )
             })
-    }
-
-    pub(crate) fn report_crate_used(&mut self, crate_name: &CrateName) {
-        if let Some(info) = self.crate_infos.get_mut(crate_name) {
-            info.used = true;
-        }
     }
 
     pub(crate) fn report_proc_macro(&mut self, crate_name: &CrateName) {
@@ -336,8 +324,9 @@ impl Checker {
 
     pub(crate) fn check_unused(&self) -> ProblemList {
         let mut problems = ProblemList::default();
+        let crate_names: HashSet<_> = self.crate_index.crate_names().collect();
         for (crate_name, crate_info) in &self.crate_infos {
-            if !crate_info.used && crate_info.has_config {
+            if crate_info.has_config && !crate_names.contains(crate_name) {
                 problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
             }
             if !crate_info.unused_allowed_perms.is_empty() {
@@ -442,12 +431,14 @@ mod tests {
         "#,
         )
         .unwrap();
-        let mut checker = Checker::default();
+        let mut checker = Checker {
+            crate_index: crate::crate_index::testing::index_with_crate_names(&["foo"]),
+            ..Checker::default()
+        };
         checker.update_config(config.clone());
         let mut problems = ProblemList::default();
 
         let crate_name = CrateName::from("foo");
-        checker.report_crate_used(&crate_name);
         let permissions = checker.apis_for_name(&Name {
             parts: vec![
                 "std".to_owned(),

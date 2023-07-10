@@ -37,7 +37,7 @@ pub(crate) struct Config {
 /// package name except if it's a build script, in which case it's `{package_name}.build`.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(transparent)]
-pub(crate) struct CrateName(Arc<str>);
+pub(crate) struct CrateName(pub(crate) Arc<str>);
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

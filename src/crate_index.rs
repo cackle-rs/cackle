@@ -79,3 +79,21 @@ impl CrateIndex {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::CrateIndex;
+    use crate::config::CrateName;
+    use std::sync::Arc;
+
+    pub(crate) fn index_with_crate_names(crate_names: &[&str]) -> Arc<CrateIndex> {
+        let crate_names = crate_names
+            .iter()
+            .map(|name| CrateName(Arc::from(*name)))
+            .collect();
+        Arc::new(CrateIndex {
+            crate_names,
+            ..CrateIndex::default()
+        })
+    }
+}
