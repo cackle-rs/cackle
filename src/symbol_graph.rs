@@ -249,7 +249,7 @@ impl<'input> ApiUsageCollector<'input> {
                             {
                                 continue;
                             }
-                            for permission in checker.apis_for_path(&name.parts) {
+                            for permission in checker.apis_for_name(name) {
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {
                                     object_file_path: filename.clone(),
                                     section_name: section_name.to_owned(),

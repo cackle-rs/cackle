@@ -298,19 +298,18 @@ impl Checker {
             .is_proc_macro = true;
     }
 
-    /// Returns all permissions that are matched by `name_parts`, where `name_parts` are the parts
-    /// of a name that was separated by "::". e.g. `name_parts` might be `["std", "fs", "write"]`
-    /// and the returned permissions might be `{"net"}`
-    pub(crate) fn apis_for_path(&self, name_parts: &[String]) -> HashSet<PermissionName> {
+    /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
+    /// might return the APIs `{"net"}`
+    pub(crate) fn apis_for_name(&self, name: &Name) -> HashSet<PermissionName> {
         let mut matched = HashSet::new();
-        let mut name = String::new();
-        for name_part in name_parts {
-            if !name.is_empty() {
-                name.push_str("::");
+        let mut prefix = String::new();
+        for name_part in &name.parts {
+            if !prefix.is_empty() {
+                prefix.push_str("::");
             }
-            name.push_str(name_part);
+            prefix.push_str(name_part);
             let empty_hash_set = HashSet::new();
-            let api_path = ApiPath::from_str(&name);
+            let api_path = ApiPath::from_str(&prefix);
             for perm_id in self.inclusions.get(&api_path).unwrap_or(&empty_hash_set) {
                 matched.insert(perm_id.clone());
             }
@@ -400,8 +399,8 @@ mod tests {
         let mut checker = Checker::default();
         checker.update_config(parse(config).unwrap());
 
-        let path: Vec<String> = path.iter().map(|s| s.to_string()).collect();
-        let apis = checker.apis_for_path(&path);
+        let parts: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+        let apis = checker.apis_for_name(&Name { parts });
         let mut api_names: Vec<_> = apis.iter().map(AsRef::as_ref).collect();
         api_names.sort();
         assert_eq!(api_names, expected);
@@ -449,11 +448,13 @@ mod tests {
 
         let crate_name = CrateName::from("foo");
         checker.report_crate_used(&crate_name);
-        let permissions = checker.apis_for_path(&[
-            "std".to_owned(),
-            "fs".to_owned(),
-            "read_to_string".to_owned(),
-        ]);
+        let permissions = checker.apis_for_name(&Name {
+            parts: vec![
+                "std".to_owned(),
+                "fs".to_owned(),
+                "read_to_string".to_owned(),
+            ],
+        });
         assert_eq!(permissions.len(), 1);
         assert_eq!(
             permissions.iter().next().unwrap(),
