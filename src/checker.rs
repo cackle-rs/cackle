@@ -5,6 +5,7 @@ use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
+use crate::names::Name;
 use crate::problem::ApiUsage;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -73,7 +74,8 @@ pub(crate) struct CrateInfo {
 pub(crate) struct Usage {
     pub(crate) source_location: SourceLocation,
     pub(crate) from: Symbol,
-    pub(crate) to: Symbol,
+    pub(crate) to: Name,
+    pub(crate) to_symbol: Symbol,
     pub(crate) debug_data: Option<UsageDebugData>,
 }
 
@@ -468,7 +470,8 @@ mod tests {
                         column: None,
                     },
                     from: Symbol::new(vec![]),
-                    to: Symbol::new(vec![]),
+                    to: crate::names::split_names("foo:bar").pop().unwrap(),
+                    to_symbol: Symbol::new(vec![]),
                     debug_data: None,
                 }],
             );

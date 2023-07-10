@@ -259,7 +259,8 @@ impl<'input> ApiUsageCollector<'input> {
                                     vec![Usage {
                                         source_location: location.clone(),
                                         from: first_sym_info.symbol.clone(),
-                                        to: target_symbol.clone(),
+                                        to: name.clone(),
+                                        to_symbol: target_symbol.clone(),
                                         debug_data,
                                     }],
                                 );
@@ -282,7 +283,7 @@ impl<'input> ApiUsageCollector<'input> {
         for api_usages in new_api_usages.into_values() {
             if let Some(shortest_target_usage) = api_usages
                 .into_iter()
-                .min_by_key(|u| u.first_usage().unwrap().to.len())
+                .min_by_key(|u| u.first_usage().unwrap().to_symbol.len())
             {
                 self.outputs.api_usages.push(shortest_target_usage);
             }

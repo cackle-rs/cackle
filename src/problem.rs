@@ -502,7 +502,8 @@ mod tests {
                 column: None,
             },
             from: Symbol::new(from),
-            to: Symbol::new(to),
+            to: crate::names::split_names("foo:bar").pop().unwrap(),
+            to_symbol: Symbol::new(to),
             debug_data: None,
         }
     }
