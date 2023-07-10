@@ -216,17 +216,18 @@ impl<'input> ApiUsageCollector<'input> {
                     .exe
                     .find_location(symbol_address_in_exe + offset - first_sym_info.offset)?
                     .unwrap_or_else(|| debug_info.source_location.clone());
+                // Ignore references that come from code in the rust standard library.
+                if location.is_in_rust_std() {
+                    continue;
+                }
+                let crate_names =
+                    checker.crate_names_from_source_path(&location.filename, filename)?;
+
                 for target_symbol in object_index.target_symbols(&rel)? {
                     trace!("{} -> {target_symbol}", first_sym_info.symbol);
-                    // Ignore references that come from code in the rust standard library.
-                    if location.is_in_rust_std() {
-                        continue;
-                    }
 
-                    let crate_names =
-                        checker.crate_names_from_source_path(&location.filename, filename)?;
                     let target_symbol_names = self.exe.names_from_symbol(&target_symbol)?;
-                    for crate_name in crate_names {
+                    for crate_name in &crate_names {
                         for name in &target_symbol_names {
                             // All names in the from-symbol other than the first name are considered
                             // generics of the current function. If we reference any functions that
