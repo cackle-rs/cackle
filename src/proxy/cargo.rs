@@ -33,6 +33,8 @@ pub(crate) fn command(base_command: &str, dir: &Path, args: &Args) -> Command {
     command
         .arg("--config")
         .arg(format!("profile.{PROFILE_NAME}.incremental=false"));
+    // We don't currently support split debug info.
+    command.arg("--config").arg("split-debuginfo=\"off\"");
     command.arg("--profile").arg(PROFILE_NAME);
     command
 }
