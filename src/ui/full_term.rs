@@ -71,9 +71,7 @@ impl super::UserInterface for FullTermUi {
             }
             if needs_redraw {
                 self.terminal.draw(|f| {
-                    if let Err(e) = screen.render(f) {
-                        error = Some(e);
-                    }
+                    screen.render(f);
                     if let Some(e) = error.as_ref() {
                         render_error(f, e);
                     }

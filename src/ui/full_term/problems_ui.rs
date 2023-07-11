@@ -22,6 +22,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
@@ -30,6 +31,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use ratatui::Frame;
 use std::io::Stdout;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::MutexGuard;
 
@@ -59,7 +61,7 @@ impl ProblemsUi {
         self.modes.is_empty()
     }
 
-    pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) -> Result<()> {
+    pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
         let (top_left, bottom_left) = split_vertical(f.size());
 
         self.render_problems(f, top_left);
@@ -79,17 +81,16 @@ impl ProblemsUi {
                     }
                 }
                 Mode::SelectEdit => {
-                    self.render_edit_help_and_diff(f, bottom_left)?;
+                    self.render_edit_help_and_diff(f, bottom_left);
                 }
                 Mode::SelectUsage => {
-                    self.render_usage_details(f, bottom_left)?;
+                    self.render_usage_details(f, bottom_left);
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::Help => render_help(f, previous_mode),
             }
             previous_mode = Some(mode);
         }
-        Ok(())
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
@@ -280,76 +281,28 @@ impl ProblemsUi {
         usages_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
-    fn render_edit_help_and_diff(
-        &self,
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-        area: Rect,
-    ) -> Result<()> {
+    fn render_edit_help_and_diff(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let edits = self.edits();
         let Some(edit) = edits.get(self.edit_index) else {
-            return Ok(());
+            return;
         };
 
-        let mut lines = Vec::new();
-        lines.push(Line::from(edit.help()));
-
-        let original = std::fs::read_to_string(&self.config_path).unwrap_or_default();
-        let mut editor = ConfigEditor::from_toml_string(&original)?;
-        // Some edits (e.g. selecting Bubblewrap as a sandbox can fail with an error). We show that
-        // error inline rather than in an error dialog. A dialog wouldn't work because the error
-        // would just occur again as soon as the dialog was closed.
-        if let Err(error) = edit.apply(&mut editor) {
-            lines.push(Line::from(""));
-            lines.push(Line::from(error.to_string()));
-        }
-        let updated = editor.to_toml();
-
-        let mut diff = diff::diff_lines(&original, &updated);
-
-        if !diff.is_empty() {
-            lines.push(Line::from(""));
-            lines.push(Line::from("=== Diff of cackle.toml ==="));
-        }
-
-        lines.append(&mut diff);
+        let lines = config_diff_lines(&self.config_path, &**edit).unwrap_or_else(error_lines);
 
         let block = Block::default().title("Edit details").borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
             .block(block)
             .wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);
-        Ok(())
     }
 
-    fn render_usage_details(
-        &self,
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-        area: Rect,
-    ) -> Result<()> {
+    fn render_usage_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let usages = self.usages();
         let Some(usage) = usages.get(self.usage_index) else {
-            return Ok(());
+            return;
         };
 
-        let mut lines = Vec::new();
-        lines.push(Line::from(format!(
-            "{}",
-            usage.source_location.filename.display()
-        )));
-        let source = crate::fs::read_to_string(&usage.source_location.filename)?;
-        let relevant_line = source
-            .lines()
-            .nth(usage.source_location.line as usize - 1)
-            .ok_or_else(|| anyhow!("Line number not found in file"))?;
-        let gutter_width = 5;
-        lines.push(Line::from(format!(
-            "{:gutter_width$}: {relevant_line}",
-            usage.source_location.line
-        )));
-        if let Some(column) = usage.source_location.column {
-            let column = column as usize + 1;
-            lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
-        }
+        let mut lines = usage_source_lines(usage).unwrap_or_else(error_lines);
 
         if let Some(debug_data) = usage.debug_data.as_ref() {
             lines.push(Line::from(""));
@@ -365,7 +318,6 @@ impl ProblemsUi {
             .block(block)
             .wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);
-        Ok(())
     }
 
     /// Applies the currently selected edit and resolves the problem that produced that edit.
@@ -392,6 +344,55 @@ impl ProblemsUi {
         pstore_lock.resolve_problems_with_empty_diff(&editor);
         Ok(())
     }
+}
+
+fn error_lines(error: anyhow::Error) -> Vec<Line<'static>> {
+    vec![Line::from(Span::styled(
+        format!("{error:#}"),
+        Style::default().fg(Color::Red),
+    ))]
+}
+
+fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'static>>> {
+    let mut lines = Vec::new();
+    lines.push(Line::from(edit.help()));
+    let original = std::fs::read_to_string(config_path).unwrap_or_default();
+    let mut editor = ConfigEditor::from_toml_string(&original)?;
+    if let Err(error) = edit.apply(&mut editor) {
+        lines.push(Line::from(""));
+        lines.push(Line::from(error.to_string()));
+    }
+    let updated = editor.to_toml();
+    let mut diff = diff::diff_lines(&original, &updated);
+    if !diff.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from("=== Diff of cackle.toml ==="));
+    }
+    lines.append(&mut diff);
+    Ok(lines)
+}
+
+fn usage_source_lines(usage: &Usage) -> Result<Vec<Line<'static>>> {
+    let mut lines = Vec::new();
+    lines.push(Line::from(format!(
+        "{}",
+        usage.source_location.filename.display()
+    )));
+    let source = crate::fs::read_to_string(&usage.source_location.filename)?;
+    let relevant_line = source
+        .lines()
+        .nth(usage.source_location.line as usize - 1)
+        .ok_or_else(|| anyhow!("Line number not found in file"))?;
+    let gutter_width = 5;
+    lines.push(Line::from(format!(
+        "{:gutter_width$}: {relevant_line}",
+        usage.source_location.line
+    )));
+    if let Some(column) = usage.source_location.column {
+        let column = column as usize + 1;
+        lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+    }
+    Ok(lines)
 }
 
 fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
