@@ -128,7 +128,7 @@ impl ProblemStore {
     ) -> impl Iterator<Item = (ProblemStoreIndex, &Problem)> {
         let mut seen = HashSet::new();
         self.iterate_with_duplicates()
-            .filter(move |(_, problem)| seen.insert(*problem))
+            .filter(move |(_, problem)| seen.insert(problem.deduplication_key()))
     }
 
     /// Within each problem list, group problems by type and crate.

@@ -9,6 +9,7 @@ use crate::config::PermissionName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
+use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -206,6 +207,27 @@ impl Problem {
             self,
             &Problem::BuildScriptFailed(..) | &Problem::DisallowedUnsafe(..)
         )
+    }
+
+    /// Returns `self` or a clone of `self` with any bits that aren't relevant for deduplication
+    /// removed.
+    pub(crate) fn deduplication_key(&self) -> Cow<Problem> {
+        if let Problem::DisallowedApiUsage(api_usage) = self {
+            if api_usage
+                .usages
+                .values()
+                .any(|usages| usages.iter().any(|usage| usage.debug_data.is_some()))
+            {
+                let mut api_usage = api_usage.clone();
+                for usages in api_usage.usages.values_mut() {
+                    for usage in usages {
+                        usage.debug_data = None;
+                    }
+                }
+                return Cow::Owned(Problem::DisallowedApiUsage(api_usage));
+            }
+        }
+        Cow::Borrowed(self)
     }
 }
 
