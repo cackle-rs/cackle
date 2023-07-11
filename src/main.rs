@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod build_script_checker;
+mod bytes;
 mod checker;
 mod colour;
 mod config;

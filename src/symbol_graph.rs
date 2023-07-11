@@ -59,11 +59,11 @@ struct ApiUsageCollector<'input> {
 /// object (so).
 struct BinInfo<'input> {
     filename: Arc<Path>,
-    symbol_addresses: HashMap<Symbol, u64>,
+    symbol_addresses: HashMap<Symbol<'input>, u64>,
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
 
     /// Information about each symbol obtained from the debug info.
-    symbol_debug_info: HashMap<Symbol, SymbolDebugInfo<'input>>,
+    symbol_debug_info: HashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
 }
 
 #[derive(Default)]
@@ -89,7 +89,7 @@ struct SectionInfo {
 #[derive(Clone)]
 struct SymbolInfo {
     /// The first symbol in the section.
-    symbol: Symbol,
+    symbol: Symbol<'static>,
 
     /// Whether `symbol` is a local in the current object file.
     symbol_is_local: bool,
@@ -315,7 +315,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 .unwrap_or(true)
             {
                 section_info.first_symbol = Some(SymbolInfo {
-                    symbol: Symbol::new(name),
+                    symbol: Symbol::borrowed(name).to_heap(),
                     symbol_is_local: symbol.is_local(),
                     offset: symbol.address(),
                 });
@@ -327,7 +327,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     /// Returns the symbol or symbols that `rel` refers to. If `rel` refers to a section that
     /// doesn't define a non-local symbol at address 0, then all outgoing references from that
     /// section will be included and so on recursively.
-    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol>> {
+    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol<'static>>> {
         let mut symbols_out = Vec::new();
         self.add_target_symbols(rel, &mut symbols_out, &mut HashSet::new())?;
         Ok(symbols_out)
@@ -336,7 +336,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn add_target_symbols(
         &self,
         rel: &object::Relocation,
-        symbols_out: &mut Vec<Symbol>,
+        symbols_out: &mut Vec<Symbol<'static>>,
         visited: &mut HashSet<SectionIndex>,
     ) -> Result<()> {
         let (symbol, section_index) = self.get_symbol_and_section(rel.target())?;
@@ -363,7 +363,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn get_symbol_and_section(
         &self,
         target_in: RelocationTarget,
-    ) -> Result<(Option<Symbol>, Option<SectionIndex>)> {
+    ) -> Result<(Option<Symbol<'static>>, Option<SectionIndex>)> {
         let section_index = match target_in {
             RelocationTarget::Symbol(symbol_index) => {
                 let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else {
@@ -371,7 +371,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
-                    return Ok((Some(Symbol::new(name)), None));
+                    return Ok((Some(Symbol::borrowed(name).to_heap()), None));
                 }
                 symbol.section_index().ok_or_else(|| {
                     anyhow!("Relocation target has empty name an no section index")
@@ -404,8 +404,10 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
 impl<'input> BinInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
         for symbol in obj.symbols() {
-            self.symbol_addresses
-                .insert(Symbol::new(symbol.name_bytes()?), symbol.address());
+            self.symbol_addresses.insert(
+                Symbol::borrowed(symbol.name_bytes()?).to_heap(),
+                symbol.address(),
+            );
         }
         Ok(())
     }

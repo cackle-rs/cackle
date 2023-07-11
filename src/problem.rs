@@ -501,9 +501,9 @@ mod tests {
                 line: 1,
                 column: None,
             },
-            from: Symbol::new(from),
+            from: Symbol::borrowed(from.as_bytes()).to_heap(),
             to: crate::names::split_names("foo:bar").pop().unwrap(),
-            to_symbol: Symbol::new(to),
+            to_symbol: Symbol::borrowed(to.as_bytes()).to_heap(),
             debug_data: None,
         }
     }

@@ -68,9 +68,9 @@ pub(crate) struct CrateInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Usage {
     pub(crate) source_location: SourceLocation,
-    pub(crate) from: Symbol,
+    pub(crate) from: Symbol<'static>,
     pub(crate) to: Name,
-    pub(crate) to_symbol: Symbol,
+    pub(crate) to_symbol: Symbol<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
 }
 
@@ -461,9 +461,9 @@ mod tests {
                         line: 1,
                         column: None,
                     },
-                    from: Symbol::new(vec![]),
+                    from: Symbol::borrowed(&[]),
                     to: crate::names::split_names("foo:bar").pop().unwrap(),
-                    to_symbol: Symbol::new(vec![]),
+                    to_symbol: Symbol::borrowed(&[]),
                     debug_data: None,
                 }],
             );

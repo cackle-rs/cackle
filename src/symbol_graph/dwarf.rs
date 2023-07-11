@@ -6,7 +6,6 @@ use anyhow::Result;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
-use gimli::Reader;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
@@ -41,7 +40,7 @@ impl<'input> SymbolDebugInfo<'input> {
 
 pub(super) fn get_symbol_debug_info<'input>(
     dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-) -> Result<HashMap<Symbol, SymbolDebugInfo<'input>>> {
+) -> Result<HashMap<Symbol<'input>, SymbolDebugInfo<'input>>> {
     let mut output: HashMap<Symbol, SymbolDebugInfo> = HashMap::new();
     let mut units = dwarf.units();
     while let Some(unit_header) = units.next()? {
@@ -78,11 +77,11 @@ pub(super) fn get_symbol_debug_info<'input>(
                 .attr_value(gimli::DW_AT_decl_column)?
                 .and_then(|v| v.udata_value())
                 .map(|v| v as u32);
-            let symbol = Symbol::new(
+            let symbol = Symbol::borrowed(
                 dwarf
                     .attr_string(&unit, linkage_name)
                     .context("symbol invalid")?
-                    .to_slice()?,
+                    .slice(),
             );
             let Ok(Some(gimli::AttributeValue::FileIndex(file_index))) =
                 entry.attr_value(gimli::DW_AT_decl_file)
