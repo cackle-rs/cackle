@@ -223,7 +223,7 @@ impl<'input> ApiUsageCollector<'input> {
                 let location = self
                     .bin
                     .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
-                    .unwrap_or_else(|| debug_info.source_location.clone());
+                    .unwrap_or_else(|| debug_info.source_location());
                 // Ignore references that come from code in the rust standard library.
                 if location.is_in_rust_std() {
                     continue;

@@ -13,11 +13,30 @@ use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 
 pub(crate) struct SymbolDebugInfo<'input> {
-    pub(crate) source_location: SourceLocation,
+    compdir: &'input Path,
+    directory: Option<&'input OsStr>,
+    path_name: &'input OsStr,
+    line: u32,
+    column: Option<u32>,
     // The name of what this symbol refers to. This is sometimes, but not always the demangled
     // version of the symbol. In particular, when generics are involved, the symbol often doesn't
     // include them, but this does.
     pub(crate) name: Option<&'input str>,
+}
+
+impl<'input> SymbolDebugInfo<'input> {
+    pub(crate) fn source_location(&self) -> SourceLocation {
+        let mut filename = self.compdir.to_owned();
+        if let Some(directory) = self.directory {
+            filename.push(directory);
+        }
+        filename.push(self.path_name);
+        SourceLocation {
+            filename,
+            line: self.line,
+            column: self.column,
+        }
+    }
 }
 
 pub(super) fn get_symbol_debug_info<'input>(
@@ -51,6 +70,7 @@ pub(super) fn get_symbol_debug_info<'input>(
             let Some(line) = entry
                 .attr_value(gimli::DW_AT_decl_line)?
                 .and_then(|v| v.udata_value())
+                .map(|v| v as u32)
             else {
                 continue;
             };
@@ -72,24 +92,23 @@ pub(super) fn get_symbol_debug_info<'input>(
             let Some(file) = header.file(file_index) else {
                 bail!("Object file contained invalid file index {file_index}");
             };
-            let mut path = compdir.to_owned();
-            if let Some(directory) = file.directory(header) {
+            let directory = if let Some(directory) = file.directory(header) {
                 let directory = dwarf.attr_string(&unit, directory)?;
-                path.push(OsStr::from_bytes(directory.as_ref()));
-            }
-            path.push(OsStr::from_bytes(
-                dwarf.attr_string(&unit, file.path_name())?.as_ref(),
-            ));
+                Some(OsStr::from_bytes(directory.slice()))
+            } else {
+                None
+            };
+            let path_name = OsStr::from_bytes(dwarf.attr_string(&unit, file.path_name())?.slice());
 
             output.insert(
                 symbol,
                 SymbolDebugInfo {
-                    source_location: SourceLocation {
-                        filename: path,
-                        line: line as u32,
-                        column,
-                    },
                     name,
+                    compdir,
+                    directory,
+                    path_name,
+                    line,
+                    column,
                 },
             );
         }
