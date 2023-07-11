@@ -59,6 +59,7 @@ version = "0.1.0"
 name = "crab8"
 version = "0.1.0"
 dependencies = [
+ "crab1",
  "crab6",
 ]
 

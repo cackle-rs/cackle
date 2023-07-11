@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 crab6 = { path = "../crab6" }
+
+[build-dependencies]
+crab1 = { path = "../crab1" }

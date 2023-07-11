@@ -91,9 +91,6 @@ struct SymbolInfo<'data> {
     /// The first symbol in the section.
     symbol: Symbol<'data>,
 
-    /// Whether `symbol` is a local in the current object file.
-    symbol_is_local: bool,
-
     /// The offset of the symbol.
     offset: u64,
 }
@@ -316,7 +313,6 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             {
                 section_info.first_symbol = Some(SymbolInfo {
                     symbol: Symbol::borrowed(name),
-                    symbol_is_local: symbol.is_local(),
                     offset: symbol.address(),
                 });
             }
@@ -339,31 +335,27 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
         symbols_out: &mut Vec<Symbol<'data>>,
         visited: &mut HashSet<SectionIndex>,
     ) -> Result<()> {
-        let (symbol, section_index) = self.get_symbol_and_section(rel.target())?;
-        if let Some(symbol) = symbol {
-            symbols_out.push(symbol);
-        }
-        if let Some(section_index) = section_index {
-            if !visited.insert(section_index) {
-                // We've already visited this section.
-                return Ok(());
+        match self.get_symbol_or_section(rel.target())? {
+            SymbolOrSection::Symbol(symbol) => {
+                symbols_out.push(symbol);
             }
-            let section = self.obj.section_by_index(section_index)?;
-            for (_, rel) in section.relocations() {
-                self.add_target_symbols(&rel, symbols_out, visited)?;
+            SymbolOrSection::Section(section_index) => {
+                if !visited.insert(section_index) {
+                    // We've already visited this section.
+                    return Ok(());
+                }
+                let section = self.obj.section_by_index(section_index)?;
+                for (_, rel) in section.relocations() {
+                    self.add_target_symbols(&rel, symbols_out, visited)?;
+                }
             }
         }
         Ok(())
     }
 
-    /// Returns the symbol and section index for a relocation target. If we have a symbol, we always
-    /// return it. If the symbol is a global definition, then we only return the symbol. If we have
-    /// no symbol, or the symbol is local to the current object file, then we return a section
-    /// index.
-    fn get_symbol_and_section(
-        &self,
-        target_in: RelocationTarget,
-    ) -> Result<(Option<Symbol<'data>>, Option<SectionIndex>)> {
+    /// Returns either symbol or the section index for a relocation target, giving preference to the
+    /// symbol.
+    fn get_symbol_or_section(&self, target_in: RelocationTarget) -> Result<SymbolOrSection<'data>> {
         let section_index = match target_in {
             RelocationTarget::Symbol(symbol_index) => {
                 let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else {
@@ -371,7 +363,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
-                    return Ok((Some(Symbol::borrowed(name).to_heap()), None));
+                    return Ok(SymbolOrSection::Symbol(Symbol::borrowed(name).to_heap()));
                 }
                 symbol.section_index().ok_or_else(|| {
                     anyhow!("Relocation target has empty name an no section index")
@@ -385,12 +377,9 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .get(section_index.0)
             .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?;
         if let Some(first_symbol_info) = section_info.first_symbol.as_ref() {
-            if first_symbol_info.symbol_is_local {
-                return Ok((Some(first_symbol_info.symbol.clone()), Some(section_index)));
-            }
-            return Ok((Some(first_symbol_info.symbol.clone()), None));
+            return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
         }
-        Ok((None, Some(section_index)))
+        Ok(SymbolOrSection::Section(section_index))
     }
 
     /// Returns information about the first symbol in the section.
@@ -399,6 +388,11 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .get(section.index().0)
             .and_then(|section_info| section_info.first_symbol.as_ref())
     }
+}
+
+enum SymbolOrSection<'data> {
+    Symbol(Symbol<'data>),
+    Section(SectionIndex),
 }
 
 impl<'input> BinInfo<'input> {
