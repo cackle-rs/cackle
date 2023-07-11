@@ -78,18 +78,18 @@ pub(crate) struct ScanOutputs {
 struct ObjectIndex<'obj, 'data> {
     obj: &'obj object::File<'data>,
 
-    section_infos: Vec<SectionInfo>,
+    section_infos: Vec<SectionInfo<'data>>,
 }
 
 #[derive(Clone, Default)]
-struct SectionInfo {
-    first_symbol: Option<SymbolInfo>,
+struct SectionInfo<'data> {
+    first_symbol: Option<SymbolInfo<'data>>,
 }
 
 #[derive(Clone)]
-struct SymbolInfo {
+struct SymbolInfo<'data> {
     /// The first symbol in the section.
-    symbol: Symbol<'static>,
+    symbol: Symbol<'data>,
 
     /// Whether `symbol` is a local in the current object file.
     symbol_is_local: bool,
@@ -261,9 +261,9 @@ impl<'input> ApiUsageCollector<'input> {
                                     permission.clone(),
                                     vec![Usage {
                                         source_location: location.clone(),
-                                        from: first_sym_info.symbol.clone(),
+                                        from: first_sym_info.symbol.to_heap(),
                                         to: name.clone(),
-                                        to_symbol: target_symbol.clone(),
+                                        to_symbol: target_symbol.to_heap(),
                                         debug_data,
                                     }],
                                 );
@@ -315,7 +315,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 .unwrap_or(true)
             {
                 section_info.first_symbol = Some(SymbolInfo {
-                    symbol: Symbol::borrowed(name).to_heap(),
+                    symbol: Symbol::borrowed(name),
                     symbol_is_local: symbol.is_local(),
                     offset: symbol.address(),
                 });
@@ -327,7 +327,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     /// Returns the symbol or symbols that `rel` refers to. If `rel` refers to a section that
     /// doesn't define a non-local symbol at address 0, then all outgoing references from that
     /// section will be included and so on recursively.
-    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol<'static>>> {
+    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol<'data>>> {
         let mut symbols_out = Vec::new();
         self.add_target_symbols(rel, &mut symbols_out, &mut HashSet::new())?;
         Ok(symbols_out)
@@ -336,7 +336,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn add_target_symbols(
         &self,
         rel: &object::Relocation,
-        symbols_out: &mut Vec<Symbol<'static>>,
+        symbols_out: &mut Vec<Symbol<'data>>,
         visited: &mut HashSet<SectionIndex>,
     ) -> Result<()> {
         let (symbol, section_index) = self.get_symbol_and_section(rel.target())?;
@@ -363,7 +363,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn get_symbol_and_section(
         &self,
         target_in: RelocationTarget,
-    ) -> Result<(Option<Symbol<'static>>, Option<SectionIndex>)> {
+    ) -> Result<(Option<Symbol<'data>>, Option<SectionIndex>)> {
         let section_index = match target_in {
             RelocationTarget::Symbol(symbol_index) => {
                 let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else {
@@ -394,7 +394,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     }
 
     /// Returns information about the first symbol in the section.
-    fn first_symbol(&self, section: &object::Section) -> Option<&SymbolInfo> {
+    fn first_symbol(&self, section: &object::Section) -> Option<&SymbolInfo<'data>> {
         self.section_infos
             .get(section.index().0)
             .and_then(|section_info| section_info.first_symbol.as_ref())
