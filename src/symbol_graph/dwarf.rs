@@ -12,17 +12,17 @@ use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 
-pub(crate) struct SymbolDebugInfo {
+pub(crate) struct SymbolDebugInfo<'input> {
     pub(crate) source_location: SourceLocation,
     // The name of what this symbol refers to. This is sometimes, but not always the demangled
     // version of the symbol. In particular, when generics are involved, the symbol often doesn't
     // include them, but this does.
-    pub(crate) name: Option<String>,
+    pub(crate) name: Option<&'input str>,
 }
 
-pub(super) fn get_symbol_debug_info(
-    dwarf: &Dwarf<EndianSlice<LittleEndian>>,
-) -> Result<HashMap<Symbol, SymbolDebugInfo>> {
+pub(super) fn get_symbol_debug_info<'input>(
+    dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
+) -> Result<HashMap<Symbol, SymbolDebugInfo<'input>>> {
     let mut output: HashMap<Symbol, SymbolDebugInfo> = HashMap::new();
     let mut units = dwarf.units();
     while let Some(unit_header) = units.next()? {
@@ -39,8 +39,7 @@ pub(super) fn get_symbol_debug_info(
                 .map(|name| dwarf.attr_string(&unit, name))
                 .transpose()?
                 .map(|name| name.to_string())
-                .transpose()?
-                .map(|name| name.to_owned());
+                .transpose()?;
             // When `linkage_name` and `name` would be the same (symbol is not mangled), then
             // `linkage_name` is omitted, so we use `name` as a fallback.
             let Some(linkage_name) = entry

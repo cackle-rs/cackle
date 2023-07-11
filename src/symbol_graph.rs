@@ -63,7 +63,7 @@ struct BinInfo<'input> {
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
 
     /// Information about each symbol obtained from the debug info.
-    symbol_debug_info: HashMap<Symbol, SymbolDebugInfo>,
+    symbol_debug_info: HashMap<Symbol, SymbolDebugInfo<'input>>,
 }
 
 #[derive(Default)]
