@@ -102,6 +102,11 @@ impl super::UserInterface for FullTermUi {
                         // When we're displaying an error, any key will dismiss the error popup. The key
                         // should then be ignored.
                         if error.take().is_some() {
+                            // But still process the quit key, since if the error came from
+                            // rendering, we'd like a way to get out.
+                            if key.code == KeyCode::Char('q') {
+                                problem_store.lock().abort();
+                            }
                             continue;
                         }
                         if let Err(e) = screen.handle_key(key) {
