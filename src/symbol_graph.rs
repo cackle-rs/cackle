@@ -51,13 +51,13 @@ enum Filetype {
 struct ApiUsageCollector<'input> {
     outputs: ScanOutputs,
 
-    exe: ExeInfo<'input>,
+    bin: BinInfo<'input>,
     debug_enabled: bool,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
 /// object (so).
-struct ExeInfo<'input> {
+struct BinInfo<'input> {
     filename: Arc<Path>,
     symbol_addresses: HashMap<Symbol, u64>,
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
@@ -100,30 +100,30 @@ struct SymbolInfo {
 
 pub(crate) fn scan_objects(
     paths: &[PathBuf],
-    exe_path: &Path,
+    bin_path: &Path,
     checker: &Checker,
 ) -> Result<ScanOutputs> {
-    let file_bytes = std::fs::read(exe_path)
-        .with_context(|| format!("Failed to read `{}`", exe_path.display()))?;
+    let file_bytes = std::fs::read(bin_path)
+        .with_context(|| format!("Failed to read `{}`", bin_path.display()))?;
     let obj = object::File::parse(file_bytes.as_slice())
-        .with_context(|| format!("Failed to parse {}", exe_path.display()))?;
+        .with_context(|| format!("Failed to parse {}", bin_path.display()))?;
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let symbol_to_locations = dwarf::get_symbol_debug_info(&dwarf)?;
     let ctx = addr2line::Context::from_dwarf(dwarf)
-        .with_context(|| format!("Failed to process {}", exe_path.display()))?;
+        .with_context(|| format!("Failed to process {}", bin_path.display()))?;
 
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
-        exe: ExeInfo {
-            filename: Arc::from(exe_path),
+        bin: BinInfo {
+            filename: Arc::from(bin_path),
             symbol_addresses: Default::default(),
             ctx,
             symbol_debug_info: symbol_to_locations,
         },
         debug_enabled: checker.args.debug,
     };
-    collector.exe.load_symbols(&obj)?;
+    collector.bin.load_symbols(&obj)?;
     for path in paths {
         collector
             .process_file(path, checker)
@@ -196,7 +196,7 @@ impl<'input> ApiUsageCollector<'input> {
                 debug!("Skipping section `{section_name}` due to lack of debug info");
                 continue;
             };
-            let Some(symbol_address_in_exe) = self.exe.symbol_addresses.get(&first_sym_info.symbol)
+            let Some(symbol_address_in_bin) = self.bin.symbol_addresses.get(&first_sym_info.symbol)
             else {
                 debug!(
                     "Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
@@ -204,7 +204,7 @@ impl<'input> ApiUsageCollector<'input> {
                 );
                 continue;
             };
-            let Some(debug_info) = self.exe.symbol_debug_info.get(&first_sym_info.symbol) else {
+            let Some(debug_info) = self.bin.symbol_debug_info.get(&first_sym_info.symbol) else {
                 continue;
             };
             let Some(from_name) = debug_info.name.as_ref() else {
@@ -221,8 +221,8 @@ impl<'input> ApiUsageCollector<'input> {
 
             for (offset, rel) in section.relocations() {
                 let location = self
-                    .exe
-                    .find_location(symbol_address_in_exe + offset - first_sym_info.offset)?
+                    .bin
+                    .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
                     .unwrap_or_else(|| debug_info.source_location.clone());
                 // Ignore references that come from code in the rust standard library.
                 if location.is_in_rust_std() {
@@ -234,7 +234,7 @@ impl<'input> ApiUsageCollector<'input> {
                 for target_symbol in object_index.target_symbols(&rel)? {
                     trace!("{} -> {target_symbol}", first_sym_info.symbol);
 
-                    let target_symbol_names = self.exe.names_from_symbol(&target_symbol)?;
+                    let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
                     for crate_name in &crate_names {
                         for name in &target_symbol_names {
                             // If a package references another symbol within the same package,
@@ -252,7 +252,7 @@ impl<'input> ApiUsageCollector<'input> {
                                     continue;
                                 }
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {
-                                    bin_path: self.exe.filename.clone(),
+                                    bin_path: self.bin.filename.clone(),
                                     object_file_path: filename.clone(),
                                     section_name: section_name.to_owned(),
                                 });
@@ -401,7 +401,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     }
 }
 
-impl<'input> ExeInfo<'input> {
+impl<'input> BinInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
         for symbol in obj.symbols() {
             self.symbol_addresses
