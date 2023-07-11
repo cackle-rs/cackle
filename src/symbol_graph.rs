@@ -37,6 +37,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 mod dwarf;
 pub(crate) mod object_file_path;
@@ -57,6 +58,7 @@ struct ApiUsageCollector<'input> {
 /// Information derived from a linked binary. Generally an executable, but could also be shared
 /// object (so).
 struct ExeInfo<'input> {
+    filename: Arc<Path>,
     symbol_addresses: HashMap<Symbol, u64>,
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
 
@@ -114,6 +116,7 @@ pub(crate) fn scan_objects(
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
         exe: ExeInfo {
+            filename: Arc::from(exe_path),
             symbol_addresses: Default::default(),
             ctx,
             symbol_debug_info: symbol_to_locations,
@@ -249,6 +252,7 @@ impl<'input> ApiUsageCollector<'input> {
                                     continue;
                                 }
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {
+                                    bin_path: self.exe.filename.clone(),
                                     object_file_path: filename.clone(),
                                     section_name: section_name.to_owned(),
                                 });
@@ -481,6 +485,7 @@ impl Filetype {
 /// passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UsageDebugData {
+    bin_path: Arc<Path>,
     object_file_path: ObjectFilePath,
     section_name: String,
 }
