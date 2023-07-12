@@ -250,8 +250,9 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             if !allow_linking {
                 let source_paths = crate::deps::source_files_from_rustc_args(std::env::args())?;
                 if !unsafe_permitted {
-                    if let Some(unsafe_usage) = find_unsafe_in_sources(&source_paths)? {
-                        let response = rpc_client.crate_uses_unsafe(&crate_name, unsafe_usage)?;
+                    let locations = find_unsafe_in_sources(&source_paths)?;
+                    if !locations.is_empty() {
+                        let response = rpc_client.crate_uses_unsafe(&crate_name, locations)?;
                         if response == Outcome::Continue {
                             continue;
                         }
@@ -275,16 +276,20 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             let output = &output;
             let stderr =
                 std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
-            match super::errors::get_error(stderr) {
-                Some(ErrorKind::Unsafe(location)) => {
-                    let response = rpc_client.crate_uses_unsafe(crate_name, location)?;
-                    if response == Outcome::Continue {
-                        continue;
-                    }
-                }
-                _ => {
-                    std::io::stdout().lock().write_all(&output.stdout)?;
-                    std::io::stderr().lock().write_all(&output.stderr)?;
+            let errors = super::errors::get_errors(stderr);
+            if errors.is_empty() {
+                std::io::stdout().lock().write_all(&output.stdout)?;
+                std::io::stderr().lock().write_all(&output.stderr)?;
+            } else {
+                let locations = errors
+                    .into_iter()
+                    .map(|error| match error {
+                        ErrorKind::Unsafe(location) => location,
+                    })
+                    .collect();
+                let response = rpc_client.crate_uses_unsafe(crate_name, locations)?;
+                if response == Outcome::Continue {
+                    continue;
                 }
             }
         }
@@ -297,14 +302,13 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     }
 }
 
-/// Searches for the first unsafe keyword in the specified paths.
-fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Option<SourceLocation>> {
+/// Searches for the unsafe keyword in the specified paths.
+fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Vec<SourceLocation>> {
+    let mut locations = Vec::new();
     for file in paths {
-        if let Some(location) = unsafe_checker::scan_path(file)? {
-            return Ok(Some(location));
-        }
+        locations.append(&mut unsafe_checker::scan_path(file)?);
     }
-    Ok(None)
+    Ok(locations)
 }
 
 /// Runs the real linker, then advises our parent process of all input files to the linker as well

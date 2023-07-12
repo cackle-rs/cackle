@@ -10,16 +10,17 @@ pub(crate) enum ErrorKind {
     Unsafe(SourceLocation),
 }
 
-/// Looks for a known kind of error in `output`, which should be the output from rustc with
+/// Looks for known kinds of errors in `output`, which should be the output from rustc with
 /// --error-format=json.
-pub(crate) fn get_error(output: &str) -> Option<ErrorKind> {
+pub(crate) fn get_errors(output: &str) -> Vec<ErrorKind> {
+    let mut errors = Vec::new();
     for line in output.lines() {
         let Ok(message) = serde_json::from_str::<Message>(line) else {
             continue;
         };
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
-                return Some(ErrorKind::Unsafe(SourceLocation {
+                errors.push(ErrorKind::Unsafe(SourceLocation {
                     filename: PathBuf::from(&first_span.file_name),
                     line: first_span.line_start,
                     column: None,
@@ -27,7 +28,7 @@ pub(crate) fn get_error(output: &str) -> Option<ErrorKind> {
             }
         }
     }
-    None
+    errors
 }
 
 #[derive(Deserialize, PartialEq, Eq, Debug)]
@@ -54,7 +55,7 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        assert_eq!(get_error(""), None);
+        assert_eq!(get_errors(""), vec![]);
     }
 
     #[test]
@@ -72,12 +73,12 @@ mod tests {
         }"#
         .replace('\n', "");
         assert_eq!(
-            get_error(&json),
-            Some(ErrorKind::Unsafe(SourceLocation {
+            get_errors(&json),
+            vec![ErrorKind::Unsafe(SourceLocation {
                 filename: PathBuf::from("src/main.rs"),
                 line: 10,
                 column: None,
-            }))
+            })]
         );
     }
 }

@@ -29,12 +29,12 @@ impl RpcClient {
     pub(crate) fn crate_uses_unsafe(
         &self,
         crate_name: &CrateName,
-        location: SourceLocation,
+        locations: Vec<SourceLocation>,
     ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: crate_name.clone(),
-            location,
+            locations,
         });
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
@@ -107,7 +107,7 @@ pub(crate) struct RustcOutput {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
     pub(crate) crate_name: CrateName,
-    pub(crate) location: SourceLocation,
+    pub(crate) locations: Vec<SourceLocation>,
 }
 
 /// Writes `value` to `stream`. The format used is the length followed by `value` serialised as
@@ -157,11 +157,11 @@ mod tests {
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: "foo".into(),
-            location: SourceLocation {
+            locations: vec![SourceLocation {
                 filename: PathBuf::from("src/main.rs"),
                 line: 42,
                 column: None,
-            },
+            }],
         });
         let mut buf = Vec::new();
         write_to_stream(&req, &mut buf).unwrap();

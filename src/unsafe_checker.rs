@@ -7,24 +7,26 @@ use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
 
-pub(crate) fn scan_path(path: &Path) -> Result<Option<SourceLocation>> {
+/// Returns the locations of all unsafe usages found in `path`.
+pub(crate) fn scan_path(path: &Path) -> Result<Vec<SourceLocation>> {
     let bytes =
         std::fs::read(path).with_context(|| format!("Failed to read `{}`", path.display()))?;
     let Ok(source) = std::str::from_utf8(&bytes) else {
         // If the file isn't valid UTF-8 then we don't need to check it for the unsafe keyword,
         // since it can't be a source file that the rust compiler would accept.
-        return Ok(None);
+        return Ok(Vec::new());
     };
     Ok(scan_string(source, path))
 }
 
-fn scan_string(source: &str, path: &Path) -> Option<SourceLocation> {
+fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
     let mut offset = 0;
+    let mut locations = Vec::new();
     for token in rustc_ap_rustc_lexer::tokenize(source) {
         let new_offset = offset + token.len;
         let token_text = &source[offset..new_offset];
         if token_text == "unsafe" {
-            return Some(SourceLocation {
+            locations.push(SourceLocation {
                 filename: path.to_owned(),
                 line: source[..offset].chars().filter(|ch| *ch == '\n').count() as u32 + 1,
                 column: None,
@@ -32,17 +34,20 @@ fn scan_string(source: &str, path: &Path) -> Option<SourceLocation> {
         }
         offset = new_offset;
     }
-    None
+    locations
 }
 
 #[cfg(test)]
 mod tests {
     use crate::unsafe_checker::scan_path;
     use crate::unsafe_checker::scan_string;
+    use std::ops::Not;
     use std::path::Path;
 
     fn unsafe_line(source: &str) -> Option<u32> {
-        scan_string(source, Path::new("test.rs")).map(|usage| usage.line)
+        scan_string(source, Path::new("test.rs"))
+            .first()
+            .map(|usage| usage.line)
     }
 
     #[test]
@@ -65,7 +70,7 @@ mod tests {
     fn has_unsafe_in_file(path: &str) -> bool {
         let root = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set");
         let root = Path::new(&root);
-        scan_path(&root.join(path)).unwrap().is_some()
+        scan_path(&root.join(path)).unwrap().is_empty().not()
     }
 
     #[test]

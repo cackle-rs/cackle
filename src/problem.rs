@@ -241,13 +241,19 @@ impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
-            Problem::DisallowedUnsafe(usage) => write!(
-                f,
-                "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
-                usage.crate_name,
-                usage.location.filename.display(),
-                usage.location.line
-            )?,
+            Problem::DisallowedUnsafe(usage) => {
+                write!(
+                    f,
+                    "Crate {} uses unsafe and doesn't have `allow_unsafe = true`",
+                    usage.crate_name,
+                )?;
+                if f.alternate() {
+                    writeln!(f)?;
+                    for location in &usage.locations {
+                        writeln!(f, "{location}")?;
+                    }
+                }
+            }
             Problem::UsesBuildScript(crate_name) => {
                 write!(
                     f,

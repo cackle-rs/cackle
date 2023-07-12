@@ -830,11 +830,11 @@ mod tests {
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
                     crate_name: "crab1".into(),
-                    location: SourceLocation {
+                    locations: vec![SourceLocation {
                         filename: "main.rs".into(),
                         line: 10,
                         column: None,
-                    },
+                    }],
                 }),
             )],
             indoc! {r#"
