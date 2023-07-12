@@ -4,16 +4,10 @@ use crate::checker::SourceLocation;
 use serde::Deserialize;
 use std::path::Path;
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ErrorKind {
-    /// Unsafe was used when it wasn't permitted.
-    Unsafe(SourceLocation),
-}
-
-/// Looks for known kinds of errors in `output`, which should be the output from rustc with
-/// --error-format=json.
-pub(crate) fn get_errors(output: &str) -> Vec<ErrorKind> {
-    let mut errors = Vec::new();
+/// Returns source locations for all errors related to use of unsafe code in `output`, which should
+/// be the output from rustc with --error-format=json.
+pub(crate) fn get_disallowed_unsafe_locations(output: &str) -> Vec<SourceLocation> {
+    let mut locations = Vec::new();
     //let workspace_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
     for line in output.lines() {
         let Ok(message) = serde_json::from_str::<Message>(line) else {
@@ -22,16 +16,16 @@ pub(crate) fn get_errors(output: &str) -> Vec<ErrorKind> {
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
                 let filename = Path::new(&first_span.file_name);
-                errors.push(ErrorKind::Unsafe(SourceLocation {
+                locations.push(SourceLocation {
                     filename: std::fs::canonicalize(filename)
                         .unwrap_or_else(|_| filename.to_owned()),
                     line: first_span.line_start,
                     column: Some(first_span.column_start),
-                }));
+                });
             }
         }
     }
-    errors
+    locations
 }
 
 #[derive(Deserialize, PartialEq, Eq, Debug)]
@@ -59,7 +53,7 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        assert_eq!(get_errors(""), vec![]);
+        assert_eq!(get_disallowed_unsafe_locations(""), vec![]);
     }
 
     #[test]
@@ -78,12 +72,12 @@ mod tests {
         }"#
         .replace('\n', "");
         assert_eq!(
-            get_errors(&json),
-            vec![ErrorKind::Unsafe(SourceLocation {
+            get_disallowed_unsafe_locations(&json),
+            vec![SourceLocation {
                 filename: std::fs::canonicalize(Path::new("src/main.rs")).unwrap(),
                 line: 10,
                 column: Some(20),
-            })]
+            }]
         );
     }
 }

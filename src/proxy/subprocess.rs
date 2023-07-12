@@ -13,7 +13,6 @@ use crate::config::CrateName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
 use crate::outcome::Outcome;
-use crate::proxy::errors::ErrorKind;
 use crate::proxy::rpc::RpcClient;
 use crate::unsafe_checker;
 use anyhow::anyhow;
@@ -276,18 +275,12 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             let output = &output;
             let stderr =
                 std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
-            let errors = super::errors::get_errors(stderr);
-            if errors.is_empty() {
+            let unsafe_locations = super::errors::get_disallowed_unsafe_locations(stderr);
+            if unsafe_locations.is_empty() {
                 std::io::stdout().lock().write_all(&output.stdout)?;
                 std::io::stderr().lock().write_all(&output.stderr)?;
             } else {
-                let locations = errors
-                    .into_iter()
-                    .map(|error| match error {
-                        ErrorKind::Unsafe(location) => location,
-                    })
-                    .collect();
-                let response = rpc_client.crate_uses_unsafe(crate_name, locations)?;
+                let response = rpc_client.crate_uses_unsafe(crate_name, unsafe_locations)?;
                 if response == Outcome::Continue {
                     continue;
                 }
