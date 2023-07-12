@@ -47,6 +47,12 @@ details.
 
 See [CONFIG.md](CONFIG.md).
 
+## Non-interactive use
+
+If you're running Cackle in a non-interactive workflow, e.g. as part of CI, you might like to
+disable the user interface for a slightly lighter build. Add `--no-default-features` to your `cargo
+install` command-line.
+
 ## Limitations and precautions
 
 * A proc macro might detect that it's being run under Cackle and emit different code.

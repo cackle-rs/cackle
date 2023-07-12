@@ -83,6 +83,7 @@ impl Sandbox for Bubblewrap {
     }
 }
 
+#[cfg(feature = "ui")]
 pub(crate) fn has_bwrap() -> bool {
     std::process::Command::new("bwrap")
         .arg("--version")

@@ -1,5 +1,3 @@
-use crate::config_editor;
-use crate::config_editor::ConfigEditor;
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
 use crate::problem::Problem;
@@ -80,11 +78,15 @@ impl ProblemStore {
 
     /// Resolve all problems for which at least one edit, when applied to `editor` gives an empty
     /// diff, provided that edit is not expected to produce an empty diff.
-    pub(crate) fn resolve_problems_with_empty_diff(&mut self, editor: &ConfigEditor) {
+    #[cfg(feature = "ui")]
+    pub(crate) fn resolve_problems_with_empty_diff(
+        &mut self,
+        editor: &crate::config_editor::ConfigEditor,
+    ) {
         let current_toml = editor.to_toml();
         let mut empty_indexes = Vec::new();
         for (index, problem) in self.iterate_with_duplicates() {
-            for edit in config_editor::fixes_for_problem(problem) {
+            for edit in crate::config_editor::fixes_for_problem(problem) {
                 if !edit.resolve_problem_if_edit_is_empty() {
                     continue;
                 }
@@ -134,10 +136,12 @@ impl ProblemStore {
         }
     }
 
+    #[cfg(feature = "ui")]
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.iter().all(|entry| entry.problems.is_empty())
     }
 
+    #[cfg(feature = "ui")]
     pub(crate) fn len(&self) -> usize {
         self.entries.iter().map(|entry| entry.problems.len()).sum()
     }
@@ -223,6 +227,7 @@ mod tests {
         store.add(create_problems());
         store.add(create_problems());
 
+        #[cfg(feature = "ui")]
         assert_eq!(store.len(), 4);
 
         let mut iter = store.iterate_with_duplicates();

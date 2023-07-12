@@ -99,6 +99,7 @@ pub(crate) enum SandboxKind {
     Bubblewrap,
 }
 
+#[cfg(feature = "ui")]
 pub(crate) const SANDBOX_KINDS: &[SandboxKind] = &[SandboxKind::Disabled, SandboxKind::Bubblewrap];
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]

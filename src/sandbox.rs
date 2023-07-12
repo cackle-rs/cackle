@@ -1,13 +1,11 @@
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 
 mod bubblewrap;
 
@@ -96,6 +94,7 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     Ok(Some(sandbox))
 }
 
+#[cfg(feature = "ui")]
 pub(crate) fn available_kind() -> SandboxKind {
     if bubblewrap::has_bwrap() {
         SandboxKind::Bubblewrap
@@ -104,9 +103,15 @@ pub(crate) fn available_kind() -> SandboxKind {
     }
 }
 
+#[cfg(feature = "ui")]
 pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
-    if kind == SandboxKind::Bubblewrap && Command::new("bwrap").arg("--version").output().is_err() {
-        bail!("Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`");
+    if kind == SandboxKind::Bubblewrap
+        && std::process::Command::new("bwrap")
+            .arg("--version")
+            .output()
+            .is_err()
+    {
+        anyhow::bail!("Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`");
     }
     Ok(())
 }

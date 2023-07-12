@@ -8,6 +8,7 @@ mod bytes;
 mod checker;
 mod colour;
 mod config;
+#[cfg(feature = "ui")]
 mod config_editor;
 mod config_validation;
 mod crate_index;
@@ -123,16 +124,10 @@ enum Command {
     #[default]
     Check,
     /// Interactive check of configuration.
-    Ui(UiArgs),
+    #[cfg(feature = "ui")]
+    Ui(ui::UiArgs),
     /// Print summary of permissions used.
     Summary(SummaryOptions),
-}
-
-#[derive(Parser, Debug, Clone)]
-struct UiArgs {
-    /// What kind of user interface to use.
-    #[clap(long, default_value = "full")]
-    ui: ui::Kind,
 }
 
 fn main() -> Result<()> {
@@ -345,16 +340,6 @@ impl Cackle {
                 .fix_problems(Problem::MissingConfiguration(self.config_path.clone()).into()));
         }
         Ok(Outcome::Continue)
-    }
-}
-
-impl Args {
-    fn ui_kind(&self) -> ui::Kind {
-        match &self.command {
-            Command::Check => ui::Kind::None,
-            Command::Ui(ui_args) => ui_args.ui,
-            Command::Summary(..) => ui::Kind::None,
-        }
     }
 }
 
