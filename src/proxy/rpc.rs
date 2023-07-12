@@ -1,6 +1,6 @@
 //! Defines the communication protocol between the proxy subprocesses and the parent process.
 
-use super::errors;
+use crate::checker::SourceLocation;
 use crate::config::CrateName;
 use crate::config::SandboxConfig;
 use crate::link_info::LinkInfo;
@@ -29,12 +29,12 @@ impl RpcClient {
     pub(crate) fn crate_uses_unsafe(
         &self,
         crate_name: &CrateName,
-        error_info: errors::UnsafeUsage,
+        location: SourceLocation,
     ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: crate_name.clone(),
-            error_info,
+            location,
         });
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
@@ -107,7 +107,7 @@ pub(crate) struct RustcOutput {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
     pub(crate) crate_name: CrateName,
-    pub(crate) error_info: errors::UnsafeUsage,
+    pub(crate) location: SourceLocation,
 }
 
 /// Writes `value` to `stream`. The format used is the length followed by `value` serialised as
@@ -157,9 +157,10 @@ mod tests {
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: "foo".into(),
-            error_info: errors::UnsafeUsage {
-                file_name: PathBuf::from("src/main.rs"),
-                start_line: 42,
+            location: SourceLocation {
+                filename: PathBuf::from("src/main.rs"),
+                line: 42,
+                column: None,
             },
         });
         let mut buf = Vec::new();

@@ -680,12 +680,10 @@ impl Display for dyn Edit {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::sync::Arc;
-
     use super::ConfigEditor;
     use super::Edit;
     use super::InlineStdApi;
+    use crate::checker::SourceLocation;
     use crate::config::Config;
     use crate::config::CrateName;
     use crate::config::PermissionName;
@@ -694,9 +692,10 @@ mod tests {
     use crate::problem::ApiUsage;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
-    use crate::proxy::errors::UnsafeUsage;
     use crate::proxy::rpc::BuildScriptOutput;
     use indoc::indoc;
+    use std::path::PathBuf;
+    use std::sync::Arc;
 
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
         Problem::DisallowedApiUsage(ApiUsage {
@@ -831,9 +830,10 @@ mod tests {
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
                     crate_name: "crab1".into(),
-                    error_info: UnsafeUsage {
-                        file_name: "main.rs".into(),
-                        start_line: 10,
+                    location: SourceLocation {
+                        filename: "main.rs".into(),
+                        line: 10,
+                        column: None,
                     },
                 }),
             )],

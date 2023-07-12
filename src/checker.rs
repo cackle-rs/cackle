@@ -21,6 +21,8 @@ use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use log::info;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -74,7 +76,7 @@ pub(crate) struct Usage {
     pub(crate) debug_data: Option<UsageDebugData>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub(crate) struct SourceLocation {
     pub(crate) filename: PathBuf,
     pub(crate) line: u32,

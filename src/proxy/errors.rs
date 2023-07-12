@@ -1,20 +1,13 @@
 //! Handles parsing of errors from rustc.
 
-use std::path::PathBuf;
-
+use crate::checker::SourceLocation;
 use serde::Deserialize;
-use serde::Serialize;
+use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ErrorKind {
     /// Unsafe was used when it wasn't permitted.
-    Unsafe(UnsafeUsage),
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Hash)]
-pub(crate) struct UnsafeUsage {
-    pub(crate) file_name: PathBuf,
-    pub(crate) start_line: u32,
+    Unsafe(SourceLocation),
 }
 
 /// Looks for a known kind of error in `output`, which should be the output from rustc with
@@ -26,9 +19,10 @@ pub(crate) fn get_error(output: &str) -> Option<ErrorKind> {
         };
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
-                return Some(ErrorKind::Unsafe(UnsafeUsage {
-                    file_name: PathBuf::from(&first_span.file_name),
-                    start_line: first_span.line_start,
+                return Some(ErrorKind::Unsafe(SourceLocation {
+                    filename: PathBuf::from(&first_span.file_name),
+                    line: first_span.line_start,
+                    column: None,
                 }));
             }
         }
@@ -79,9 +73,10 @@ mod tests {
         .replace('\n', "");
         assert_eq!(
             get_error(&json),
-            Some(ErrorKind::Unsafe(UnsafeUsage {
-                file_name: PathBuf::from("src/main.rs"),
-                start_line: 10
+            Some(ErrorKind::Unsafe(SourceLocation {
+                filename: PathBuf::from("src/main.rs"),
+                line: 10,
+                column: None,
             }))
         );
     }

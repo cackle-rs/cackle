@@ -2,12 +2,12 @@
 //! rustc, the linker or a build script. See comment on parent module for more details.
 
 use super::cackle_exe;
-use super::errors::UnsafeUsage;
 use super::rpc::BuildScriptOutput;
 use super::rpc::RustcOutput;
 use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
+use crate::checker::SourceLocation;
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::crate_index::CrateIndex;
@@ -276,8 +276,8 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             let stderr =
                 std::str::from_utf8(&output.stderr).context("rustc emitted invalid UTF-8")?;
             match super::errors::get_error(stderr) {
-                Some(ErrorKind::Unsafe(usage)) => {
-                    let response = rpc_client.crate_uses_unsafe(crate_name, usage)?;
+                Some(ErrorKind::Unsafe(location)) => {
+                    let response = rpc_client.crate_uses_unsafe(crate_name, location)?;
                     if response == Outcome::Continue {
                         continue;
                     }
@@ -298,10 +298,10 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
 }
 
 /// Searches for the first unsafe keyword in the specified paths.
-fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Option<UnsafeUsage>> {
+fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Option<SourceLocation>> {
     for file in paths {
-        if let Some(unsafe_usage) = unsafe_checker::scan_path(file)? {
-            return Ok(Some(unsafe_usage));
+        if let Some(location) = unsafe_checker::scan_path(file)? {
+            return Ok(Some(location));
         }
     }
     Ok(None)

@@ -245,8 +245,8 @@ impl Display for Problem {
                 f,
                 "Crate {} uses unsafe at {}:{} and doesn't have `allow_unsafe = true`",
                 usage.crate_name,
-                usage.error_info.file_name.display(),
-                usage.error_info.start_line
+                usage.location.filename.display(),
+                usage.location.line
             )?,
             Problem::UsesBuildScript(crate_name) => {
                 write!(

@@ -2,12 +2,12 @@
 //! layer of defence in addition to use of the -Funsafe-code flag when compiling crates, since that
 //! flag unfortunately doesn't completely prevent use of unsafe.
 
-use crate::proxy::errors::UnsafeUsage;
+use crate::checker::SourceLocation;
 use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
 
-pub(crate) fn scan_path(path: &Path) -> Result<Option<UnsafeUsage>> {
+pub(crate) fn scan_path(path: &Path) -> Result<Option<SourceLocation>> {
     let bytes =
         std::fs::read(path).with_context(|| format!("Failed to read `{}`", path.display()))?;
     let Ok(source) = std::str::from_utf8(&bytes) else {
@@ -18,15 +18,16 @@ pub(crate) fn scan_path(path: &Path) -> Result<Option<UnsafeUsage>> {
     Ok(scan_string(source, path))
 }
 
-fn scan_string(source: &str, path: &Path) -> Option<UnsafeUsage> {
+fn scan_string(source: &str, path: &Path) -> Option<SourceLocation> {
     let mut offset = 0;
     for token in rustc_ap_rustc_lexer::tokenize(source) {
         let new_offset = offset + token.len;
         let token_text = &source[offset..new_offset];
         if token_text == "unsafe" {
-            return Some(UnsafeUsage {
-                file_name: path.to_owned(),
-                start_line: source[..offset].chars().filter(|ch| *ch == '\n').count() as u32 + 1,
+            return Some(SourceLocation {
+                filename: path.to_owned(),
+                line: source[..offset].chars().filter(|ch| *ch == '\n').count() as u32 + 1,
+                column: None,
             });
         }
         offset = new_offset;
@@ -41,7 +42,7 @@ mod tests {
     use std::path::Path;
 
     fn unsafe_line(source: &str) -> Option<u32> {
-        scan_string(source, Path::new("test.rs")).map(|usage| usage.start_line)
+        scan_string(source, Path::new("test.rs")).map(|usage| usage.line)
     }
 
     #[test]
