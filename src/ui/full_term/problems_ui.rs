@@ -129,6 +129,15 @@ impl ProblemsUi {
                 self.modes.push(Mode::SelectUsage);
                 self.usage_index = 0;
             }
+            (Mode::SelectUsage, KeyCode::Char('d')) => {
+                // We're already in details mode, drop back out to the problems list.
+                self.modes.pop();
+            }
+            (Mode::SelectUsage, KeyCode::Char('f')) => {
+                // We're showing details, jump over to showing edits.
+                self.modes.pop();
+                self.modes.push(Mode::SelectEdit);
+            }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
                 if self.problem_index >= self.problem_store.lock().len() {
@@ -424,6 +433,19 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
                     ("space/enter/f", "Apply this edit"),
                     ("up", "Select previous edit"),
                     ("down", "Select next edit"),
+                    ("esc", "Return to problem list"),
+                ]
+                .into_iter(),
+            );
+        }
+        Some(Mode::SelectUsage) => {
+            title = "Help for select-usage";
+            keys.extend(
+                [
+                    ("up", "Select previous usage"),
+                    ("down", "Select next usage"),
+                    ("f", "Jump to edits for the current problem"),
+                    ("d/esc", "Return to problem list"),
                 ]
                 .into_iter(),
             );
