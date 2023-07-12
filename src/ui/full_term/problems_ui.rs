@@ -5,6 +5,7 @@ use super::render_list;
 use super::split_vertical;
 use super::update_counter;
 use crate::checker::ApiUsage;
+use crate::checker::SourceLocation;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
@@ -227,9 +228,9 @@ impl ProblemsUi {
                 } else if is_usage_mode {
                     let usages = usages_for_problem(pstore_lock, self.problem_index);
                     items.extend(
-                        usages.iter().map(|usage| {
-                            ListItem::new(format!("  {} -> {}", usage.from, usage.to))
-                        }),
+                        usages
+                            .iter()
+                            .map(|usage| ListItem::new(format!("  {}", usage.list_display()))),
                     );
                 }
             }
@@ -277,7 +278,7 @@ impl ProblemsUi {
         edits_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
-    fn usages(&self) -> Vec<ApiUsage> {
+    fn usages(&self) -> Vec<Box<dyn DisplayUsage>> {
         usages_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
@@ -302,11 +303,11 @@ impl ProblemsUi {
             return;
         };
 
-        let mut lines = usage_source_lines(usage).unwrap_or_else(error_lines);
+        let mut lines = usage_source_lines(&**usage).unwrap_or_else(error_lines);
 
-        if let Some(debug_data) = usage.debug_data.as_ref() {
+        if let Some(debug_data) = usage.debug_data() {
             lines.push(Line::from(""));
-            for line in format!("{debug_data:#?}").lines() {
+            for line in debug_data.lines() {
                 lines.push(Line::from(line.to_owned()));
             }
         }
@@ -372,23 +373,24 @@ fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'st
     Ok(lines)
 }
 
-fn usage_source_lines(usage: &ApiUsage) -> Result<Vec<Line<'static>>> {
+fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
     let mut lines = Vec::new();
+    let source_location = usage.source_location();
     lines.push(Line::from(format!(
         "{}",
-        usage.source_location.filename.display()
+        source_location.filename.display()
     )));
-    let source = crate::fs::read_to_string(&usage.source_location.filename)?;
+    let source = crate::fs::read_to_string(&source_location.filename)?;
     let relevant_line = source
         .lines()
-        .nth(usage.source_location.line as usize - 1)
+        .nth(source_location.line as usize - 1)
         .ok_or_else(|| anyhow!("Line number not found in file"))?;
     let gutter_width = 5;
     lines.push(Line::from(format!(
         "{:gutter_width$}: {relevant_line}",
-        usage.source_location.line
+        source_location.line
     )));
-    if let Some(column) = usage.source_location.column {
+    if let Some(column) = source_location.column {
         let column = column as usize + 1;
         lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
     }
@@ -476,14 +478,41 @@ fn edits_for_problem(
 fn usages_for_problem(
     pstore_lock: &MutexGuard<ProblemStore>,
     problem_index: usize,
-) -> Vec<ApiUsage> {
-    let mut usages_out = Vec::new();
+) -> Vec<Box<dyn DisplayUsage>> {
+    let mut usages_out: Vec<Box<dyn DisplayUsage>> = Vec::new();
     if let Some((_, Problem::DisallowedApiUsage(usages))) =
         pstore_lock.deduplicated_into_iter().nth(problem_index)
     {
         for usages in usages.usages.values() {
-            usages_out.extend(usages.iter().cloned());
+            for usage in usages {
+                usages_out.push(Box::new(usage.clone()));
+            }
         }
     }
     usages_out
+}
+
+/// A trait implemented for things that can display in a usage list.
+trait DisplayUsage {
+    fn source_location(&self) -> &SourceLocation;
+    fn debug_data(&self) -> Option<String>;
+
+    /// A single line that we display in the list of usages.
+    fn list_display(&self) -> String;
+}
+
+impl DisplayUsage for ApiUsage {
+    fn source_location(&self) -> &SourceLocation {
+        &self.source_location
+    }
+
+    fn debug_data(&self) -> Option<String> {
+        self.debug_data
+            .as_ref()
+            .map(|debug_data| format!("{debug_data:#?}"))
+    }
+
+    fn list_display(&self) -> String {
+        format!("{} -> {}", self.from, self.to)
+    }
 }
