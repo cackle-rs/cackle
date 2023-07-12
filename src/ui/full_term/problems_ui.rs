@@ -13,7 +13,6 @@ use crate::problem::Problem;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
-use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use crossterm::event::KeyCode;
@@ -21,6 +20,7 @@ use crossterm::event::KeyEvent;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -383,25 +383,53 @@ fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'st
 }
 
 fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
+    let before_context = 2;
+    let max_lines = 5;
+
     let mut lines = Vec::new();
     let source_location = usage.source_location();
     lines.push(Line::from(format!(
         "{}",
         source_location.filename.display()
     )));
+
     let source = crate::fs::read_to_string(&source_location.filename)?;
-    let relevant_line = source
-        .lines()
-        .nth(source_location.line as usize - 1)
-        .ok_or_else(|| anyhow!("Line number not found in file"))?;
-    let gutter_width = 5;
-    lines.push(Line::from(format!(
-        "{:gutter_width$}: {relevant_line}",
-        source_location.line
-    )));
-    if let Some(column) = source_location.column {
-        let column = column as usize + 1;
-        lines.push(Line::from(format!("{:gutter_width$}{:column$}^", "", "")));
+    let target_line = source_location.line as i32;
+    let start_line = (target_line - before_context).max(1);
+    let gutter_width = ((start_line + max_lines as i32).ilog10() + 1) as usize;
+    for (n, line) in source.lines().skip(start_line as usize - 1).enumerate() {
+        if n == max_lines {
+            break;
+        }
+        let line_number = start_line + n as i32;
+        let marker = if line_number == target_line {
+            "> "
+        } else {
+            "  "
+        };
+        let mut spans = vec![Span::from(format!(
+            "{marker}{:gutter_width$}: ",
+            line_number
+        ))];
+        if line_number == target_line {
+            if let Some(column) = source_location.column {
+                let column = column as usize - 1;
+                spans.push(Span::from(line[..column].to_owned()));
+                spans.push(Span::styled(
+                    line[column..column + 1].to_owned(),
+                    Style::default().add_modifier(Modifier::REVERSED),
+                ));
+                spans.push(Span::from(line[column + 1..].to_owned()));
+            } else {
+                spans.push(Span::styled(
+                    line.to_owned(),
+                    Style::default().add_modifier(Modifier::UNDERLINED),
+                ));
+            }
+        } else {
+            spans.push(Span::from(line.to_owned()));
+        }
+        lines.push(Line::from(spans));
     }
     Ok(lines)
 }
