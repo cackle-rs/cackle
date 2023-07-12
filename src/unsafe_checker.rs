@@ -28,12 +28,12 @@ fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
         if token_text == "unsafe" {
             locations.push(SourceLocation {
                 filename: path.to_owned(),
-                line: 1.max(source[..offset].lines().count() as u32),
+                line: 1.max(source[..new_offset].lines().count() as u32),
                 column: Some(
-                    source[..offset]
+                    source[..new_offset]
                         .lines()
                         .last()
-                        .map(|line| line.len() as u32 + 1)
+                        .map(|line| (line.len() - token_text.len() + 1) as u32)
                         .unwrap_or(1),
                 ),
             });
@@ -71,6 +71,10 @@ mod tests {
                 }"#
             }),
             Some((2, 5))
+        );
+        assert_eq!(
+            unsafe_line_col("#[cfg(foo)]\nunsafe fn bar() {}"),
+            Some((2, 1))
         );
     }
 
