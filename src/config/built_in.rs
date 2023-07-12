@@ -33,6 +33,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
                 "std::env::vars",
                 "std::env::vars_os",
                 "std::io::Write",
+                "std::io::buffered",
                 "std::io::error",
                 "std::io::impls",
                 "std::io::stdio",
