@@ -26,7 +26,6 @@ pub(crate) struct ProblemList {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Problem {
     Message(String),
-    Error(ErrorDetails),
     MissingConfiguration(PathBuf),
     UsesBuildScript(CrateName),
     DisallowedUnsafe(UnsafeUsage),
@@ -294,13 +293,6 @@ impl Display for Problem {
                     "Package `{}` exports API `{}`",
                     info.crate_name, info.api
                 )?;
-            }
-            Problem::Error(info) => {
-                if f.alternate() {
-                    write!(f, "{}", info.detail)?;
-                } else {
-                    write!(f, "{}", info.short)?;
-                }
             }
         }
         Ok(())

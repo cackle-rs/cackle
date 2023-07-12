@@ -2,7 +2,6 @@ use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
-use crate::problem::ErrorDetails;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use log::info;
@@ -46,12 +45,6 @@ impl ProblemStoreRef {
         }
         let outcome = self.lock().add(problems);
         outcome.recv().unwrap_or(Outcome::GiveUp)
-    }
-
-    /// Reports an error and waits until it's acknowledged or the UI shuts down.
-    pub(crate) fn report_error(&mut self, error: anyhow::Error) {
-        let outcome = self.lock().report_error(error);
-        let _ = outcome.recv();
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<ProblemStore> {
@@ -139,16 +132,6 @@ impl ProblemStore {
             problems = problems.grouped_by_type_and_crate();
             std::mem::swap(&mut problems, &mut plist.problems);
         }
-    }
-
-    pub(crate) fn report_error(&mut self, error: anyhow::Error) -> Receiver<Outcome> {
-        self.add(
-            Problem::Error(ErrorDetails {
-                short: format!("{error}"),
-                detail: format!("{error:#}"),
-            })
-            .into(),
-        )
     }
 
     pub(crate) fn is_empty(&self) -> bool {

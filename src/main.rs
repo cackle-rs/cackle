@@ -220,9 +220,10 @@ impl Cackle {
         if let Command::Summary(options) = &self.args.command {
             return self.print_summary(options);
         }
+        let mut error = None;
         let exit_code = match self.run(abort_recv) {
-            Err(error) => {
-                self.problem_store.report_error(error);
+            Err(e) => {
+                error = Some(e);
                 outcome::FAILURE
             }
             Ok(exit_code) => exit_code,
@@ -232,6 +233,11 @@ impl Cackle {
             println!("UI error: {error}");
             return outcome::FAILURE;
         }
+        // Now that the UI (if any) has shut down, print any errors.
+        if let Some(error) = error {
+            println!("{error:#}");
+        }
+
         if self.args.print_path_to_crate_map {
             self.checker.lock().unwrap().print_path_to_crate_map();
         }
@@ -292,7 +298,7 @@ impl Cackle {
             )
         } else {
             // We've already detected problems before running cargo, don't run cargo.
-            Ok(None)
+            Ok(())
         };
 
         if self.problem_store.lock().has_aborted {
@@ -300,11 +306,7 @@ impl Cackle {
         }
 
         // We only check if the build failed if there were no ACL check errors.
-        if let Some(build_failure) = build_result? {
-            println!("Build failure: {build_failure}");
-            info!("Build failure: {build_failure}");
-            return Ok(outcome::FAILURE);
-        }
+        build_result?;
 
         let unused_problems = self.checker.lock().unwrap().check_unused();
         let resolution = self.problem_store.fix_problems(unused_problems);

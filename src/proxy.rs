@@ -50,6 +50,7 @@ const SOCKET_ENV: &str = "CACKLE_SOCKET_PATH";
 const CONFIG_PATH_ENV: &str = "CACKLE_CONFIG_PATH";
 const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 
+#[derive(Debug)]
 pub(crate) struct CargoBuildFailure {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
@@ -71,7 +72,7 @@ pub(crate) fn invoke_cargo_build(
     args: &Args,
     abort_recv: Receiver<()>,
     request_creator: impl Fn(Request) -> RequestHandler,
-) -> Result<Option<CargoBuildFailure>> {
+) -> Result<()> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
         panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
     }
@@ -128,7 +129,7 @@ pub(crate) fn invoke_cargo_build(
             // Deleting the socket is best-effort only, so we don't report an error if we can't.
             let _ = std::fs::remove_file(&ipc_path);
             if status.code() != Some(0) {
-                return Ok(Some(CargoBuildFailure { stdout, stderr }));
+                return Err(CargoBuildFailure { stdout, stderr }.into());
             }
             break;
         }
@@ -159,7 +160,7 @@ pub(crate) fn invoke_cargo_build(
         }
     }
 
-    Ok(None)
+    Ok(())
 }
 
 fn start_output_collecting_thread(
@@ -206,3 +207,5 @@ impl Display for CargoBuildFailure {
         Ok(())
     }
 }
+
+impl std::error::Error for CargoBuildFailure {}
