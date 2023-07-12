@@ -3,7 +3,7 @@
 use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::config::SandboxKind;
-use crate::problem::ApiUsage;
+use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -486,7 +486,7 @@ impl Edit for IgnoreApi {
 }
 
 struct AllowApiUsage {
-    usage: ApiUsage,
+    usage: ApiUsages,
 }
 
 impl Edit for AllowApiUsage {
@@ -689,7 +689,7 @@ mod tests {
     use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
-    use crate::problem::ApiUsage;
+    use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::proxy::rpc::BuildScriptOutput;
@@ -698,7 +698,7 @@ mod tests {
     use std::sync::Arc;
 
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
-        Problem::DisallowedApiUsage(ApiUsage {
+        Problem::DisallowedApiUsage(ApiUsages {
             crate_name: pkg_name.into(),
             usages: apis
                 .iter()

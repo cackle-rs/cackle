@@ -1,8 +1,8 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
+use crate::checker::ApiUsage;
 use crate::checker::SourceLocation;
-use crate::checker::Usage;
 use crate::config::CrateName;
 use crate::config::PermConfig;
 use crate::config::PermissionName;
@@ -31,7 +31,7 @@ pub(crate) enum Problem {
     UsesBuildScript(CrateName),
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(CrateName),
-    DisallowedApiUsage(ApiUsage),
+    DisallowedApiUsage(ApiUsages),
     BuildScriptFailed(BuildScriptFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(CrateName),
@@ -53,9 +53,9 @@ pub(crate) struct BuildScriptFailed {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ApiUsage {
+pub(crate) struct ApiUsages {
     pub(crate) crate_name: CrateName,
-    pub(crate) usages: BTreeMap<PermissionName, Vec<Usage>>,
+    pub(crate) usages: BTreeMap<PermissionName, Vec<ApiUsage>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -128,7 +128,7 @@ impl ProblemList {
 
     /// Combines disallowed API usages by whatever the supplied `group_fn` returns.
     #[must_use]
-    fn grouped_by(mut self, group_fn: impl Fn(&ApiUsage) -> String) -> ProblemList {
+    fn grouped_by(mut self, group_fn: impl Fn(&ApiUsages) -> String) -> ProblemList {
         let mut merged = ProblemList::default();
         let mut disallowed_by_crate_name: HashMap<String, usize> = HashMap::new();
         for problem in self.problems.drain(..) {
@@ -307,7 +307,7 @@ impl Display for Problem {
     }
 }
 
-impl Display for ApiUsage {
+impl Display for ApiUsages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
             writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_name)?;
@@ -382,15 +382,18 @@ impl Display for BuildScriptFailed {
     }
 }
 
-fn display_usages(f: &mut std::fmt::Formatter, usages: &Vec<Usage>) -> Result<(), std::fmt::Error> {
-    let mut by_source_filename: BTreeMap<&Path, Vec<&Usage>> = BTreeMap::new();
+fn display_usages(
+    f: &mut std::fmt::Formatter,
+    usages: &Vec<ApiUsage>,
+) -> Result<(), std::fmt::Error> {
+    let mut by_source_filename: BTreeMap<&Path, Vec<&ApiUsage>> = BTreeMap::new();
     for u in usages {
         by_source_filename
             .entry(&u.source_location.filename)
             .or_default()
             .push(u);
     }
-    let mut by_from: BTreeMap<&Symbol, Vec<&Usage>> = BTreeMap::new();
+    let mut by_from: BTreeMap<&Symbol, Vec<&ApiUsage>> = BTreeMap::new();
     for (filename, usages_for_location) in by_source_filename {
         writeln!(f, "    {}", filename.display())?;
         by_from.clear();
@@ -429,7 +432,7 @@ impl From<Problem> for ProblemList {
     }
 }
 
-impl std::hash::Hash for ApiUsage {
+impl std::hash::Hash for ApiUsages {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.crate_name.hash(state);
         // Out of laziness, we only hash the permission names, not the usage information.
@@ -439,7 +442,7 @@ impl std::hash::Hash for ApiUsage {
     }
 }
 
-impl ApiUsage {
+impl ApiUsages {
     /// Returns an opaque key that can be used in a HashMap for deduplication. Notably, doesn't
     /// include the target or debug data. The idea is to collect several usages that are identical
     /// except for the target, then pick the shortest of them to show to the user. For example if we
@@ -457,7 +460,7 @@ impl ApiUsage {
         )
     }
 
-    pub(crate) fn first_usage(&self) -> Option<&Usage> {
+    pub(crate) fn first_usage(&self) -> Option<&ApiUsage> {
         self.usages.values().next().and_then(|u| u.get(0))
     }
 }
@@ -466,8 +469,8 @@ impl ApiUsage {
 mod tests {
     use super::Problem;
     use super::ProblemList;
+    use crate::checker::ApiUsage;
     use crate::checker::SourceLocation;
-    use crate::checker::Usage;
     use crate::config::CrateName;
     use crate::config::PermissionName;
     use crate::symbol::Symbol;
@@ -506,7 +509,7 @@ mod tests {
         assert_eq!(package_names, vec!["foo1", "foo2"]);
     }
 
-    fn create_problem(package: &str, permissions_and_usage: &[(&str, &[Usage])]) -> Problem {
+    fn create_problem(package: &str, permissions_and_usage: &[(&str, &[ApiUsage])]) -> Problem {
         let mut usages = BTreeMap::new();
         for (perm_name, usage) in permissions_and_usage {
             usages.insert(
@@ -516,14 +519,14 @@ mod tests {
                 usage.to_vec(),
             );
         }
-        Problem::DisallowedApiUsage(super::ApiUsage {
+        Problem::DisallowedApiUsage(super::ApiUsages {
             crate_name: CrateName::from(package),
             usages,
         })
     }
 
-    fn create_usage(from: &str, to: &str) -> Usage {
-        Usage {
+    fn create_usage(from: &str, to: &str) -> ApiUsage {
+        ApiUsage {
             source_location: SourceLocation {
                 filename: "lib.rs".into(),
                 line: 1,

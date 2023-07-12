@@ -6,7 +6,7 @@ use crate::config::PermissionName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
 use crate::names::Name;
-use crate::problem::ApiUsage;
+use crate::problem::ApiUsages;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
@@ -68,7 +68,7 @@ pub(crate) struct CrateInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Usage {
+pub(crate) struct ApiUsage {
     pub(crate) source_location: SourceLocation,
     pub(crate) from: Symbol<'static>,
     pub(crate) to: Name,
@@ -310,7 +310,7 @@ impl Checker {
         matched
     }
 
-    pub(crate) fn permission_used(&mut self, api_usage: &ApiUsage, problems: &mut ProblemList) {
+    pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
         assert_eq!(api_usage.usages.keys().count(), 1);
         let permission = api_usage.usages.keys().next().unwrap();
         let crate_info = &mut self
@@ -457,7 +457,7 @@ mod tests {
             let mut usages = BTreeMap::new();
             usages.insert(
                 api,
-                vec![Usage {
+                vec![ApiUsage {
                     source_location: SourceLocation {
                         filename: "lib.rs".into(),
                         line: 1,
@@ -469,7 +469,7 @@ mod tests {
                     debug_data: None,
                 }],
             );
-            let api_usage = ApiUsage {
+            let api_usage = ApiUsages {
                 crate_name: crate_name.clone(),
                 usages,
             };

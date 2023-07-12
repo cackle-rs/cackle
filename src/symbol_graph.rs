@@ -7,11 +7,11 @@
 
 use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
+use crate::checker::ApiUsage;
 use crate::checker::Checker;
 use crate::checker::SourceLocation;
-use crate::checker::Usage;
 use crate::names::Name;
-use crate::problem::ApiUsage;
+use crate::problem::ApiUsages;
 use crate::problem::ProblemList;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
@@ -68,7 +68,7 @@ struct BinInfo<'input> {
 
 #[derive(Default)]
 pub(crate) struct ScanOutputs {
-    api_usages: Vec<ApiUsage>,
+    api_usages: Vec<ApiUsages>,
 
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
     /// once computed, they won't be recomputed.
@@ -186,7 +186,7 @@ impl<'input> ApiUsageCollector<'input> {
         let obj = object::File::parse(file_bytes)
             .with_context(|| format!("Failed to parse {}", filename))?;
         let object_index = ObjectIndex::new(&obj);
-        let mut new_api_usages: HashMap<_, Vec<ApiUsage>> = HashMap::new();
+        let mut new_api_usages: HashMap<_, Vec<ApiUsages>> = HashMap::new();
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
             let Some(first_sym_info) = object_index.first_symbol(&section) else {
@@ -256,7 +256,7 @@ impl<'input> ApiUsageCollector<'input> {
                                 let mut usages = BTreeMap::new();
                                 usages.insert(
                                     permission.clone(),
-                                    vec![Usage {
+                                    vec![ApiUsage {
                                         source_location: location.clone(),
                                         from: first_sym_info.symbol.to_heap(),
                                         to: name.clone(),
@@ -264,7 +264,7 @@ impl<'input> ApiUsageCollector<'input> {
                                         debug_data,
                                     }],
                                 );
-                                let api_usage = ApiUsage {
+                                let api_usage = ApiUsages {
                                     crate_name: crate_name.clone(),
                                     usages,
                                 };

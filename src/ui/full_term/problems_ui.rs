@@ -4,7 +4,7 @@ use super::message_area;
 use super::render_list;
 use super::split_vertical;
 use super::update_counter;
-use crate::checker::Usage;
+use crate::checker::ApiUsage;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
@@ -277,7 +277,7 @@ impl ProblemsUi {
         edits_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
-    fn usages(&self) -> Vec<Usage> {
+    fn usages(&self) -> Vec<ApiUsage> {
         usages_for_problem(&self.problem_store.lock(), self.problem_index)
     }
 
@@ -372,7 +372,7 @@ fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'st
     Ok(lines)
 }
 
-fn usage_source_lines(usage: &Usage) -> Result<Vec<Line<'static>>> {
+fn usage_source_lines(usage: &ApiUsage) -> Result<Vec<Line<'static>>> {
     let mut lines = Vec::new();
     lines.push(Line::from(format!(
         "{}",
@@ -473,7 +473,10 @@ fn edits_for_problem(
     config_editor::fixes_for_problem(problem)
 }
 
-fn usages_for_problem(pstore_lock: &MutexGuard<ProblemStore>, problem_index: usize) -> Vec<Usage> {
+fn usages_for_problem(
+    pstore_lock: &MutexGuard<ProblemStore>,
+    problem_index: usize,
+) -> Vec<ApiUsage> {
     let mut usages_out = Vec::new();
     if let Some((_, Problem::DisallowedApiUsage(usages))) =
         pstore_lock.deduplicated_into_iter().nth(problem_index)
