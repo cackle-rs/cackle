@@ -32,8 +32,8 @@ use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process;
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::mpsc::channel;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -50,7 +50,8 @@ const CONFIG_PATH_ENV: &str = "CACKLE_CONFIG_PATH";
 const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 
 pub(crate) struct CargoBuildFailure {
-    output: std::process::Output,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 
 pub(crate) fn clean(dir: &Path, args: &Args) -> Result<()> {
@@ -98,31 +99,34 @@ pub(crate) fn invoke_cargo_build(
     // then they might still be set in our subprocesses, which might then get confused and think
     // they're proxying the build of "cackle" itself.
     command.env_remove("CARGO_PKG_NAME");
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut cargo_process = command
+        .spawn()
+        .with_context(|| format!("Failed to run {command:?}"))?;
 
-    let cargo_thread: JoinHandle<Result<process::Output>> =
-        std::thread::spawn(move || -> Result<process::Output> {
-            // TODO: Rather than collecting all output, we should read cargo's stdout/stderr as it
-            // is emitted and pass it through to our stdout/stderr, but only until we encounter a
-            // permissions problem - all output after that from cargo should be dropped.
-            let output = command
-                .output()
-                .with_context(|| format!("Failed to run {command:?}"))?;
-            Ok(output)
-        });
+    let stdout_thread = start_output_collecting_thread(
+        "cargo-stdout-reader",
+        cargo_process.stdout.take().unwrap(),
+    )?;
+    let stderr_thread = start_output_collecting_thread(
+        "cargo-stderr-reader",
+        cargo_process.stderr.take().unwrap(),
+    )?;
 
     listener
         .set_nonblocking(true)
         .context("Failed to set socket to non-blocking")?;
     let (error_send, error_recv) = channel();
     loop {
-        if cargo_thread.is_finished() {
-            // The following unwrap will only panic if the cargo thread panicked.
-            let output = cargo_thread.join().unwrap()?;
+        if let Some(status) = cargo_process.try_wait()? {
+            // The following unwrap will only panic if an output collecting thread panicked.
+            let stdout = stdout_thread.join().unwrap();
+            let stderr = stderr_thread.join().unwrap();
             drop(listener);
             // Deleting the socket is best-effort only, so we don't report an error if we can't.
             let _ = std::fs::remove_file(&ipc_path);
-            if output.status.code() != Some(0) {
-                return Ok(Some(CargoBuildFailure { output }));
+            if status.code() != Some(0) {
+                return Ok(Some(CargoBuildFailure { stdout, stderr }));
             }
             break;
         }
@@ -153,6 +157,19 @@ pub(crate) fn invoke_cargo_build(
     Ok(None)
 }
 
+fn start_output_collecting_thread(
+    thread_name: &str,
+    mut reader: impl std::io::Read + Send + 'static,
+) -> Result<JoinHandle<Vec<u8>>> {
+    Ok(std::thread::Builder::new()
+        .name(thread_name.to_owned())
+        .spawn(move || -> Vec<u8> {
+            let mut output = Vec::new();
+            let _ = reader.read_to_end(&mut output);
+            output
+        })?)
+}
+
 fn process_request(mut request_handler: RequestHandler, mut connection: UnixStream) -> Result<()> {
     let response = request_handler.handle_request();
     let can_continue = response.as_ref().unwrap_or(&Outcome::GiveUp);
@@ -179,8 +196,8 @@ fn cackle_exe() -> Result<PathBuf> {
 
 impl Display for CargoBuildFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.output.stdout))?;
-        write!(f, "{}", String::from_utf8_lossy(&self.output.stderr))?;
+        write!(f, "{}", String::from_utf8_lossy(&self.stdout))?;
+        write!(f, "{}", String::from_utf8_lossy(&self.stderr))?;
         Ok(())
     }
 }
