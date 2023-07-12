@@ -5,5 +5,10 @@
 use std::path::Path;
 
 pub fn do_something() -> bool {
-    Path::new("/").exists()
+    helper()
+}
+
+fn helper() -> bool {
+    let c = || Path::new("/").exists();
+    c()
 }
