@@ -33,3 +33,19 @@ fn run(cmd: &mut Command) {
         }
     }
 }
+
+// This crate already uses unsafe in regular code above. Here we define a macro that uses unsafe.
+// This isn't checked by any tests, but is useful for manual testing that we're merging both sources
+// of unsafe.
+#[macro_export]
+macro_rules! check_something {
+    () => {
+        let v = [42, 43];
+        assert_eq!(*unsafe { v.get_unchecked(0) }, 42);
+    };
+}
+
+// This unsafe usage won't be picked up by the token checker, but will be picked up by the compiler.
+// This is for manual testing of how this displays in the UI.
+#[no_mangle]
+pub fn this_is_unsafe_too() {}
