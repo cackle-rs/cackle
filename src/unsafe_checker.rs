@@ -28,8 +28,14 @@ fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
         if token_text == "unsafe" {
             locations.push(SourceLocation {
                 filename: path.to_owned(),
-                line: source[..offset].chars().filter(|ch| *ch == '\n').count() as u32 + 1,
-                column: None,
+                line: 1.max(source[..offset].lines().count() as u32),
+                column: Some(
+                    source[..offset]
+                        .lines()
+                        .last()
+                        .map(|line| line.len() as u32 + 1)
+                        .unwrap_or(1),
+                ),
             });
         }
         offset = new_offset;
@@ -44,25 +50,27 @@ mod tests {
     use std::ops::Not;
     use std::path::Path;
 
-    fn unsafe_line(source: &str) -> Option<u32> {
+    fn unsafe_line_col(source: &str) -> Option<(u32, u32)> {
         scan_string(source, Path::new("test.rs"))
             .first()
-            .map(|usage| usage.line)
+            .map(|usage| (usage.line, usage.column.unwrap()))
     }
 
     #[test]
     fn test_scan_string() {
-        assert_eq!(unsafe_line("unsafe fn foo() {}"), Some(1));
-        assert_eq!(unsafe_line(r#"fn foo() -> &'static str {"unsafe"}"#), None);
-        assert_eq!(unsafe_line("fn foo() { unsafe {} }"), Some(1));
+        assert_eq!(unsafe_line_col("unsafe fn foo() {}"), Some((1, 1)));
         assert_eq!(
-            unsafe_line(
-                r#"fn foo() {
-                    unsafe {
-                    }
+            unsafe_line_col(r#"fn foo() -> &'static str {"unsafe"}"#),
+            None
+        );
+        assert_eq!(unsafe_line_col("fn foo() { unsafe {} }"), Some((1, 12)));
+        assert_eq!(
+            unsafe_line_col(indoc::indoc! {r#"
+                fn foo() {
+                    unsafe {}
                 }"#
-            ),
-            Some(2)
+            }),
+            Some((2, 5))
         );
     }
 

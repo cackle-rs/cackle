@@ -2,7 +2,7 @@
 
 use crate::checker::SourceLocation;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ErrorKind {
@@ -14,16 +14,19 @@ pub(crate) enum ErrorKind {
 /// --error-format=json.
 pub(crate) fn get_errors(output: &str) -> Vec<ErrorKind> {
     let mut errors = Vec::new();
+    //let workspace_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
     for line in output.lines() {
         let Ok(message) = serde_json::from_str::<Message>(line) else {
             continue;
         };
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
+                let filename = Path::new(&first_span.file_name);
                 errors.push(ErrorKind::Unsafe(SourceLocation {
-                    filename: PathBuf::from(&first_span.file_name),
+                    filename: std::fs::canonicalize(filename)
+                        .unwrap_or_else(|_| filename.to_owned()),
                     line: first_span.line_start,
-                    column: None,
+                    column: Some(first_span.column_start),
                 }));
             }
         }
@@ -47,6 +50,7 @@ struct Code {
 struct SpannedMessage {
     file_name: String,
     line_start: u32,
+    column_start: u32,
 }
 
 #[cfg(test)]
@@ -66,7 +70,8 @@ mod tests {
             "spans": [
                 {
                     "file_name": "src/main.rs",
-                    "line_start": 10
+                    "line_start": 10,
+                    "column_start": 20
                 }
             ],
             "rendered": "Stuff that we don't parse"
@@ -75,9 +80,9 @@ mod tests {
         assert_eq!(
             get_errors(&json),
             vec![ErrorKind::Unsafe(SourceLocation {
-                filename: PathBuf::from("src/main.rs"),
+                filename: std::fs::canonicalize(Path::new("src/main.rs")).unwrap(),
                 line: 10,
-                column: None,
+                column: Some(20),
             })]
         );
     }
