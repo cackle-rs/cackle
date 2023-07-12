@@ -1,8 +1,7 @@
 # How it works
 
-Cackle performs a `cargo build` of your crate and wraps various binaries that cargo and rustc
-invoke. By wrapping these binaries, cackle gets an opportunity to perform analysis during the build
-process.
+Cackle performs a `cargo build` of your crate and wraps rustc, the linker and any build scripts. By
+wrapping these binaries, cackle gets an opportunity to perform analysis during the build process.
 
 ## Wrapping rustc
 

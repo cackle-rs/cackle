@@ -13,8 +13,11 @@ result, but is actually using network APIs.
 
 Currently Cackle only works on Linux. See [PORTING.md](PORTING.md) for more details.
 
+Right now Cackle is under fairly active development and the version on crates.io is very very
+out-of-date to the point of being unusable. So installing directly from git is recommended.
+
 ```sh
-cargo install cackle
+cargo install --git https://github.com/davidlattimore/cackle.git cackle
 ```
 
 Installing `bubblewrap` is recommended as it allows build.rs build scripts to be run inside a
@@ -60,6 +63,20 @@ See [CONFIG.md](CONFIG.md).
 With all these limitations, what's the point? The goal really is to just raise the bar for what's
 required to sneak problematic code unnoticed into some package. Use of Cackle should not replace any
 manual code reviews of your dependencies that you would otherwise have done.
+
+## Security policy
+
+It's unlikely that Cackle will ever be completely impossible to circumvent. That doesn't mean that
+it isn't useful though. Think of it like an antivirus that only knows about 90% of viruses.
+
+If you've found a neat way to circumvent Cackle to sneak in some API usages that it shouldn't allow,
+great, especially if there's a way to plug the hole. If there isn't a practical way to plug the
+hole, then my thoughts are that we probably shouldn't provide detailed instructions for people who
+want to perform supply-chain attacks. The goal is to make things as hard for them as possible.
+
+So I'd say, if the problem is fixable, feel free to just file a bug or send a PR. If it's not
+fixable, or you're not sure, feel free to just email me. You can find my email address by looking
+through the commit logs for David Lattimore.
 
 ## How it works
 
