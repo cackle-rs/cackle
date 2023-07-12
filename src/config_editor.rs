@@ -53,7 +53,8 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
     let mut edits: Vec<Box<dyn Edit>> = Vec::new();
     match problem {
         Problem::MissingConfiguration(_) => {
-            edits.push(Box::new(CreateInitialConfig {}));
+            edits.push(Box::new(CreateRecommendedConfig));
+            edits.push(Box::new(CreateCustomConfig));
         }
         Problem::SelectSandbox => {
             for kind in crate::config::SANDBOX_KINDS {
@@ -261,11 +262,11 @@ fn create_implicit_table() -> Item {
     Item::Table(table)
 }
 
-struct CreateInitialConfig {}
+struct CreateCustomConfig;
 
-impl Edit for CreateInitialConfig {
+impl Edit for CreateCustomConfig {
     fn title(&self) -> String {
-        "Create initial config".to_owned()
+        "Create custom initial config".to_owned()
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -286,6 +287,29 @@ impl Edit for CreateInitialConfig {
             problems.push(Problem::ImportStdApi(api.clone()));
         }
         problems
+    }
+}
+
+struct CreateRecommendedConfig;
+
+impl Edit for CreateRecommendedConfig {
+    fn title(&self) -> String {
+        "Create recommended initial config".to_owned()
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        "Writes a cackle.toml into your workspace / crate root. Selects Bubblewrap for sandboxing \
+        and imports fs, net and process APIs."
+            .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        editor.set_version(crate::config::MAX_VERSION)?;
+        editor.set_sandbox_kind(SandboxKind::Bubblewrap)?;
+        editor.toggle_std_import("fs")?;
+        editor.toggle_std_import("net")?;
+        editor.toggle_std_import("process")?;
+        Ok(())
     }
 }
 
