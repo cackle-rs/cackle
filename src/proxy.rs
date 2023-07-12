@@ -35,6 +35,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::mpsc::channel;
+use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -68,6 +69,7 @@ pub(crate) fn invoke_cargo_build(
     config_path: &Path,
     config: &Config,
     args: &Args,
+    abort_recv: Receiver<()>,
     request_creator: impl Fn(Request) -> RequestHandler,
 ) -> Result<Option<CargoBuildFailure>> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
@@ -132,6 +134,9 @@ pub(crate) fn invoke_cargo_build(
         }
         if let Ok(error) = error_recv.try_recv() {
             return Err(error);
+        }
+        if abort_recv.try_recv().is_ok() {
+            let _ = cargo_process.kill();
         }
         // We need to concurrently accept connections from our proxy subprocesses and also check to
         // see if our main subprocess has terminated. It should be possible to do this without

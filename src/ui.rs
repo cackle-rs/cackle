@@ -9,6 +9,7 @@ use clap::ValueEnum;
 use log::info;
 use std::path::Path;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -36,6 +37,7 @@ pub(crate) fn start_ui(
     config_path: &Path,
     problem_store: ProblemStoreRef,
     event_receiver: Receiver<AppEvent>,
+    abort_sender: Sender<()>,
 ) -> Result<JoinHandle<Result<()>>> {
     let mut ui: Box<dyn UserInterface> = match args.ui_kind() {
         Kind::None => {
@@ -48,7 +50,10 @@ pub(crate) fn start_ui(
         }
         Kind::Full => {
             info!("Starting full terminal UI");
-            Box::new(full_term::FullTermUi::new(config_path.to_owned())?)
+            Box::new(full_term::FullTermUi::new(
+                config_path.to_owned(),
+                abort_sender,
+            )?)
         }
     };
     Ok(std::thread::Builder::new()

@@ -27,6 +27,7 @@ use ratatui::Terminal;
 use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
@@ -35,10 +36,11 @@ mod problems_ui;
 pub(crate) struct FullTermUi {
     config_path: PathBuf,
     terminal: Terminal<CrosstermBackend<Stdout>>,
+    abort_sender: Sender<()>,
 }
 
 impl FullTermUi {
-    pub(crate) fn new(config_path: PathBuf) -> Result<Self> {
+    pub(crate) fn new(config_path: PathBuf, abort_sender: Sender<()>) -> Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = std::io::stdout();
         crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
@@ -47,6 +49,7 @@ impl FullTermUi {
         Ok(Self {
             config_path,
             terminal,
+            abort_sender,
         })
     }
 }
@@ -68,6 +71,7 @@ impl super::UserInterface for FullTermUi {
                 // those problems too. We don't return from this function until we get a shutdown
                 // event from the main thread.
                 problem_store.lock().abort();
+                let _ = self.abort_sender.send(());
             }
             if needs_redraw {
                 self.terminal.draw(|f| {

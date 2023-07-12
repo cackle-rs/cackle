@@ -44,6 +44,7 @@ use problem_store::ProblemStoreRef;
 use proxy::rpc::Request;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -142,8 +143,9 @@ fn main() -> Result<()> {
     if let Some(log_file) = &args.log_file {
         logging::init(log_file, args.log_level)?;
     }
-    let cackle = Cackle::new(args)?;
-    let exit_code = cackle.run_and_report_errors();
+    let (abort_send, abort_recv) = std::sync::mpsc::channel();
+    let cackle = Cackle::new(args, abort_send)?;
+    let exit_code = cackle.run_and_report_errors(abort_recv);
     info!("Shutdown with exit code {}", exit_code);
     std::process::exit(exit_code.code());
 }
@@ -161,7 +163,7 @@ struct Cackle {
 }
 
 impl Cackle {
-    fn new(args: Args) -> Result<Self> {
+    fn new(args: Args, abort_sender: Sender<()>) -> Result<Self> {
         let args = Arc::new(args);
         let root_path = args
             .path
@@ -192,8 +194,13 @@ impl Cackle {
         }
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
         let problem_store = crate::problem_store::create(event_sender.clone());
-        let ui_join_handle =
-            ui::start_ui(&args, &config_path, problem_store.clone(), event_receiver)?;
+        let ui_join_handle = ui::start_ui(
+            &args,
+            &config_path,
+            problem_store.clone(),
+            event_receiver,
+            abort_sender,
+        )?;
         Ok(Self {
             problem_store,
             root_path,
@@ -209,11 +216,11 @@ impl Cackle {
 
     /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
     /// before we return. That way the user interface will be cleaned up before we exit.
-    fn run_and_report_errors(mut self) -> ExitCode {
+    fn run_and_report_errors(mut self, abort_recv: Receiver<()>) -> ExitCode {
         if let Command::Summary(options) = &self.args.command {
             return self.print_summary(options);
         }
-        let exit_code = match self.run() {
+        let exit_code = match self.run(abort_recv) {
             Err(error) => {
                 self.problem_store.report_error(error);
                 outcome::FAILURE
@@ -247,7 +254,7 @@ impl Cackle {
         outcome::SUCCESS
     }
 
-    fn run(&mut self) -> Result<ExitCode> {
+    fn run(&mut self, abort_recv: Receiver<()>) -> Result<ExitCode> {
         if self.maybe_create_config()? == Outcome::GiveUp {
             info!("Gave up creating initial configuration");
             return Ok(outcome::FAILURE);
@@ -275,9 +282,14 @@ impl Cackle {
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result = if initial_outcome == Outcome::Continue {
-            proxy::invoke_cargo_build(&root_path, &config_path, &config, &args, |request| {
-                self.new_request_handler(Some(request))
-            })
+            proxy::invoke_cargo_build(
+                &root_path,
+                &config_path,
+                &config,
+                &args,
+                abort_recv,
+                |request| self.new_request_handler(Some(request)),
+            )
         } else {
             // We've already detected problems before running cargo, don't run cargo.
             Ok(None)
