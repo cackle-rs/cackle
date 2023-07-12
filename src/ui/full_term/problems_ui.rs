@@ -356,7 +356,7 @@ fn error_lines(error: anyhow::Error) -> Vec<Line<'static>> {
 
 fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'static>>> {
     let mut lines = Vec::new();
-    lines.push(Line::from(edit.help()));
+    lines.push(Line::from(edit.help().to_string()));
     let original = std::fs::read_to_string(config_path).unwrap_or_default();
     let mut editor = ConfigEditor::from_toml_string(&original)?;
     if let Err(error) = edit.apply(&mut editor) {

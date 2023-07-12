@@ -11,6 +11,7 @@ use crate::problem::UnusedAllowApi;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::borrow::Borrow;
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::path::Path;
 use toml_edit::Array;
@@ -28,7 +29,7 @@ pub(crate) trait Edit {
     /// Returns a short name for this edit, suitable for display in a menu.
     fn title(&self) -> String;
 
-    fn help(&self) -> &'static str;
+    fn help(&self) -> Cow<'static, str>;
 
     /// Applies the edit to the editor.
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()>;
@@ -267,10 +268,11 @@ impl Edit for CreateInitialConfig {
         "Create initial config".to_owned()
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Writes a cackle.toml into your workspace / crate root. This will initially only set the \
         configuration version. Subsequent action items will prompt you to select a sandbox kind, \
         select what APIs you care about etc."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -294,11 +296,12 @@ impl Edit for SelectSandbox {
         format!("{:?}", self.0)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Select what kind of sandbox you'd like to use. At the moment the sandbox is only used \
          for running build scripts (build.rs). Hopefully eventually we'll also run proc-macros \
          in the sandbox. To use Bubblewrap, it must be installed. On Debian-based systems you can \
          `sudo apt install bubblewrap`"
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -313,9 +316,10 @@ impl Edit for ImportStdApi {
         format!("Import std API `{}`", self.0)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "This imports an std API that's built into Cackle. Subsequent versions of Cackle may \
          add/remove paths from this API if it turns out that there were inaccuracies."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -333,10 +337,11 @@ impl Edit for ImportApi {
         )
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Imports an API definition that was provided by a third-party crate. Future versions of \
          that crate may adjust these API definitions, hopefully to make them more accurate or \
          complete."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -352,11 +357,12 @@ impl Edit for InlineStdApi {
         format!("Inline std API `{}`", self.0)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "This copies the built-in API definition into your cackle.toml. Changes to the API \
          definition in future versions of cackle will not affect your configuration. Selecting \
          this option gives you the ability to adjust the API definitions from those that are \
          built-in."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -381,12 +387,13 @@ impl Edit for InlineApi {
         )
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Inlines an API definition from a third-party crate. This lets you adjust this API \
          definition. It does however mean that any changes made to the API definition by the \
          third-party crate will not be used, so for example if a crate, `foo` exported network \
          APIs under `foo::net` and later started also exporting them under `foo::network`, then \
          you might miss these. So care should be taken if selecting this option."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -443,9 +450,10 @@ impl Edit for IgnoreStdApi {
         format!("Ignore std API `{}`", self.0)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Don't import or inline this API definition. Select this if you don't care if crates use \
         this category of API."
+            .into()
     }
 
     fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
@@ -467,9 +475,10 @@ impl Edit for IgnoreApi {
         )
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Don't import or inline this API definition. Select this if you don't care if crates use \
         this category of API."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -500,8 +509,8 @@ impl Edit for AllowApiUsage {
         )
     }
 
-    fn help(&self) -> &'static str {
-        "Allow this package to use the specified category of API."
+    fn help(&self) -> Cow<'static, str> {
+        "Allow this package to use the specified category of API.".into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -520,8 +529,8 @@ impl Edit for RemoveUnusedAllowApis {
         "Remove unused allowed APIs".to_owned()
     }
 
-    fn help(&self) -> &'static str {
-        "Remove these APIs from the list of APIs that this package is allowed to used."
+    fn help(&self) -> Cow<'static, str> {
+        "Remove these APIs from the list of APIs that this package is allowed to used.".into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -568,9 +577,10 @@ impl Edit for AllowProcMacro {
         format!("Allow proc macro `{}`", self.crate_name)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Allow this crate to be a proc macro. Proc macros can generate arbitrary code. They're \
          also not currently run in a sandbox."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -593,10 +603,11 @@ impl Edit for AllowBuildInstruction {
         )
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Allow this crate's build.rs to emit build instructions that match the specified pattern. \
          Some build instructions can be used to add arguments to the linker, which can then be \
          used to do just about anything."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -614,10 +625,11 @@ impl Edit for DisableSandbox {
         format!("Disable sandbox for `{}`", self.crate_name)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Don't run this crate's build script (build.rs) in a sandbox. You might select this \
          option if the build script is doing something weird like writing to the source \
          directory, but you've checked it over and you trust it."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -636,12 +648,13 @@ impl Edit for AllowUnsafe {
         format!("Allow package `{}` to use unsafe code", self.crate_name)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Allow this crate to use unsafe code. With unsafe code, this crate could do just about \
          anything, so this is like a bit like a wildcard permssion. Crates that use unsafe \
          sometimes export APIs that you might want to restrict - e.g. network or filesystem APIs. \
          so you should have a think about if this crate falls into that category and if it does, \
          add some API definitions for it."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
@@ -660,9 +673,10 @@ impl Edit for SandboxAllowNetwork {
         format!("Permit network from sandbox for `{}`", self.crate_name)
     }
 
-    fn help(&self) -> &'static str {
+    fn help(&self) -> Cow<'static, str> {
         "Allow this crate's build script (build.rs) to access the network. This might be necessary \
          if the build script is downloading stuff from the Internet."
+            .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
