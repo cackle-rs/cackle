@@ -1,12 +1,22 @@
 //! Handles parsing of errors from rustc.
 
 use crate::checker::SourceLocation;
+use anyhow::Context;
+use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
 
 /// Returns source locations for all errors related to use of unsafe code in `output`, which should
 /// be the output from rustc with --error-format=json.
-pub(crate) fn get_disallowed_unsafe_locations(output: &str) -> Vec<SourceLocation> {
+pub(crate) fn get_disallowed_unsafe_locations(
+    rustc_output: &std::process::Output,
+) -> Result<Vec<SourceLocation>> {
+    let stderr =
+        std::str::from_utf8(&rustc_output.stderr).context("rustc emitted invalid UTF-8")?;
+    Ok(get_disallowed_unsafe_locations_str(stderr))
+}
+
+fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
     let mut locations = Vec::new();
     //let workspace_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
     for line in output.lines() {
@@ -53,7 +63,7 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        assert_eq!(get_disallowed_unsafe_locations(""), vec![]);
+        assert_eq!(get_disallowed_unsafe_locations_str(""), vec![]);
     }
 
     #[test]
@@ -72,7 +82,7 @@ mod tests {
         }"#
         .replace('\n', "");
         assert_eq!(
-            get_disallowed_unsafe_locations(&json),
+            get_disallowed_unsafe_locations_str(&json),
             vec![SourceLocation {
                 filename: std::fs::canonicalize(Path::new("src/main.rs")).unwrap(),
                 line: 10,
