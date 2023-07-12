@@ -406,7 +406,10 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             keys.extend(
                 [
                     ("f", "Show available automatic fixes for this problem"),
-                    ("d", "Select and show details of each usage (API only)"),
+                    (
+                        "d",
+                        "Select and show details of each usage (API/unsafe only)",
+                    ),
                     ("up", "Select previous problem"),
                     ("down", "Select next problem"),
                     ("a", "Enable auto-apply for problems with only one edit"),
@@ -480,14 +483,20 @@ fn usages_for_problem(
     problem_index: usize,
 ) -> Vec<Box<dyn DisplayUsage>> {
     let mut usages_out: Vec<Box<dyn DisplayUsage>> = Vec::new();
-    if let Some((_, Problem::DisallowedApiUsage(usages))) =
-        pstore_lock.deduplicated_into_iter().nth(problem_index)
-    {
-        for usages in usages.usages.values() {
-            for usage in usages {
-                usages_out.push(Box::new(usage.clone()));
+    match pstore_lock.deduplicated_into_iter().nth(problem_index) {
+        Some((_, Problem::DisallowedApiUsage(usages))) => {
+            for usages in usages.usages.values() {
+                for usage in usages {
+                    usages_out.push(Box::new(usage.clone()));
+                }
             }
         }
+        Some((_, Problem::DisallowedUnsafe(unsafe_usage))) => {
+            for location in &unsafe_usage.locations {
+                usages_out.push(Box::new(location.clone()));
+            }
+        }
+        _ => (),
     }
     usages_out
 }
@@ -495,7 +504,10 @@ fn usages_for_problem(
 /// A trait implemented for things that can display in a usage list.
 trait DisplayUsage {
     fn source_location(&self) -> &SourceLocation;
-    fn debug_data(&self) -> Option<String>;
+
+    fn debug_data(&self) -> Option<String> {
+        None
+    }
 
     /// A single line that we display in the list of usages.
     fn list_display(&self) -> String;
@@ -514,5 +526,15 @@ impl DisplayUsage for ApiUsage {
 
     fn list_display(&self) -> String {
         format!("{} -> {}", self.from, self.to)
+    }
+}
+
+impl DisplayUsage for SourceLocation {
+    fn source_location(&self) -> &SourceLocation {
+        self
+    }
+
+    fn list_display(&self) -> String {
+        self.to_string()
     }
 }
