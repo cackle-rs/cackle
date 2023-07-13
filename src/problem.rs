@@ -223,6 +223,24 @@ impl Problem {
         }
         Cow::Borrowed(self)
     }
+
+    pub(crate) fn crate_name(&self) -> Option<&CrateName> {
+        match self {
+            Problem::Message(_) => None,
+            Problem::MissingConfiguration(_) => None,
+            Problem::UsesBuildScript(crate_name) => Some(crate_name),
+            Problem::DisallowedUnsafe(d) => Some(&d.crate_name),
+            Problem::IsProcMacro(crate_name) => Some(crate_name),
+            Problem::DisallowedApiUsage(d) => Some(&d.crate_name),
+            Problem::BuildScriptFailed(d) => Some(&d.output.crate_name),
+            Problem::DisallowedBuildInstruction(d) => Some(&d.crate_name),
+            Problem::UnusedPackageConfig(crate_name) => Some(crate_name),
+            Problem::UnusedAllowApi(d) => Some(&d.crate_name),
+            Problem::SelectSandbox => None,
+            Problem::ImportStdApi(_) => None,
+            Problem::AvailableApi(d) => Some(&d.crate_name),
+        }
+    }
 }
 
 impl From<String> for Problem {

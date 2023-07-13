@@ -14,8 +14,15 @@ use crate::config::CrateName;
 pub(crate) struct CrateIndex {
     crate_names: HashSet<CrateName>,
     pub(crate) proc_macros: HashSet<CrateName>,
-    name_to_dir: HashMap<CrateName, Utf8PathBuf>,
+    crate_infos: HashMap<CrateName, CrateInfo>,
     dir_to_name: HashMap<PathBuf, CrateName>,
+}
+
+#[derive(Debug)]
+pub(crate) struct CrateInfo {
+    pub(crate) directory: Utf8PathBuf,
+    pub(crate) description: Option<String>,
+    pub(crate) documentation: Option<String>,
 }
 
 impl CrateIndex {
@@ -37,9 +44,14 @@ impl CrateIndex {
                 }
             }
             if let Some(dir) = package.manifest_path.parent() {
-                mapping
-                    .name_to_dir
-                    .insert(crate_name.clone(), dir.to_path_buf());
+                mapping.crate_infos.insert(
+                    crate_name.clone(),
+                    CrateInfo {
+                        directory: dir.to_path_buf(),
+                        description: package.description,
+                        documentation: package.documentation,
+                    },
+                );
                 mapping
                     .dir_to_name
                     .insert(dir.as_std_path().to_owned(), crate_name.clone());
@@ -49,12 +61,16 @@ impl CrateIndex {
         Ok(mapping)
     }
 
+    pub(crate) fn crate_info(&self, crate_name: &CrateName) -> Option<&CrateInfo> {
+        self.crate_infos.get(crate_name)
+    }
+
     pub(crate) fn pkg_dir(&self, crate_name: &CrateName) -> Option<&Utf8PathBuf> {
-        self.name_to_dir.get(crate_name)
+        self.crate_infos.get(crate_name).map(|info| &info.directory)
     }
 
     pub(crate) fn package_names(&self) -> impl Iterator<Item = &CrateName> {
-        self.name_to_dir.keys()
+        self.crate_infos.keys()
     }
 
     pub(crate) fn crate_names(&self) -> impl Iterator<Item = &CrateName> {

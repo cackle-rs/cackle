@@ -142,14 +142,6 @@ impl Drop for FullTermUi {
     }
 }
 
-fn split_vertical(area: Rect) -> (Rect, Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-    (chunks[0], chunks[1])
-}
-
 fn render_build_progress(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
     let block = Block::default()
         .title("Building")

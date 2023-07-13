@@ -2,9 +2,9 @@
 
 use super::message_area;
 use super::render_list;
-use super::split_vertical;
 use super::update_counter;
 use crate::checker::ApiUsage;
+use crate::config::CrateName;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
@@ -19,6 +19,9 @@ use anyhow::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::backend::CrosstermBackend;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
@@ -35,6 +38,7 @@ use ratatui::Frame;
 use std::io::Stdout;
 use std::path::Path;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::MutexGuard;
 
@@ -49,6 +53,7 @@ pub(super) struct ProblemsUi {
     usage_index: usize,
     config_path: PathBuf,
     accept_single_enabled: bool,
+    show_package_details: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,9 +71,17 @@ impl ProblemsUi {
     }
 
     pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
-        let (top_left, bottom_left) = split_vertical(f.size());
+        let chunks = if self.show_package_details {
+            split_vertial(f.size(), &[40, 40, 20])
+        } else {
+            split_vertial(f.size(), &[50, 50])
+        };
+        let (top, middle) = (chunks[0], chunks[1]);
 
-        self.render_problems(f, top_left);
+        self.render_problems(f, top);
+        if let Some(bottom) = chunks.get(2) {
+            self.render_package_details(f, *bottom);
+        }
 
         let mut previous_mode = None;
         for mode in self.modes.iter() {
@@ -81,14 +94,14 @@ impl ProblemsUi {
                         .iter()
                         .any(|mode| [Mode::SelectEdit, Mode::SelectUsage].contains(mode))
                     {
-                        self.render_details(f, bottom_left);
+                        self.render_details(f, middle);
                     }
                 }
                 Mode::SelectEdit => {
-                    self.render_edit_help_and_diff(f, bottom_left);
+                    self.render_edit_help_and_diff(f, middle);
                 }
                 Mode::SelectUsage => {
-                    self.render_usage_details(f, bottom_left);
+                    self.render_usage_details(f, middle);
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::Help => render_help(f, previous_mode),
@@ -156,6 +169,9 @@ impl ProblemsUi {
                 self.accept_all_single_edits()?;
                 self.modes.pop();
             }
+            (_, KeyCode::Char('p')) => {
+                self.show_package_details = !self.show_package_details;
+            }
             (_, KeyCode::Char('h' | '?')) => self.modes.push(Mode::Help),
             (_, KeyCode::Esc) => {
                 if self.modes.len() >= 2 {
@@ -191,6 +207,7 @@ impl ProblemsUi {
             usage_index: 0,
             config_path,
             accept_single_enabled: false,
+            show_package_details: true,
         }
     }
 
@@ -375,6 +392,35 @@ impl ProblemsUi {
         pstore_lock.resolve_problems_with_empty_diff(&editor);
         Ok(())
     }
+
+    fn render_package_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+        use std::fmt::Write;
+
+        let pstore = &self.problem_store.lock();
+        let Some((_, problem)) = pstore.deduplicated_into_iter().nth(self.problem_index) else {
+            return;
+        };
+        let Some(crate_name) = problem.crate_name() else {
+            return;
+        };
+        let pkg_name = CrateName(Arc::from(crate_name.package_name()));
+        let mut text = String::new();
+        if let Some(crate_info) = self.crate_index.crate_info(&pkg_name) {
+            if let Some(description) = &crate_info.description {
+                writeln!(&mut text, "Description: {description}").unwrap();
+            }
+            if let Some(documentation) = &crate_info.documentation {
+                writeln!(&mut text, "Documentation: {documentation}").unwrap();
+            }
+            writeln!(&mut text, "Local path: {}", crate_info.directory).unwrap();
+        }
+
+        let block = Block::default()
+            .title(format!("Details for package {pkg_name}"))
+            .borders(Borders::ALL);
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
+        f.render_widget(paragraph, area);
+    }
 }
 
 fn error_lines(error: anyhow::Error) -> Vec<Line<'static>> {
@@ -501,7 +547,14 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
         }
         _ => {}
     }
-    keys.extend([("q", "Quit"), ("h/?", "Show mode-specific help")].into_iter());
+    keys.extend(
+        [
+            ("p", "Toggle display of package details"),
+            ("q", "Quit"),
+            ("h/?", "Show mode-specific help"),
+        ]
+        .into_iter(),
+    );
     let lines: Vec<String> = keys
         .into_iter()
         .map(|(key, action)| format!("{key:14} {action}"))
@@ -644,4 +697,16 @@ fn problem_details(problem: &Problem) -> String {
         // long form.
         format!("{problem:#}")
     }
+}
+
+fn split_vertial(area: Rect, percentages: &[u16]) -> Rc<[Rect]> {
+    let constraints: Vec<_> = percentages
+        .iter()
+        .cloned()
+        .map(Constraint::Percentage)
+        .collect();
+    Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area)
 }
