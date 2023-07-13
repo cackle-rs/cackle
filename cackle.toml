@@ -20,11 +20,6 @@ exclude = [
 [pkg.serde_derive]
 allow_proc_macro = true
 
-[pkg.serde_derive.build]
-allow_apis = [
-    "process",
-]
-
 [pkg.clap_derive]
 allow_proc_macro = true
 
@@ -171,9 +166,6 @@ allow_apis = [
     "process",
 ]
 
-[pkg.concolor-query]
-allow_unsafe = true
-
 [pkg.serde_json]
 allow_unsafe = true
 
@@ -243,9 +235,6 @@ allow_unsafe = true
 [pkg.memchr]
 allow_unsafe = true
 
-[pkg.atty]
-allow_unsafe = true
-
 [pkg.once_cell]
 allow_unsafe = true
 
@@ -278,3 +267,6 @@ allow_apis = [
     "fs",
     "process",
 ]
+
+[pkg.anstyle-query]
+allow_unsafe = true
