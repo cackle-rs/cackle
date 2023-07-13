@@ -1,0 +1,280 @@
+[common]
+version = 1
+import_std = [
+    "fs",
+    "net",
+    "process",
+]
+
+[sandbox]
+kind = "Bubblewrap"
+
+[api.net]
+include = [
+    "mio::net",
+]
+exclude = [
+    "mio::net::uds",
+]
+
+[pkg.serde_derive]
+allow_proc_macro = true
+
+[pkg.serde_derive.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.clap_derive]
+allow_proc_macro = true
+
+[pkg.indoc]
+allow_proc_macro = true
+
+[pkg.thiserror-impl]
+allow_proc_macro = true
+
+[pkg.unicode-ident]
+allow_unsafe = true
+
+[pkg.quote.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.serde]
+allow_unsafe = true
+allow_apis = [
+    "fs",
+]
+
+[pkg.serde.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.libc]
+allow_unsafe = true
+
+[pkg.libc.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.proc-macro2]
+allow_unsafe = true
+
+[pkg.proc-macro2.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.rustix]
+allow_unsafe = true
+
+[pkg.rustix.build]
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.autocfg]
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.bitflags]
+allow_unsafe = true
+
+[pkg.linux-raw-sys]
+allow_unsafe = true
+
+[pkg.hashbrown]
+allow_unsafe = true
+
+[pkg.thiserror.build]
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.scopeguard]
+allow_unsafe = true
+
+[pkg.log]
+allow_unsafe = true
+
+[pkg.crc32fast]
+allow_unsafe = true
+
+[pkg.crc32fast.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.indexmap]
+allow_unsafe = true
+
+[pkg.signal-hook-registry]
+allow_unsafe = true
+
+[pkg.syn]
+allow_unsafe = true
+
+[pkg.utf8parse]
+allow_unsafe = true
+
+[pkg.smallvec]
+allow_unsafe = true
+
+[pkg.mio]
+allow_unsafe = true
+allow_apis = [
+    "net",
+]
+
+[pkg.lock_api]
+allow_unsafe = true
+
+[pkg.is-terminal]
+allow_unsafe = true
+
+[pkg.camino]
+allow_unsafe = true
+allow_apis = [
+    "fs",
+]
+
+[pkg.camino.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.signal-hook]
+allow_unsafe = true
+
+[pkg.anstyle-parse]
+allow_unsafe = true
+
+[pkg.parking_lot_core]
+allow_unsafe = true
+
+[pkg.anstyle]
+allow_unsafe = true
+
+[pkg.semver]
+allow_unsafe = true
+
+[pkg.semver.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.concolor-query]
+allow_unsafe = true
+
+[pkg.serde_json]
+allow_unsafe = true
+
+[pkg.serde_json.build]
+allow_apis = [
+    "process",
+]
+
+[pkg.static_assertions]
+allow_unsafe = true
+
+[pkg.parking_lot]
+allow_unsafe = true
+
+[pkg.clap_lex]
+allow_unsafe = true
+
+[pkg.ryu]
+allow_unsafe = true
+
+[pkg.itoa]
+allow_unsafe = true
+
+[pkg.anstream]
+allow_unsafe = true
+
+[pkg.anyhow]
+allow_unsafe = true
+
+[pkg.anyhow.build]
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.twox-hash]
+allow_unsafe = true
+
+[pkg.stable_deref_trait]
+allow_unsafe = true
+
+[pkg.byteorder]
+allow_unsafe = true
+
+[pkg.winnow]
+allow_unsafe = true
+
+[pkg.crossterm]
+allow_unsafe = true
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.flate2]
+allow_unsafe = true
+
+[pkg.gimli]
+allow_unsafe = true
+
+[pkg.ruzstd]
+allow_unsafe = true
+
+[pkg.toml_edit]
+allow_unsafe = true
+
+[pkg.memchr]
+allow_unsafe = true
+
+[pkg.atty]
+allow_unsafe = true
+
+[pkg.once_cell]
+allow_unsafe = true
+
+[pkg.lazy_static]
+allow_unsafe = true
+
+[pkg.addr2line]
+allow_unsafe = true
+
+[pkg.object]
+allow_unsafe = true
+
+[pkg.colored]
+allow_unsafe = true
+
+[pkg.cackle]
+allow_apis = [
+    "fs",
+    "net",
+    "process",
+]
+
+[pkg.clap_builder]
+allow_apis = [
+    "fs",
+]
+
+[pkg.cargo_metadata]
+allow_apis = [
+    "fs",
+    "process",
+]
