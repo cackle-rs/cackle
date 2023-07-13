@@ -138,6 +138,10 @@ impl ConfigEditor {
         self.table(pkg_path(crate_name))
     }
 
+    fn opt_pkg_table(&mut self, crate_name: &CrateName) -> Result<Option<&mut toml_edit::Table>> {
+        self.opt_table(pkg_path(crate_name))
+    }
+
     fn pkg_sandbox_table(&mut self, crate_name: &CrateName) -> Result<&mut toml_edit::Table> {
         self.table(pkg_path(crate_name).chain(std::iter::once("sandbox")))
     }
@@ -170,6 +174,25 @@ impl ConfigEditor {
                 })?;
         }
         Ok(table)
+    }
+
+    fn opt_table<'a>(
+        &mut self,
+        path: impl Iterator<Item = &'a str> + Clone,
+    ) -> Result<Option<&mut toml_edit::Table>> {
+        let mut table = self.document.as_table_mut();
+        for part in path.clone() {
+            let Some(item) = table.get_mut(part) else {
+                return Ok(None);
+            };
+            table = item.as_table_mut().ok_or_else(|| {
+                anyhow!(
+                    "[{}] should be a table",
+                    path.clone().collect::<Vec<_>>().join(".")
+                )
+            })?;
+        }
+        Ok(Some(table))
     }
 
     pub(crate) fn set_version(&mut self, version: i64) -> Result<()> {
@@ -561,8 +584,12 @@ impl Edit for RemoveUnusedAllowApis {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.unused.crate_name)?;
-        let allow_apis = get_or_create_array(table, "allow_apis")?;
+        let Some(table) = editor.opt_pkg_table(&self.unused.crate_name)? else {
+            return Ok(());
+        };
+        let Some(allow_apis) = get_array(table, "allow_apis")? else {
+            return Ok(());
+        };
         for api in &self.unused.permissions {
             let index_and_entry = allow_apis
                 .iter()
@@ -599,6 +626,19 @@ impl Edit for RemoveUnusedPkgConfig {
         parent_table.remove(last_part);
         Ok(())
     }
+}
+
+fn get_array<'table>(
+    table: &'table mut toml_edit::Table,
+    array_name: &str,
+) -> Result<Option<&'table mut Array>> {
+    let Some(item) = table.get_mut(array_name) else {
+        return Ok(None);
+    };
+    let array = item
+        .as_array_mut()
+        .ok_or_else(|| anyhow!("{array_name} should be an array"))?;
+    Ok(Some(array))
 }
 
 fn get_or_create_array<'table>(
@@ -996,6 +1036,17 @@ mod tests {
             "#,
             },
         );
+    }
+
+    #[test]
+    fn unused_allow_api_already_deleted() {
+        let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
+            crate_name: "crab1".into(),
+            permissions: vec![PermissionName::new("fs")],
+        });
+        // If another edit (e.g. removal of an unused pkg config) removed our table, make sure we
+        // don't recreate it.
+        check("", &[(0, failure)], "");
     }
 
     #[test]
