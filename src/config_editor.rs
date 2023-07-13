@@ -102,6 +102,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
         })),
+        Problem::UnusedPackageConfig(crate_name) => edits.push(Box::new(RemoveUnusedPkgConfig {
+            crate_name: crate_name.clone(),
+        })),
         _ => {}
     }
     edits
@@ -576,6 +579,28 @@ impl Edit for RemoveUnusedAllowApis {
     }
 }
 
+struct RemoveUnusedPkgConfig {
+    crate_name: CrateName,
+}
+
+impl Edit for RemoveUnusedPkgConfig {
+    fn title(&self) -> String {
+        "Remove unused crate configuration".to_owned()
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        "Remove the configuration for this package.".into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let mut path: Vec<_> = pkg_path(&self.crate_name).collect();
+        let last_part = path.pop().unwrap();
+        let parent_table = editor.table(path.into_iter())?;
+        parent_table.remove(last_part);
+        Ok(())
+    }
+}
+
 fn get_or_create_array<'table>(
     table: &'table mut toml_edit::Table,
     array_name: &str,
@@ -967,6 +992,46 @@ mod tests {
             &[(0, failure)],
             indoc! {r#"
                 [pkg.crab1.build]
+                allow_unsafe = true
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn unused_pkg_config_build_script() {
+        let failure = Problem::UnusedPackageConfig("crab1.build".into());
+        check(
+            indoc! {r#"
+                [pkg.crab1]
+                allow_unsafe = true
+
+                [pkg.crab1.build]
+                allow_unsafe = true
+            "#},
+            &[(0, failure)],
+            indoc! {r#"
+                [pkg.crab1]
+                allow_unsafe = true
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn unused_pkg_config() {
+        let failure = Problem::UnusedPackageConfig("crab2".into());
+        check(
+            indoc! {r#"
+                [pkg.crab1]
+                allow_unsafe = true
+
+                [pkg.crab2]
+                allow_apis = ["fs"]
+            "#},
+            &[(0, failure)],
+            indoc! {r#"
+                [pkg.crab1]
                 allow_unsafe = true
             "#,
             },
