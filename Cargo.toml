@@ -33,10 +33,10 @@ diff = { version = "0.1.13", optional = true }
 crossterm = { version = "0.26.1", optional = true }
 
 [features]
-default = [ "ui" ]
+default = ["ui"]
 
 # Enable the "ui" subcommand.
-ui = [ "toml_edit", "ratatui", "diff", "crossterm" ]
+ui = ["toml_edit", "ratatui", "diff", "crossterm"]
 
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working
 # on porting.
