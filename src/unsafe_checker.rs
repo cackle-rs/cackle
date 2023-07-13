@@ -26,17 +26,13 @@ fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
         let new_offset = offset + token.len;
         let token_text = &source[offset..new_offset];
         if token_text == "unsafe" {
-            locations.push(SourceLocation {
-                filename: path.to_owned(),
-                line: 1.max(source[..new_offset].lines().count() as u32),
-                column: Some(
-                    source[..new_offset]
-                        .lines()
-                        .last()
-                        .map(|line| (line.len() - token_text.len() + 1) as u32)
-                        .unwrap_or(1),
-                ),
-            });
+            let column = source[..new_offset]
+                .lines()
+                .last()
+                .map(|line| (line.len() - token_text.len() + 1) as u32)
+                .unwrap_or(1);
+            let line = 1.max(source[..new_offset].lines().count() as u32);
+            locations.push(SourceLocation::new(path, line, Some(column)));
         }
         offset = new_offset;
     }
@@ -53,7 +49,7 @@ mod tests {
     fn unsafe_line_col(source: &str) -> Option<(u32, u32)> {
         scan_string(source, Path::new("test.rs"))
             .first()
-            .map(|usage| (usage.line, usage.column.unwrap()))
+            .map(|usage| (usage.line(), usage.column().unwrap()))
     }
 
     #[test]

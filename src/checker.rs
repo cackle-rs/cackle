@@ -442,11 +442,7 @@ mod tests {
             usages.insert(
                 api,
                 vec![ApiUsage {
-                    source_location: SourceLocation {
-                        filename: "lib.rs".into(),
-                        line: 1,
-                        column: None,
-                    },
+                    source_location: SourceLocation::new("lib.rs", 1, None),
                     from: Symbol::borrowed(&[]),
                     to: crate::names::split_names("foo:bar").pop().unwrap(),
                     to_symbol: Symbol::borrowed(&[]),

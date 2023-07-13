@@ -376,7 +376,7 @@ fn display_usages(
     let mut by_source_filename: BTreeMap<&Path, Vec<&ApiUsage>> = BTreeMap::new();
     for u in usages {
         by_source_filename
-            .entry(&u.source_location.filename)
+            .entry(u.source_location.filename())
             .or_default()
             .push(u);
     }
@@ -390,8 +390,8 @@ fn display_usages(
         for (from, local_usages) in &by_from {
             writeln!(f, "      {from}")?;
             for u in local_usages {
-                write!(f, "        -> {} [{}", u.to, u.source_location.line,)?;
-                if let Some(column) = u.source_location.column {
+                write!(f, "        -> {} [{}", u.to, u.source_location.line(),)?;
+                if let Some(column) = u.source_location.column() {
                     write!(f, ":{}", column)?;
                 }
                 writeln!(f, "]")?;
@@ -504,11 +504,7 @@ mod tests {
 
     fn create_usage(from: &str, to: &str) -> ApiUsage {
         ApiUsage {
-            source_location: SourceLocation {
-                filename: "lib.rs".into(),
-                line: 1,
-                column: None,
-            },
+            source_location: SourceLocation::new("lib.rs", 1, None),
             from: Symbol::borrowed(from.as_bytes()).to_heap(),
             to: crate::names::split_names("foo:bar").pop().unwrap(),
             to_symbol: Symbol::borrowed(to.as_bytes()).to_heap(),

@@ -1,20 +1,41 @@
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub(crate) struct SourceLocation {
-    pub(crate) filename: PathBuf,
-    pub(crate) line: u32,
-    pub(crate) column: Option<u32>,
+    filename: PathBuf,
+    line: u32,
+    column: Option<u32>,
 }
 
 impl SourceLocation {
+    pub(crate) fn new<P: Into<PathBuf>>(filename: P, line: u32, column: Option<u32>) -> Self {
+        Self {
+            filename: filename.into(),
+            line,
+            column,
+        }
+    }
+
     // Returns whether this source location is from the rust standard library or precompiled crates
     // that are bundled with the standard library (e.g. hashbrown).
     pub(crate) fn is_in_rust_std(&self) -> bool {
         self.filename.starts_with("/rustc/") || self.filename.starts_with("/cargo/registry")
+    }
+
+    pub(crate) fn filename(&self) -> &Path {
+        &self.filename
+    }
+
+    pub(crate) fn line(&self) -> u32 {
+        self.line
+    }
+
+    pub(crate) fn column(&self) -> Option<u32> {
+        self.column
     }
 }
 

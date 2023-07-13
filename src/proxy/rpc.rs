@@ -152,16 +152,13 @@ impl BuildScriptOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
             crate_name: "foo".into(),
-            locations: vec![SourceLocation {
-                filename: PathBuf::from("src/main.rs"),
-                line: 42,
-                column: None,
-            }],
+            locations: vec![SourceLocation::new(Path::new("src/main.rs"), 42, None)],
         });
         let mut buf = Vec::new();
         write_to_stream(&req, &mut buf).unwrap();

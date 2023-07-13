@@ -398,11 +398,11 @@ fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
     let source_location = usage.source_location();
     lines.push(Line::from(format!(
         "{}",
-        source_location.filename.display()
+        source_location.filename().display()
     )));
 
-    let source = crate::fs::read_to_string(&source_location.filename)?;
-    let target_line = source_location.line as i32;
+    let source = crate::fs::read_to_string(source_location.filename())?;
+    let target_line = source_location.line() as i32;
     let start_line = (target_line - before_context).max(1);
     let gutter_width = ((start_line + max_lines as i32).ilog10() + 1) as usize;
     for (n, line) in source.lines().skip(start_line as usize - 1).enumerate() {
@@ -420,7 +420,7 @@ fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
             line_number
         ))];
         if line_number == target_line {
-            if let Some(column) = source_location.column {
+            if let Some(column) = source_location.column() {
                 let column = column as usize - 1;
                 spans.push(Span::from(line[..column].to_owned()));
                 spans.push(Span::styled(

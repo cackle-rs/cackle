@@ -26,12 +26,11 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
         if message.level == "error" && message.code.code == "unsafe_code" {
             if let Some(first_span) = message.spans.first() {
                 let filename = Path::new(&first_span.file_name);
-                locations.push(SourceLocation {
-                    filename: std::fs::canonicalize(filename)
-                        .unwrap_or_else(|_| filename.to_owned()),
-                    line: first_span.line_start,
-                    column: Some(first_span.column_start),
-                });
+                locations.push(SourceLocation::new(
+                    std::fs::canonicalize(filename).unwrap_or_else(|_| filename.to_owned()),
+                    first_span.line_start,
+                    Some(first_span.column_start),
+                ));
             }
         }
     }
@@ -83,11 +82,11 @@ mod tests {
         .replace('\n', "");
         assert_eq!(
             get_disallowed_unsafe_locations_str(&json),
-            vec![SourceLocation {
-                filename: std::fs::canonicalize(Path::new("src/main.rs")).unwrap(),
-                line: 10,
-                column: Some(20),
-            }]
+            vec![SourceLocation::new(
+                std::fs::canonicalize(Path::new("src/main.rs")).unwrap(),
+                10,
+                Some(20),
+            )]
         );
     }
 }

@@ -30,11 +30,7 @@ impl<'input> SymbolDebugInfo<'input> {
             filename.push(directory);
         }
         filename.push(self.path_name);
-        SourceLocation {
-            filename,
-            line: self.line,
-            column: self.column,
-        }
+        SourceLocation::new(filename, self.line, self.column)
     }
 }
 

@@ -226,7 +226,7 @@ impl<'input> ApiUsageCollector<'input> {
                     continue;
                 }
                 let crate_names =
-                    checker.crate_names_from_source_path(&location.filename, filename)?;
+                    checker.crate_names_from_source_path(location.filename(), filename)?;
 
                 for target_symbol in object_index.target_symbols(&rel)? {
                     trace!("{} -> {target_symbol}", first_sym_info.symbol);
@@ -442,11 +442,7 @@ impl<'input> BinInfo<'input> {
         else {
             return Ok(None);
         };
-        Ok(Some(SourceLocation {
-            filename: PathBuf::from(file),
-            line,
-            column,
-        }))
+        Ok(Some(SourceLocation::new(Path::new(file), line, column)))
     }
 }
 
