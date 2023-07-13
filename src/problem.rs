@@ -34,9 +34,7 @@ pub(crate) enum Problem {
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(CrateName),
     UnusedAllowApi(UnusedAllowApi),
-    #[cfg(feature = "ui")]
     SelectSandbox,
-    #[cfg(feature = "ui")]
     ImportStdApi(PermissionName),
     AvailableApi(AvailableApi),
 }
@@ -278,9 +276,7 @@ impl Display for Problem {
             Problem::MissingConfiguration(path) => {
                 write!(f, "Config file `{}` not found", path.display())?;
             }
-            #[cfg(feature = "ui")]
             Problem::SelectSandbox => write!(f, "Select sandbox kind")?,
-            #[cfg(feature = "ui")]
             Problem::ImportStdApi(api) => write!(f, "Optionally import std API `{api}`")?,
             Problem::AvailableApi(info) => {
                 write!(

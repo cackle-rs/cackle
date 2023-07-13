@@ -2,6 +2,7 @@
 //! features are used.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "ui"), allow(dead_code))]
 
 mod build_script_checker;
 mod bytes;

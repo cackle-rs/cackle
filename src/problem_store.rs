@@ -136,12 +136,10 @@ impl ProblemStore {
         }
     }
 
-    #[cfg(feature = "ui")]
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.iter().all(|entry| entry.problems.is_empty())
     }
 
-    #[cfg(feature = "ui")]
     pub(crate) fn len(&self) -> usize {
         self.entries.iter().map(|entry| entry.problems.len()).sum()
     }
@@ -227,7 +225,6 @@ mod tests {
         store.add(create_problems());
         store.add(create_problems());
 
-        #[cfg(feature = "ui")]
         assert_eq!(store.len(), 4);
 
         let mut iter = store.iterate_with_duplicates();

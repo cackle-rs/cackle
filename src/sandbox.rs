@@ -94,7 +94,6 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     Ok(Some(sandbox))
 }
 
-#[cfg(feature = "ui")]
 pub(crate) fn available_kind() -> SandboxKind {
     if bubblewrap::has_bwrap() {
         SandboxKind::Bubblewrap
@@ -103,7 +102,6 @@ pub(crate) fn available_kind() -> SandboxKind {
     }
 }
 
-#[cfg(feature = "ui")]
 pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
     if kind == SandboxKind::Bubblewrap
         && std::process::Command::new("bwrap")
