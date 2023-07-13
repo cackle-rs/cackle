@@ -548,6 +548,7 @@ fn usages_for_problem(
         }
         _ => (),
     }
+    usages_out.sort_by_key(|u| u.source_location().clone());
     usages_out
 }
 
