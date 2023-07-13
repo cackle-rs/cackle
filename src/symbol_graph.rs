@@ -9,7 +9,7 @@ use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::Checker;
-use crate::checker::SourceLocation;
+use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::problem::ApiUsages;
 use crate::problem::ProblemList;

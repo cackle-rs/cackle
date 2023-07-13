@@ -16,6 +16,7 @@ mod deps;
 pub(crate) mod events;
 pub(crate) mod fs;
 pub(crate) mod link_info;
+pub(crate) mod location;
 mod logging;
 mod names;
 mod outcome;

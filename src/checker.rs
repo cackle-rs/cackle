@@ -5,6 +5,7 @@ use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::crate_index::CrateIndex;
 use crate::link_info::LinkInfo;
+use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::problem::ApiUsages;
 use crate::problem::Problem;
@@ -21,8 +22,6 @@ use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use log::info;
-use serde::Deserialize;
-use serde::Serialize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -74,13 +73,6 @@ pub(crate) struct ApiUsage {
     pub(crate) to: Name,
     pub(crate) to_symbol: Symbol<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub(crate) struct SourceLocation {
-    pub(crate) filename: PathBuf,
-    pub(crate) line: u32,
-    pub(crate) column: Option<u32>,
 }
 
 impl Checker {
@@ -356,14 +348,6 @@ impl Checker {
                 println!("{} -> {}", path.display(), c);
             }
         }
-    }
-}
-
-impl SourceLocation {
-    // Returns whether this source location is from the rust standard library or precompiled crates
-    // that are bundled with the standard library (e.g. hashbrown).
-    pub(crate) fn is_in_rust_std(&self) -> bool {
-        self.filename.starts_with("/rustc/") || self.filename.starts_with("/cargo/registry")
     }
 }
 

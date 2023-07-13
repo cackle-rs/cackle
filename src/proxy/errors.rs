@@ -1,6 +1,6 @@
 //! Handles parsing of errors from rustc.
 
-use crate::checker::SourceLocation;
+use crate::location::SourceLocation;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;

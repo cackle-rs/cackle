@@ -1,9 +1,9 @@
 //! Defines the communication protocol between the proxy subprocesses and the parent process.
 
-use crate::checker::SourceLocation;
 use crate::config::CrateName;
 use crate::config::SandboxConfig;
 use crate::link_info::LinkInfo;
+use crate::location::SourceLocation;
 use crate::outcome::Outcome;
 use anyhow::Context;
 use anyhow::Result;

@@ -2,7 +2,6 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
-use crate::checker::SourceLocation;
 use crate::config::CrateName;
 use crate::config::PermConfig;
 use crate::config::PermissionName;
@@ -402,16 +401,6 @@ fn display_usages(
     Ok(())
 }
 
-impl Display for SourceLocation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}", self.filename.display(), self.line)?;
-        if let Some(column) = self.column {
-            write!(f, ":{}", column)?;
-        }
-        write!(f, "]")
-    }
-}
-
 impl From<Problem> for ProblemList {
     fn from(value: Problem) -> Self {
         Self {
@@ -458,9 +447,9 @@ mod tests {
     use super::Problem;
     use super::ProblemList;
     use crate::checker::ApiUsage;
-    use crate::checker::SourceLocation;
     use crate::config::CrateName;
     use crate::config::PermissionName;
+    use crate::location::SourceLocation;
     use crate::symbol::Symbol;
     use std::collections::BTreeMap;
     use std::sync::Arc;

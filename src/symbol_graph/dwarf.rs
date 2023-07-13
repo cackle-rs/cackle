@@ -1,4 +1,4 @@
-use crate::checker::SourceLocation;
+use crate::location::SourceLocation;
 use crate::symbol::Symbol;
 use anyhow::bail;
 use anyhow::Context;

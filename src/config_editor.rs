@@ -794,12 +794,12 @@ mod tests {
     use super::ConfigEditor;
     use super::Edit;
     use super::InlineStdApi;
-    use crate::checker::SourceLocation;
     use crate::config::Config;
     use crate::config::CrateName;
     use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
+    use crate::location::SourceLocation;
     use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;

@@ -2,7 +2,7 @@
 //! layer of defence in addition to use of the -Funsafe-code flag when compiling crates, since that
 //! flag unfortunately doesn't completely prevent use of unsafe.
 
-use crate::checker::SourceLocation;
+use crate::location::SourceLocation;
 use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
