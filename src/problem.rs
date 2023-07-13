@@ -452,6 +452,7 @@ mod tests {
     use crate::location::SourceLocation;
     use crate::symbol::Symbol;
     use std::collections::BTreeMap;
+    use std::path::Path;
     use std::sync::Arc;
 
     #[test]
@@ -504,7 +505,7 @@ mod tests {
 
     fn create_usage(from: &str, to: &str) -> ApiUsage {
         ApiUsage {
-            source_location: SourceLocation::new("lib.rs", 1, None),
+            source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
             from: Symbol::borrowed(from.as_bytes()).to_heap(),
             to: crate::names::split_names("foo:bar").pop().unwrap(),
             to_symbol: Symbol::borrowed(to.as_bytes()).to_heap(),

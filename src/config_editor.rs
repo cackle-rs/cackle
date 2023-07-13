@@ -805,6 +805,7 @@ mod tests {
     use crate::problem::Problem;
     use crate::proxy::rpc::BuildScriptOutput;
     use indoc::indoc;
+    use std::path::Path;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -941,7 +942,7 @@ mod tests {
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
                     crate_name: "crab1".into(),
-                    locations: vec![SourceLocation::new("main.rs", 10, None)],
+                    locations: vec![SourceLocation::new(Path::new("main.rs"), 10, None)],
                 }),
             )],
             indoc! {r#"

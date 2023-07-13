@@ -2,17 +2,17 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;
 use std::path::Path;
-use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub(crate) struct SourceLocation {
-    filename: PathBuf,
+    filename: Arc<Path>,
     line: u32,
     column: Option<u32>,
 }
 
 impl SourceLocation {
-    pub(crate) fn new<P: Into<PathBuf>>(filename: P, line: u32, column: Option<u32>) -> Self {
+    pub(crate) fn new<P: Into<Arc<Path>>>(filename: P, line: u32, column: Option<u32>) -> Self {
         Self {
             filename: filename.into(),
             line,
