@@ -569,6 +569,9 @@ impl Edit for RemoveUnusedAllowApis {
                 allow_apis.remove(index);
             }
         }
+        if allow_apis.is_empty() {
+            table.remove("allow_apis");
+        }
         Ok(())
     }
 }
@@ -941,6 +944,30 @@ mod tests {
                 allow_apis = [
                     "env",
                 ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn unused_allow_api_empty() {
+        let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
+            crate_name: "crab1.build".into(),
+            permissions: vec![PermissionName::new("fs"), PermissionName::new("net")],
+        });
+        check(
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_unsafe = true
+                allow_apis = [
+                    "fs",
+                    "net",
+                ]
+            "#},
+            &[(0, failure)],
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_unsafe = true
             "#,
             },
         );
