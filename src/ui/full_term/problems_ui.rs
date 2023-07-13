@@ -119,15 +119,13 @@ impl ProblemsUi {
                 if self.edits().is_empty() {
                     bail!("Sorry. No automatic edits exist for this problem");
                 }
-                self.modes.push(Mode::SelectEdit);
-                self.edit_index = 0;
+                self.enter_edit_mode();
             }
             (Mode::SelectProblem, KeyCode::Char('d')) => {
                 if self.usages().is_empty() {
                     bail!("Sorry. No additional details available for this problem");
                 }
-                self.modes.push(Mode::SelectUsage);
-                self.usage_index = 0;
+                self.enter_usage_mode();
             }
             (Mode::SelectUsage, KeyCode::Char('d')) => {
                 // We're already in details mode, drop back out to the problems list.
@@ -136,7 +134,7 @@ impl ProblemsUi {
             (Mode::SelectUsage, KeyCode::Char('f')) => {
                 // We're showing details, jump over to showing edits.
                 self.modes.pop();
-                self.modes.push(Mode::SelectEdit);
+                self.enter_edit_mode();
             }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
@@ -164,6 +162,16 @@ impl ProblemsUi {
             _ => {}
         }
         Ok(())
+    }
+
+    fn enter_usage_mode(&mut self) {
+        self.modes.push(Mode::SelectUsage);
+        self.usage_index = 0;
+    }
+
+    fn enter_edit_mode(&mut self) {
+        self.modes.push(Mode::SelectEdit);
+        self.edit_index = 0;
     }
 
     pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
