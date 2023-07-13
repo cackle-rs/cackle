@@ -1,5 +1,6 @@
 //! A fullscreen terminal user interface.
 
+use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
 use anyhow::Result;
@@ -29,6 +30,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::TryRecvError;
+use std::sync::Arc;
 use std::time::Duration;
 
 mod problems_ui;
@@ -37,10 +39,15 @@ pub(crate) struct FullTermUi {
     config_path: PathBuf,
     terminal: Terminal<CrosstermBackend<Stdout>>,
     abort_sender: Sender<()>,
+    crate_index: Arc<CrateIndex>,
 }
 
 impl FullTermUi {
-    pub(crate) fn new(config_path: PathBuf, abort_sender: Sender<()>) -> Result<Self> {
+    pub(crate) fn new(
+        config_path: PathBuf,
+        crate_index: Arc<CrateIndex>,
+        abort_sender: Sender<()>,
+    ) -> Result<Self> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = std::io::stdout();
         crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
@@ -50,6 +57,7 @@ impl FullTermUi {
             config_path,
             terminal,
             abort_sender,
+            crate_index,
         })
     }
 }
@@ -60,8 +68,11 @@ impl super::UserInterface for FullTermUi {
         problem_store: ProblemStoreRef,
         event_receiver: Receiver<AppEvent>,
     ) -> Result<()> {
-        let mut screen =
-            problems_ui::ProblemsUi::new(problem_store.clone(), self.config_path.clone());
+        let mut screen = problems_ui::ProblemsUi::new(
+            problem_store.clone(),
+            self.crate_index.clone(),
+            self.config_path.clone(),
+        );
         let mut needs_redraw = true;
         let mut error = None;
         loop {

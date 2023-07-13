@@ -8,6 +8,7 @@ use crate::checker::ApiUsage;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
+use crate::crate_index::CrateIndex;
 use crate::location::SourceLocation;
 use crate::problem::Problem;
 use crate::problem_store::ProblemStore;
@@ -34,12 +35,14 @@ use ratatui::Frame;
 use std::io::Stdout;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::MutexGuard;
 
 mod diff;
 
 pub(super) struct ProblemsUi {
     problem_store: ProblemStoreRef,
+    crate_index: Arc<CrateIndex>,
     modes: Vec<Mode>,
     problem_index: usize,
     edit_index: usize,
@@ -174,9 +177,14 @@ impl ProblemsUi {
         self.edit_index = 0;
     }
 
-    pub(super) fn new(problem_store: ProblemStoreRef, config_path: PathBuf) -> Self {
+    pub(super) fn new(
+        problem_store: ProblemStoreRef,
+        crate_index: Arc<CrateIndex>,
+        config_path: PathBuf,
+    ) -> Self {
         Self {
             problem_store,
+            crate_index,
             modes: vec![Mode::SelectProblem],
             problem_index: 0,
             edit_index: 0,
@@ -243,7 +251,8 @@ impl ProblemsUi {
                             .map(|fix| ListItem::new(format!("  {}", fix.title()))),
                     );
                 } else if is_usage_mode {
-                    let usages = usages_for_problem(pstore_lock, self.problem_index);
+                    let usages =
+                        usages_for_problem(pstore_lock, self.problem_index, &self.crate_index);
                     items.extend(
                         usages
                             .iter()
@@ -296,7 +305,11 @@ impl ProblemsUi {
     }
 
     fn usages(&self) -> Vec<Box<dyn DisplayUsage>> {
-        usages_for_problem(&self.problem_store.lock(), self.problem_index)
+        usages_for_problem(
+            &self.problem_store.lock(),
+            self.problem_index,
+            &self.crate_index,
+        )
     }
 
     fn render_edit_help_and_diff(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
@@ -539,6 +552,7 @@ fn edits_for_problem(
 fn usages_for_problem(
     pstore_lock: &MutexGuard<ProblemStore>,
     problem_index: usize,
+    crate_index: &CrateIndex,
 ) -> Vec<Box<dyn DisplayUsage>> {
     let mut usages_out: Vec<Box<dyn DisplayUsage>> = Vec::new();
     match pstore_lock.deduplicated_into_iter().nth(problem_index) {
@@ -551,13 +565,24 @@ fn usages_for_problem(
         }
         Some((_, Problem::DisallowedUnsafe(unsafe_usage))) => {
             for location in &unsafe_usage.locations {
-                usages_out.push(Box::new(location.clone()));
+                let pkg_dir = crate_index
+                    .pkg_dir(&unsafe_usage.crate_name)
+                    .map(|pkg_dir| pkg_dir.as_std_path().to_owned());
+                usages_out.push(Box::new(UnsafeLocation {
+                    source_location: location.clone(),
+                    pkg_dir,
+                }));
             }
         }
         _ => (),
     }
     usages_out.sort_by_key(|u| u.source_location().clone());
     usages_out
+}
+
+struct UnsafeLocation {
+    source_location: SourceLocation,
+    pkg_dir: Option<PathBuf>,
 }
 
 /// A trait implemented for things that can display in a usage list.
@@ -588,13 +613,22 @@ impl DisplayUsage for ApiUsage {
     }
 }
 
-impl DisplayUsage for SourceLocation {
+impl DisplayUsage for UnsafeLocation {
     fn source_location(&self) -> &SourceLocation {
-        self
+        &self.source_location
     }
 
     fn list_display(&self) -> String {
-        self.to_string()
+        // In the list, we'd prefer to display source filenames relative to the package root where
+        // possible. We already know the crate name and all the usage locations for a crate will
+        // generally be under the package root. For any that aren't, we fall back to using the full
+        // filename.
+        let filename = self
+            .pkg_dir
+            .as_ref()
+            .and_then(|pkg_dir| self.source_location.filename().strip_prefix(pkg_dir).ok())
+            .unwrap_or_else(|| self.source_location.filename());
+        format!("{}:{}", filename.display(), self.source_location.line())
     }
 }
 

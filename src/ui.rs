@@ -1,6 +1,7 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
 use crate::Args;
@@ -49,6 +50,7 @@ pub(crate) fn start_ui(
     args: &Arc<Args>,
     config_path: &Path,
     problem_store: ProblemStoreRef,
+    crate_index: Arc<CrateIndex>,
     event_receiver: Receiver<AppEvent>,
     abort_sender: Sender<()>,
 ) -> Result<JoinHandle<Result<()>>> {
@@ -67,13 +69,14 @@ pub(crate) fn start_ui(
             info!("Starting full terminal UI");
             Box::new(full_term::FullTermUi::new(
                 config_path.to_owned(),
+                crate_index,
                 abort_sender,
             )?)
         }
     };
     #[cfg(not(feature = "ui"))]
     {
-        drop((config_path, abort_sender));
+        drop((config_path, abort_sender, crate_index));
     }
     Ok(std::thread::Builder::new()
         .name("UI".to_owned())

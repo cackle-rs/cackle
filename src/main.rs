@@ -194,6 +194,7 @@ impl Cackle {
             &args,
             &config_path,
             problem_store.clone(),
+            crate_index.clone(),
             event_receiver,
             abort_sender,
         )?;
