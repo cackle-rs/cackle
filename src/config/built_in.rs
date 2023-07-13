@@ -48,14 +48,13 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
     result.insert(
         PermissionName::from("net"),
         perm(
-            &[
-                "std::net",
-                "std::os::unix::net",
-                "std::os::wasi::net",
-                "std::os::windows::net",
-            ],
+            &["std::net", "std::os::wasi::net", "std::os::windows::net"],
             &[],
         ),
+    );
+    result.insert(
+        PermissionName::from("unix_sockets"),
+        perm(&["std::os::unix::net"], &[]),
     );
     result.insert(
         PermissionName::from("process"),

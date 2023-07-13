@@ -9,6 +9,7 @@ import_std = [
     "env",
     "net",
     "process",
+    "unix_sockets",
     "terminate",
 ]
 

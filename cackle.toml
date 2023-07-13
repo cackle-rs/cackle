@@ -125,9 +125,6 @@ allow_unsafe = true
 
 [pkg.mio]
 allow_unsafe = true
-allow_apis = [
-    "net",
-]
 
 [pkg.lock_api]
 allow_unsafe = true
@@ -253,7 +250,6 @@ allow_unsafe = true
 [pkg.cackle]
 allow_apis = [
     "fs",
-    "net",
     "process",
 ]
 
