@@ -324,18 +324,23 @@ impl Edit for CreateRecommendedConfig {
     }
 
     fn help(&self) -> Cow<'static, str> {
-        "Writes a cackle.toml into your workspace / crate root. Selects Bubblewrap for sandboxing \
-        and imports fs, net and process APIs."
+        "Writes a cackle.toml into your workspace / crate root with imports for the fs, net and \
+        process APIs."
             .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         editor.set_version(crate::config::MAX_VERSION)?;
-        editor.set_sandbox_kind(SandboxKind::Bubblewrap)?;
         editor.toggle_std_import("fs")?;
         editor.toggle_std_import("net")?;
         editor.toggle_std_import("process")?;
         Ok(())
+    }
+
+    fn replacement_problems(&self) -> ProblemList {
+        // We leave selecting the sandbox to a separate step, since it does validation that the
+        // sandbox is installed.
+        Problem::SelectSandbox.into()
     }
 }
 
