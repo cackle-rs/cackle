@@ -275,7 +275,7 @@ impl ProblemsUi {
         let details = pstore_lock
             .deduplicated_into_iter()
             .nth(self.problem_index)
-            .map(|(_, problem)| problem.details())
+            .map(|(_, problem)| problem_details(problem))
             .unwrap_or_default();
         let paragraph = Paragraph::new(details)
             .block(block)
@@ -587,5 +587,19 @@ impl DisplayUsage for SourceLocation {
 
     fn list_display(&self) -> String {
         self.to_string()
+    }
+}
+
+fn problem_details(problem: &Problem) -> String {
+    if matches!(
+        problem,
+        Problem::DisallowedUnsafe(..) | Problem::DisallowedApiUsage(..)
+    ) {
+        // For kinds of problems where we support showing each usage, we just use a short-form.
+        problem.to_string()
+    } else {
+        // For other kinds of problems, especially problems like build script failures, we use the
+        // long form.
+        format!("{problem:#}")
     }
 }

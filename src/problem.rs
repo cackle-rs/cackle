@@ -198,11 +198,6 @@ impl Problem {
         }
     }
 
-    #[cfg(feature = "ui")]
-    pub(crate) fn details(&self) -> String {
-        format!("{self:#}")
-    }
-
     /// Returns whether a retry on this problem needs to be sent to a subprocess.
     fn should_send_retry_to_subprocess(&self) -> bool {
         matches!(
@@ -244,11 +239,7 @@ impl Display for Problem {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
             Problem::DisallowedUnsafe(usage) => {
-                write!(
-                    f,
-                    "Crate {} uses unsafe and doesn't have `allow_unsafe = true`",
-                    usage.crate_name,
-                )?;
+                write!(f, "Crate {} uses unsafe", usage.crate_name)?;
                 if f.alternate() {
                     writeln!(f)?;
                     for location in &usage.locations {
