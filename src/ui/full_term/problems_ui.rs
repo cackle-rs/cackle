@@ -407,7 +407,7 @@ impl ProblemsUi {
         let mut text = String::new();
         if let Some(crate_info) = self.crate_index.crate_info(&pkg_name) {
             if let Some(description) = &crate_info.description {
-                writeln!(&mut text, "Description: {description}").unwrap();
+                writeln!(&mut text, "Description: {}", description.trim_end()).unwrap();
             }
             if let Some(documentation) = &crate_info.documentation {
                 writeln!(&mut text, "Documentation: {documentation}").unwrap();
