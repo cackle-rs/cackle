@@ -44,7 +44,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     if let Some(orig_build_script) = proxied_build_rs_bin_path(&binary_name) {
         // We're wrapping a build script.
         exit_status = proxy_build_script(orig_build_script, &rpc_client)?;
-    } else if args.peek().map(|arg| arg == "rustc").unwrap_or(false) {
+    } else if is_path_to_rustc(args.peek()) {
         // We're wrapping rustc.
         exit_status = proxy_rustc(&rpc_client)?;
     } else if let Ok(link_info) = LinkInfo::from_env() {
@@ -56,6 +56,12 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
         bail!("Unexpected proxy invocation with args: {args:?}");
     };
     std::process::exit(exit_status.code());
+}
+
+fn is_path_to_rustc(arg: Option<&String>) -> bool {
+    arg.and_then(|arg| Path::new(arg).file_name())
+        .map(|file_name| file_name == "rustc")
+        .unwrap_or(false)
 }
 
 /// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
