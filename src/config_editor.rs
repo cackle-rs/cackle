@@ -83,14 +83,14 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
-                edits.push(Box::new(DisableSandbox {
-                    crate_name: failure.output.crate_name.clone(),
-                }));
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
                         crate_name: failure.output.crate_name.clone(),
                     }));
                 }
+                edits.push(Box::new(DisableSandbox {
+                    crate_name: failure.output.crate_name.clone(),
+                }));
             }
         }
         Problem::DisallowedBuildInstruction(failure) => {
@@ -975,7 +975,7 @@ mod tests {
             &[(0, failure.clone())],
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
-                kind = "Disabled"
+                allow_network = true
             "#,
             },
         );
@@ -984,7 +984,7 @@ mod tests {
             &[(1, failure)],
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
-                allow_network = true
+                kind = "Disabled"
             "#,
             },
         );
