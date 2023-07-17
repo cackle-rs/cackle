@@ -14,6 +14,7 @@ fn main() {
     crab4::access_file();
     crab7::do_something();
     crab8::print_defaults();
+    crab3::run_process();
     // Note, the following call exits
     crab2::stuff::do_stuff();
 }

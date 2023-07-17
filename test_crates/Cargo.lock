@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "crab1",
  "crab2",
+ "crab3 2.0.0",
  "crab4",
  "crab6",
  "crab7",
@@ -26,7 +27,7 @@ dependencies = [
 name = "crab2"
 version = "0.1.0"
 dependencies = [
- "crab3",
+ "crab3 0.1.0",
 ]
 
 [[package]]
@@ -35,6 +36,10 @@ version = "0.1.0"
 dependencies = [
  "crab1",
 ]
+
+[[package]]
+name = "crab3"
+version = "2.0.0"
 
 [[package]]
 name = "crab4"

@@ -12,3 +12,6 @@ members = [
     "pmacro1",
     "shared1",
 ]
+exclude = [
+    "crab3v2",
+]

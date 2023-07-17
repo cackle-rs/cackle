@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 crab1 = { path = "../crab1" }
 crab2 = { path = "../crab2" }
+crab3 = { path = "../crab3v2" }
 crab4 = { path = "../crab4" }
 crab6 = { path = "../crab6" }
 crab7 = { path = "../crab7" }
