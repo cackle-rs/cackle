@@ -53,10 +53,6 @@ pub(crate) struct PermId(usize);
 
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
-    /// Whether the config file mentions this crate.
-    // TODO: Is ever not true? Can we remove this?
-    has_config: bool,
-
     /// Permissions that are allowed for this crate according to cackle.toml.
     allowed_perms: HashSet<PermissionName>,
 
@@ -140,7 +136,6 @@ impl Checker {
                 .crate_infos
                 .entry(crate_name.as_ref().into())
                 .or_default();
-            crate_info.has_config = true;
             crate_info.allow_proc_macro = crate_config.allow_proc_macro;
             for perm in &crate_config.allow_apis {
                 if crate_info.allowed_perms.insert(perm.clone()) {
@@ -253,10 +248,11 @@ impl Checker {
         if !self.config.common.explicit_build_scripts {
             return ProblemList::default();
         }
-        if let Some(crate_info) = self.crate_infos.get_mut(&CrateName::from(build_script_id)) {
-            if crate_info.has_config {
-                return ProblemList::default();
-            }
+        if self
+            .crate_infos
+            .contains_key(&CrateName::from(build_script_id))
+        {
+            return ProblemList::default();
         }
         Problem::UsesBuildScript(build_script_id.clone()).into()
     }
@@ -328,7 +324,7 @@ impl Checker {
         let mut problems = ProblemList::default();
         let crate_names_in_index: HashSet<_> = self.crate_index.crate_names().collect();
         for (crate_name, crate_info) in &self.crate_infos {
-            if crate_info.has_config && !crate_names_in_index.contains(crate_name) {
+            if !crate_names_in_index.contains(crate_name) {
                 problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
             }
             if !crate_info.unused_allowed_perms.is_empty() {
