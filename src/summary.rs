@@ -1,7 +1,9 @@
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::PackageConfig;
+use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateSel;
 use clap::Parser;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -47,14 +49,15 @@ impl Summary {
         let pkg_configs: HashMap<&CrateName, &PackageConfig> =
             config.packages.iter().map(|(k, v)| (k, v)).collect();
         let mut packages: Vec<PackageSummary> = crate_index
-            .package_names()
-            .map(|name| {
+            .package_ids()
+            .map(|pkg_id| {
                 let mut permissions = Vec::new();
-                for (crate_name, suffix) in [
-                    (name, ""),
-                    (&CrateName::for_build_script(name.as_ref()), "[build]"),
-                ] {
-                    if let Some(pkg_config) = pkg_configs.get(crate_name) {
+                let pkg_name = CrateName::from(&CrateSel::Primary(pkg_id.clone()));
+                let build_script_name = CrateName::from(&CrateSel::BuildScript(BuildScriptId {
+                    pkg_id: pkg_id.clone(),
+                }));
+                for (crate_name, suffix) in [(&pkg_name, ""), (&build_script_name, "[build]")] {
+                    if let Some(pkg_config) = pkg_configs.get(&crate_name) {
                         if pkg_config.allow_proc_macro {
                             permissions.push(format!("proc_macro{suffix}"));
                         }
@@ -67,7 +70,7 @@ impl Summary {
                     }
                 }
                 PackageSummary {
-                    name: name.to_owned(),
+                    name: pkg_name,
                     permissions,
                 }
             })

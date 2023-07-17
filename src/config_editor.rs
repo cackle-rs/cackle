@@ -76,28 +76,27 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
                 usage: usage.clone(),
             }));
         }
-        Problem::IsProcMacro(crate_name) => {
+        Problem::IsProcMacro(pkg_id) => {
             edits.push(Box::new(AllowProcMacro {
-                crate_name: crate_name.clone(),
+                crate_name: pkg_id.into(),
             }));
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
+                let crate_name = CrateName::from(&failure.build_script_id);
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
-                        crate_name: failure.output.crate_name.clone(),
+                        crate_name: crate_name.clone(),
                     }));
                 }
-                edits.push(Box::new(DisableSandbox {
-                    crate_name: failure.output.crate_name.clone(),
-                }));
+                edits.push(Box::new(DisableSandbox { crate_name }));
             }
         }
         Problem::DisallowedBuildInstruction(failure) => {
             edits.append(&mut edits_for_build_instruction(failure));
         }
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
-            crate_name: failure.crate_name.clone(),
+            crate_name: CrateName::from(&failure.crate_sel),
         })),
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
@@ -249,7 +248,7 @@ fn edits_for_build_instruction(
     let mut suffix = "";
     loop {
         out.push(Box::new(AllowBuildInstruction {
-            crate_name: failure.crate_name.clone(),
+            crate_name: CrateName::from(&failure.build_script_id),
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
@@ -388,7 +387,8 @@ impl Edit for ImportApi {
     fn title(&self) -> String {
         format!(
             "Import API `{}` from package `{}`",
-            self.0.api, self.0.crate_name
+            self.0.api,
+            CrateName::from(&self.0.pkg_id)
         )
     }
 
@@ -400,7 +400,7 @@ impl Edit for ImportApi {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.0.crate_name)?;
+        let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
         add_to_array(table, "import", &[&self.0.api.name])
     }
 }
@@ -438,7 +438,8 @@ impl Edit for InlineApi {
     fn title(&self) -> String {
         format!(
             "Inline API `{}` from package `{}`",
-            self.0.api, self.0.crate_name
+            self.0.api,
+            CrateName::from(&self.0.pkg_id)
         )
     }
 
@@ -526,7 +527,8 @@ impl Edit for IgnoreApi {
     fn title(&self) -> String {
         format!(
             "Ignore API `{}` provided by package `{}`",
-            self.0.api, self.0.crate_name
+            self.0.api,
+            CrateName::from(&self.0.pkg_id)
         )
     }
 
@@ -539,7 +541,7 @@ impl Edit for IgnoreApi {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         // Make sure the `import` table exists, otherwise we'll continue to warn about unused
         // imports.
-        let table = editor.pkg_table(&self.0.crate_name)?;
+        let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
         get_or_create_array(table, "import")?;
         Ok(())
     }
@@ -559,7 +561,7 @@ impl Edit for AllowApiUsage {
         sorted_keys.sort();
         format!(
             "Allow `{}` to use APIs: {}",
-            self.usage.crate_name,
+            CrateName::from(&self.usage.crate_sel),
             sorted_keys.join(", ")
         )
     }
@@ -569,7 +571,7 @@ impl Edit for AllowApiUsage {
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.pkg_table(&self.usage.crate_name)?;
+        let table = editor.pkg_table(&CrateName::from(&self.usage.crate_sel))?;
         let keys: Vec<_> = self.usage.usages.keys().map(|perm| &perm.name).collect();
         add_to_array(table, "allow_apis", &keys)
     }
@@ -795,10 +797,12 @@ mod tests {
     use super::Edit;
     use super::InlineStdApi;
     use crate::config::Config;
-    use crate::config::CrateName;
     use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
+    use crate::crate_index::testing::build_script_id;
+    use crate::crate_index::testing::pkg_id;
+    use crate::crate_index::CrateSel;
     use crate::location::SourceLocation;
     use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;
@@ -811,7 +815,7 @@ mod tests {
 
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
-            crate_name: pkg_name.into(),
+            crate_sel: CrateSel::Primary(pkg_id(pkg_name)),
             usages: apis
                 .iter()
                 .map(|n| (PermissionName::from(*n), vec![]))
@@ -864,7 +868,7 @@ mod tests {
     #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-            crate_name: CrateName::for_build_script("crab1"),
+            build_script_id: build_script_id("crab1"),
             instruction: "cargo:rustc-env=SOME_VAR=/home/some-path".to_owned(),
         });
         check(
@@ -925,7 +929,7 @@ mod tests {
     fn fix_allow_proc_macro() {
         check(
             "",
-            &[(0, Problem::IsProcMacro("crab1".into()))],
+            &[(0, Problem::IsProcMacro(pkg_id("crab1")))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_proc_macro = true
@@ -941,7 +945,7 @@ mod tests {
             &[(
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
-                    crate_name: "crab1".into(),
+                    crate_sel: CrateSel::Primary(pkg_id("crab1")),
                     locations: vec![SourceLocation::new(Path::new("main.rs"), 10, None)],
                 }),
             )],
@@ -960,7 +964,7 @@ mod tests {
                 exit_code: 1,
                 stdout: Vec::new(),
                 stderr: Vec::new(),
-                crate_name: CrateName::for_build_script("crab1"),
+                build_script_id: build_script_id("crab1"),
                 sandbox_config: SandboxConfig {
                     kind: crate::config::SandboxKind::Bubblewrap,
                     allow_read: vec![],
@@ -969,6 +973,7 @@ mod tests {
                 },
                 build_script: PathBuf::new(),
             },
+            build_script_id: build_script_id("crab1"),
         });
         check(
             "",

@@ -207,6 +207,7 @@ impl<'a> Iterator for ProblemStoreIterator<'a> {
 mod tests {
     use super::ProblemStore;
     use super::ProblemStoreIndex;
+    use crate::crate_index::testing::build_script_id;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
     use std::sync::mpsc::channel;
@@ -214,8 +215,8 @@ mod tests {
 
     fn create_problems() -> ProblemList {
         let mut problems = ProblemList::default();
-        problems.push(Problem::UsesBuildScript("crab1".into()));
-        problems.push(Problem::UsesBuildScript("crab2".into()));
+        problems.push(Problem::UsesBuildScript(build_script_id("crab1")));
+        problems.push(Problem::UsesBuildScript(build_script_id("crab2")));
         problems
     }
 
@@ -230,19 +231,19 @@ mod tests {
         let mut iter = store.iterate_with_duplicates();
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab1".into()))
+            Some(&Problem::UsesBuildScript(build_script_id("crab1")))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab2".into()))
+            Some(&Problem::UsesBuildScript(build_script_id("crab2")))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab1".into()))
+            Some(&Problem::UsesBuildScript(build_script_id("crab1")))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript("crab2".into()))
+            Some(&Problem::UsesBuildScript(build_script_id("crab2")))
         );
         assert_eq!(iter.next().map(|(_, v)| v), None);
 

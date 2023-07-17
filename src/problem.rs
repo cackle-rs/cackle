@@ -5,6 +5,9 @@ use crate::checker::ApiUsage;
 use crate::config::CrateName;
 use crate::config::PermConfig;
 use crate::config::PermissionName;
+use crate::crate_index::BuildScriptId;
+use crate::crate_index::CrateSel;
+use crate::crate_index::PackageId;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
@@ -26,9 +29,9 @@ pub(crate) struct ProblemList {
 pub(crate) enum Problem {
     Message(String),
     MissingConfiguration(PathBuf),
-    UsesBuildScript(CrateName),
+    UsesBuildScript(BuildScriptId),
     DisallowedUnsafe(UnsafeUsage),
-    IsProcMacro(CrateName),
+    IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
     BuildScriptFailed(BuildScriptFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
@@ -47,12 +50,13 @@ pub(crate) struct ErrorDetails {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BuildScriptFailed {
+    pub(crate) build_script_id: BuildScriptId,
     pub(crate) output: BuildScriptOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApiUsages {
-    pub(crate) crate_name: CrateName,
+    pub(crate) crate_sel: CrateSel,
     pub(crate) usages: BTreeMap<PermissionName, Vec<ApiUsage>>,
 }
 
@@ -64,13 +68,13 @@ pub(crate) struct UnusedAllowApi {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DisallowedBuildInstruction {
-    pub(crate) crate_name: CrateName,
+    pub(crate) build_script_id: BuildScriptId,
     pub(crate) instruction: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct AvailableApi {
-    pub(crate) crate_name: CrateName,
+    pub(crate) pkg_id: PackageId,
     pub(crate) api: PermissionName,
     pub(crate) config: PermConfig,
 }
@@ -112,15 +116,15 @@ impl ProblemList {
     /// Combines all disallowed API usages for a crate.
     #[must_use]
     pub(crate) fn grouped_by_type_and_crate(self) -> ProblemList {
-        self.grouped_by(|usage| usage.crate_name.as_ref().to_owned())
+        self.grouped_by(|usage| usage.crate_sel.to_string())
     }
 
     /// Combines all disallowed API usages for a crate and API.
     #[must_use]
     pub(crate) fn grouped_by_type_crate_and_api(self) -> ProblemList {
         self.grouped_by(|usage| match usage.usages.first_key_value() {
-            Some((key, _)) => format!("{}-{key}", usage.crate_name),
-            None => usage.crate_name.as_ref().to_owned(),
+            Some((key, _)) => format!("{}-{key}", usage.crate_sel),
+            None => usage.crate_sel.to_string(),
         })
     }
 
@@ -224,21 +228,21 @@ impl Problem {
         Cow::Borrowed(self)
     }
 
-    pub(crate) fn crate_name(&self) -> Option<&CrateName> {
+    pub(crate) fn pkg_id(&self) -> Option<&PackageId> {
         match self {
             Problem::Message(_) => None,
             Problem::MissingConfiguration(_) => None,
-            Problem::UsesBuildScript(crate_name) => Some(crate_name),
-            Problem::DisallowedUnsafe(d) => Some(&d.crate_name),
-            Problem::IsProcMacro(crate_name) => Some(crate_name),
-            Problem::DisallowedApiUsage(d) => Some(&d.crate_name),
-            Problem::BuildScriptFailed(d) => Some(&d.output.crate_name),
-            Problem::DisallowedBuildInstruction(d) => Some(&d.crate_name),
-            Problem::UnusedPackageConfig(crate_name) => Some(crate_name),
-            Problem::UnusedAllowApi(d) => Some(&d.crate_name),
+            Problem::UsesBuildScript(build_script_id) => Some(&build_script_id.pkg_id),
+            Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
+            Problem::IsProcMacro(pkg_id) => Some(pkg_id),
+            Problem::DisallowedApiUsage(d) => Some(d.crate_sel.pkg_id()),
+            Problem::BuildScriptFailed(d) => Some(&d.build_script_id.pkg_id),
+            Problem::DisallowedBuildInstruction(d) => Some(&d.build_script_id.pkg_id),
+            Problem::UnusedPackageConfig(_) => None,
+            Problem::UnusedAllowApi(_) => None,
             Problem::SelectSandbox => None,
             Problem::ImportStdApi(_) => None,
-            Problem::AvailableApi(d) => Some(&d.crate_name),
+            Problem::AvailableApi(d) => Some(&d.pkg_id),
         }
     }
 }
@@ -254,7 +258,7 @@ impl Display for Problem {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
             Problem::DisallowedUnsafe(usage) => {
-                write!(f, "Crate {} uses unsafe", usage.crate_name)?;
+                write!(f, "Crate {} uses unsafe", usage.crate_sel)?;
                 if f.alternate() {
                     writeln!(f)?;
                     for location in &usage.locations {
@@ -262,17 +266,18 @@ impl Display for Problem {
                     }
                 }
             }
-            Problem::UsesBuildScript(crate_name) => {
+            Problem::UsesBuildScript(build_script_id) => {
                 write!(
                     f,
                     "Package {} has a build script, but config file doesn't have [pkg.{}]",
-                    crate_name.package_name(),
-                    crate_name
+                    CrateSel::Primary(build_script_id.pkg_id.clone()),
+                    CrateName::from(build_script_id),
                 )?;
             }
             Problem::IsProcMacro(pkg_name) => write!(
                 f,
-                "Package `{pkg_name}` is a proc macro but doesn't set allow_proc_macro"
+                "Package `{}` is a proc macro but doesn't set allow_proc_macro",
+                CrateSel::Primary(pkg_name.clone())
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
@@ -280,7 +285,7 @@ impl Display for Problem {
                 write!(
                     f,
                     "{}'s build script emitted disallowed instruction `{}`",
-                    info.crate_name.package_name(),
+                    CrateSel::Primary(info.build_script_id.pkg_id.clone()),
                     info.instruction
                 )?;
             }
@@ -300,7 +305,8 @@ impl Display for Problem {
                 write!(
                     f,
                     "Package `{}` exports API `{}`",
-                    info.crate_name, info.api
+                    CrateSel::Primary(info.pkg_id.clone()),
+                    info.api
                 )?;
             }
         }
@@ -311,16 +317,16 @@ impl Display for Problem {
 impl Display for ApiUsages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_name)?;
+            writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_sel)?;
             for (perm_name, usages) in &self.usages {
                 writeln!(f, "  {perm_name}:")?;
                 display_usages(f, usages)?;
             }
         } else if self.usages.len() == 1 {
             let (perm, _) = self.usages.first_key_value().unwrap();
-            write!(f, "Crate `{}` uses API `{perm}`", self.crate_name)?;
+            write!(f, "Crate `{}` uses API `{perm}`", self.crate_sel)?;
         } else {
-            write!(f, "Crate '{}' uses disallowed APIs: ", self.crate_name)?;
+            write!(f, "Crate '{}' uses disallowed APIs: ", self.crate_sel)?;
             let mut first = true;
             for perm_name in self.usages.keys() {
                 if first {
@@ -362,7 +368,7 @@ impl Display for BuildScriptFailed {
         write!(
             f,
             "Build script for package `{}` failed",
-            self.output.crate_name
+            self.output.build_script_id.pkg_id
         )?;
         if f.alternate() {
             write!(
@@ -425,7 +431,7 @@ impl From<Problem> for ProblemList {
 
 impl std::hash::Hash for ApiUsages {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.crate_name.hash(state);
+        self.crate_sel.hash(state);
         // Out of laziness, we only hash the permission names, not the usage information.
         for perm in self.usages.keys() {
             perm.hash(state);
@@ -444,7 +450,7 @@ impl ApiUsages {
         let (permission, usages) = self.usages.iter().next().unwrap();
         let usage = &usages[0];
         (
-            self.crate_name.clone(),
+            self.crate_sel.clone(),
             permission.clone(),
             usage.from.clone(),
             usage.source_location.clone(),
@@ -461,8 +467,9 @@ mod tests {
     use super::Problem;
     use super::ProblemList;
     use crate::checker::ApiUsage;
-    use crate::config::CrateName;
     use crate::config::PermissionName;
+    use crate::crate_index::testing::pkg_id;
+    use crate::crate_index::CrateSel;
     use crate::location::SourceLocation;
     use crate::symbol::Symbol;
     use std::collections::BTreeMap;
@@ -494,7 +501,7 @@ mod tests {
         let mut package_names = Vec::new();
         for p in &problems.problems {
             if let Problem::DisallowedApiUsage(u) = p {
-                package_names.push(u.crate_name.as_ref());
+                package_names.push(u.crate_sel.pkg_id().name());
             }
         }
         package_names.sort();
@@ -512,7 +519,7 @@ mod tests {
             );
         }
         Problem::DisallowedApiUsage(super::ApiUsages {
-            crate_name: CrateName::from(package),
+            crate_sel: CrateSel::Primary(pkg_id(package)),
             usages,
         })
     }

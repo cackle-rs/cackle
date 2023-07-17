@@ -1,36 +1,47 @@
 use crate::config::Config;
 use crate::config::CrateName;
+use crate::crate_index::BuildScriptId;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::proxy::rpc::BuildScriptOutput;
+use anyhow::Result;
 
-pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> ProblemList {
+pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Result<ProblemList> {
+    let build_script_id = &outputs.build_script_id;
     if outputs.exit_code != 0 {
-        return Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
-            output: outputs.clone(),
-        })
-        .into();
+        return Ok(
+            Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
+                output: outputs.clone(),
+                build_script_id: build_script_id.clone(),
+            })
+            .into(),
+        );
     }
-    let crate_name = &outputs.crate_name;
+    let crate_name = CrateName::from(build_script_id);
     let allow_build_instructions = config
         .packages
-        .get(crate_name)
+        .get(&crate_name)
         .map(|cfg| cfg.allow_build_instructions.as_slice())
         .unwrap_or(&[]);
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
-        return Problem::new(format!(
-            "The build script `{crate_name}` emitted invalid UTF-8"
+        return Ok(Problem::new(format!(
+            "The build script `{}` emitted invalid UTF-8",
+            build_script_id
         ))
-        .into();
+        .into());
     };
     let mut problems = ProblemList::default();
     for line in stdout.lines() {
         if line.starts_with("cargo:") {
-            problems.merge(check_directive(line, crate_name, allow_build_instructions));
+            problems.merge(check_directive(
+                line,
+                build_script_id,
+                allow_build_instructions,
+            ));
         }
     }
-    problems
+    Ok(problems)
 }
 
 /// Cargo instructions that should be harmless, so would just add noise if we were required to
@@ -39,7 +50,7 @@ const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:r
 
 fn check_directive(
     instruction: &str,
-    crate_name: &CrateName,
+    build_script_id: &BuildScriptId,
     allow_build_instructions: &[String],
 ) -> ProblemList {
     if ALWAYS_PERMITTED
@@ -55,7 +66,7 @@ fn check_directive(
         return ProblemList::default();
     }
     Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-        crate_name: crate_name.to_owned(),
+        build_script_id: build_script_id.clone(),
         instruction: instruction.to_owned(),
     })
     .into()
@@ -71,15 +82,14 @@ fn matches(instruction: &str, rule: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use crate::config;
-    use crate::config::CrateName;
     use crate::config::SandboxConfig;
+    use crate::crate_index::testing::build_script_id;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
     use crate::proxy::rpc::BuildScriptOutput;
+    use std::path::PathBuf;
 
     #[track_caller]
     fn check(stdout: &str, config_str: &str) -> ProblemList {
@@ -88,11 +98,11 @@ mod tests {
             exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
-            crate_name: CrateName::for_build_script("my_pkg"),
+            build_script_id: build_script_id("my_pkg"),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
         };
-        super::check(&outputs, &config)
+        super::check(&outputs, &config).unwrap()
     }
 
     #[test]
@@ -113,7 +123,7 @@ mod tests {
         assert_eq!(
             check("cargo:rustc-link-search=some_directory", ""),
             Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-                crate_name: CrateName::for_build_script("my_pkg"),
+                build_script_id: build_script_id("my_pkg"),
                 instruction: "cargo:rustc-link-search=some_directory".to_owned(),
             })
             .into()

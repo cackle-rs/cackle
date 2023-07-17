@@ -400,12 +400,12 @@ impl ProblemsUi {
         let Some((_, problem)) = pstore.deduplicated_into_iter().nth(self.problem_index) else {
             return;
         };
-        let Some(crate_name) = problem.crate_name() else {
+        let Some(pkg_id) = problem.pkg_id() else {
             return;
         };
-        let pkg_name = CrateName(Arc::from(crate_name.package_name()));
+        let pkg_name = CrateName::from(pkg_id);
         let mut text = String::new();
-        if let Some(crate_info) = self.crate_index.crate_info(&pkg_name) {
+        if let Some(crate_info) = self.crate_index.package_info(pkg_id) {
             if let Some(description) = &crate_info.description {
                 writeln!(&mut text, "Description: {}", description.trim_end()).unwrap();
             }
@@ -619,8 +619,8 @@ fn usages_for_problem(
         Some((_, Problem::DisallowedUnsafe(unsafe_usage))) => {
             for location in &unsafe_usage.locations {
                 let pkg_dir = crate_index
-                    .pkg_dir(&unsafe_usage.crate_name)
-                    .map(|pkg_dir| pkg_dir.as_std_path().to_owned());
+                    .pkg_dir(unsafe_usage.crate_sel.pkg_id())
+                    .map(|pkg_dir| pkg_dir.to_owned());
                 usages_out.push(Box::new(UnsafeLocation {
                     source_location: location.clone(),
                     pkg_dir,

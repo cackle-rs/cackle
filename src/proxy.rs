@@ -21,6 +21,7 @@
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use crate::config::Config;
+use crate::crate_index::CrateIndex;
 use crate::outcome::ExitCode;
 use crate::outcome::Outcome;
 use crate::Args;
@@ -71,6 +72,7 @@ pub(crate) fn invoke_cargo_build(
     config: &Config,
     args: &Args,
     abort_recv: Receiver<()>,
+    crate_index: &CrateIndex,
     request_creator: impl Fn(Request) -> RequestHandler,
 ) -> Result<()> {
     if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
@@ -97,6 +99,8 @@ pub(crate) fn invoke_cargo_build(
         .env(SOCKET_ENV, &ipc_path)
         .env(CONFIG_PATH_ENV, config_path)
         .env("RUSTC_WRAPPER", cackle_exe()?);
+
+    crate_index.add_internal_env(&mut command);
 
     // Don't pass through environment variables that might have been set by `cargo run`. If we do,
     // then they might still be set in our subprocesses, which might then get confused and think

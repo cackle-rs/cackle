@@ -3,7 +3,10 @@ use crate::config::ApiPath;
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::PermissionName;
+use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateSel;
+use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::Name;
@@ -32,6 +35,7 @@ use std::sync::Arc;
 pub(crate) struct Checker {
     inclusions: HashMap<ApiPath, HashSet<PermissionName>>,
     exclusions: HashMap<ApiPath, HashSet<PermissionName>>,
+    proc_macros: HashSet<PackageId>,
     pub(crate) crate_infos: HashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
@@ -41,7 +45,7 @@ pub(crate) struct Checker {
     /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
     /// map to a single crate, but in rare cases multiple crates within a package could use the same
     /// source path.
-    path_to_crate: HashMap<PathBuf, Vec<CrateName>>,
+    path_to_crate: HashMap<PathBuf, Vec<CrateSel>>,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -50,6 +54,7 @@ pub(crate) struct PermId(usize);
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
     /// Whether the config file mentions this crate.
+    // TODO: Is ever not true? Can we remove this?
     has_config: bool,
 
     /// Permissions that are allowed for this crate according to cackle.toml.
@@ -58,9 +63,6 @@ pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermissionName>,
-
-    /// Whether this crate is a proc macro according to cargo metadata.
-    is_proc_macro: bool,
 
     /// Whether this crate is allowed to be a proc macro according to our config.
     allow_proc_macro: bool,
@@ -92,6 +94,7 @@ impl Checker {
             args,
             crate_index,
             path_to_crate: Default::default(),
+            proc_macros: Default::default(),
         }
     }
 
@@ -150,9 +153,14 @@ impl Checker {
 
     fn base_problems(&self) -> ProblemList {
         let mut problems = ProblemList::default();
-        for (crate_name, crate_info) in &self.crate_infos {
-            if crate_info.is_proc_macro && !crate_info.allow_proc_macro {
-                problems.push(Problem::IsProcMacro(crate_name.clone()));
+        for pkg_id in &self.proc_macros {
+            if !self
+                .crate_infos
+                .get(&pkg_id.into())
+                .map(|crate_info| crate_info.allow_proc_macro)
+                .unwrap_or(false)
+            {
+                problems.push(Problem::IsProcMacro(pkg_id.clone()));
             }
         }
         problems
@@ -171,13 +179,13 @@ impl Checker {
             rpc::Request::LinkerInvoked(link_info) => {
                 self.check_linker_invocation(link_info, check_state)
             }
-            rpc::Request::BuildScriptComplete(output) => Ok(self.check_build_script_output(output)),
+            rpc::Request::BuildScriptComplete(output) => self.check_build_script_output(output),
             rpc::Request::RustcComplete(info) => {
-                self.record_crate_paths(info);
+                self.record_crate_paths(info)?;
                 Ok(ProblemList::default())
             }
-            rpc::Request::RustcStarted(crate_name) => {
-                info!("Rustc started compiling {crate_name}");
+            rpc::Request::RustcStarted(crate_sel) => {
+                info!("Rustc started compiling {crate_sel}");
                 Ok(ProblemList::default())
             }
         }
@@ -189,8 +197,8 @@ impl Checker {
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
         let mut problems = ProblemList::default();
-        if info.is_build_script {
-            problems.merge(self.verify_build_script_permitted(&info.package_name));
+        if let CrateSel::BuildScript(build_script_id) = &info.crate_sel {
+            problems.merge(self.verify_build_script_permitted(build_script_id));
         }
         problems.merge(self.check_object_paths(
             &info.object_paths_under(&self.target_dir),
@@ -200,7 +208,7 @@ impl Checker {
         let problems = problems.grouped_by_type_crate_and_api();
         info!(
             "Checking linker args for {} with {} objects. {} problems",
-            info.package_name,
+            info.crate_sel,
             info.object_paths.len(),
             problems.len(),
         );
@@ -230,7 +238,7 @@ impl Checker {
         Ok(problems)
     }
 
-    fn check_build_script_output(&self, output: &rpc::BuildScriptOutput) -> ProblemList {
+    fn check_build_script_output(&self, output: &rpc::BuildScriptOutput) -> Result<ProblemList> {
         build_script_checker::check(output, &self.config)
     }
 
@@ -238,32 +246,34 @@ impl Checker {
         Problem::DisallowedUnsafe(usage.clone()).into()
     }
 
-    pub(crate) fn verify_build_script_permitted(&mut self, package_name: &str) -> ProblemList {
+    pub(crate) fn verify_build_script_permitted(
+        &mut self,
+        build_script_id: &BuildScriptId,
+    ) -> ProblemList {
         if !self.config.common.explicit_build_scripts {
             return ProblemList::default();
         }
-        let crate_name = CrateName::from(format!("{package_name}.build").as_str());
-        if let Some(crate_info) = self.crate_infos.get_mut(&crate_name) {
+        if let Some(crate_info) = self.crate_infos.get_mut(&CrateName::from(build_script_id)) {
             if crate_info.has_config {
                 return ProblemList::default();
             }
         }
-        Problem::UsesBuildScript(crate_name).into()
+        Problem::UsesBuildScript(build_script_id.clone()).into()
     }
 
     pub(crate) fn crate_names_from_source_path(
         &self,
         source_path: &Path,
         ref_path: &ObjectFilePath,
-    ) -> Result<Vec<CrateName>> {
+    ) -> Result<Vec<CrateSel>> {
         self.path_to_crate
             .get(source_path)
             .cloned()
             .or_else(|| {
-                // Fall-back to just finding the crate that contains the source path.
+                // Fall-back to just finding the package that contains the source path.
                 self.crate_index
-                    .crate_name_for_path(source_path)
-                    .map(|crate_name| vec![crate_name.clone()])
+                    .package_id_for_path(source_path)
+                    .map(|pkg_id| vec![CrateSel::Primary(pkg_id.clone())])
             })
             .ok_or_else(|| {
                 anyhow!(
@@ -273,11 +283,8 @@ impl Checker {
             })
     }
 
-    pub(crate) fn report_proc_macro(&mut self, crate_name: &CrateName) {
-        self.crate_infos
-            .entry(crate_name.clone())
-            .or_default()
-            .is_proc_macro = true;
+    pub(crate) fn report_proc_macro(&mut self, pkg_id: &PackageId) {
+        self.proc_macros.insert(pkg_id.clone());
     }
 
     /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
@@ -305,22 +312,23 @@ impl Checker {
     pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
         assert_eq!(api_usage.usages.keys().count(), 1);
         let permission = api_usage.usages.keys().next().unwrap();
-        let crate_info = &mut self
+        if let Some(crate_info) = self
             .crate_infos
-            .entry(api_usage.crate_name.clone())
-            .or_default();
-        if crate_info.allowed_perms.contains(permission) {
-            crate_info.unused_allowed_perms.remove(permission);
-        } else {
-            problems.push(Problem::DisallowedApiUsage(api_usage.clone()));
+            .get_mut(&CrateName::from(&api_usage.crate_sel))
+        {
+            if crate_info.allowed_perms.contains(permission) {
+                crate_info.unused_allowed_perms.remove(permission);
+                return;
+            }
         }
+        problems.push(Problem::DisallowedApiUsage(api_usage.clone()));
     }
 
     pub(crate) fn check_unused(&self) -> ProblemList {
         let mut problems = ProblemList::default();
-        let crate_names: HashSet<_> = self.crate_index.crate_names().collect();
+        let crate_names_in_index: HashSet<_> = self.crate_index.crate_names().collect();
         for (crate_name, crate_info) in &self.crate_infos {
-            if crate_info.has_config && !crate_names.contains(crate_name) {
+            if crate_info.has_config && !crate_names_in_index.contains(crate_name) {
                 problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
             }
             if !crate_info.unused_allowed_perms.is_empty() {
@@ -333,19 +341,20 @@ impl Checker {
         problems
     }
 
-    fn record_crate_paths(&mut self, info: &rpc::RustcOutput) {
+    fn record_crate_paths(&mut self, info: &rpc::RustcOutput) -> Result<()> {
         for path in &info.source_paths {
             self.path_to_crate
                 .entry(path.to_owned())
                 .or_default()
-                .push(info.crate_name.clone());
+                .push(info.crate_sel.clone());
         }
+        Ok(())
     }
 
     pub(crate) fn print_path_to_crate_map(&self) {
         for (path, crates) in &self.path_to_crate {
             for c in crates {
-                println!("{} -> {}", path.display(), c);
+                println!("{c} -> {}", path.display());
             }
         }
     }
@@ -418,13 +427,13 @@ mod tests {
         )
         .unwrap();
         let mut checker = Checker {
-            crate_index: crate::crate_index::testing::index_with_crate_names(&["foo"]),
+            crate_index: crate::crate_index::testing::index_with_package_names(&["foo"]),
             ..Checker::default()
         };
         checker.update_config(config.clone());
         let mut problems = ProblemList::default();
 
-        let crate_name = CrateName::from("foo");
+        let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
         let permissions = checker.apis_for_name(&Name {
             parts: vec![
                 "std".to_owned(),
@@ -450,7 +459,7 @@ mod tests {
                 }],
             );
             let api_usage = ApiUsages {
-                crate_name: crate_name.clone(),
+                crate_sel: crate_sel.clone(),
                 usages,
             };
             checker.permission_used(&api_usage, &mut problems);

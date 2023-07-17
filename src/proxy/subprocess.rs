@@ -10,7 +10,9 @@ use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::Config;
 use crate::config::CrateName;
+use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::outcome::Outcome;
@@ -112,8 +114,8 @@ fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
 fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitCode> {
     loop {
         let config = get_config_from_env()?;
-        let package_name = get_env("CARGO_PKG_NAME")?;
-        let sandbox_config = config.sandbox_config_for_build_script(&package_name);
+        let build_script_id = BuildScriptId::from_env()?;
+        let sandbox_config = config.sandbox_config_for_build_script(&build_script_id);
         let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
             // Config says to run without a sandbox.
             return Ok(Command::new(&orig_build_script).status()?.into());
@@ -126,13 +128,16 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         sandbox.pass_cargo_env();
 
         let output = sandbox.run(&orig_build_script)?;
-        let rpc_response = rpc_client.build_script_complete(BuildScriptOutput::new(
-            &output,
-            CrateName::for_build_script(&package_name),
-            &output.status,
-            sandbox_config,
-            orig_build_script.clone(),
-        ))?;
+        let rpc_response = rpc_client.build_script_complete({
+            BuildScriptOutput {
+                exit_code: output.status.code().unwrap_or(-1),
+                stdout: output.stdout.clone(),
+                stderr: output.stderr.clone(),
+                build_script_id,
+                sandbox_config,
+                build_script: orig_build_script.clone(),
+            }
+        })?;
         match rpc_response {
             Outcome::Continue => {
                 if output.status.code() == Some(0) {
@@ -169,7 +174,7 @@ fn target_subdir(build_script_path: &Path) -> Result<&Path> {
 }
 
 fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
-    let Ok(pkg_name) = std::env::var("CARGO_PKG_NAME") else {
+    if std::env::var("CARGO_PKG_NAME").is_err() {
         // If CARGO_PKG_NAME isn't set, then cargo is probably just invoking rustc to query
         // version information etc, just run it.
         return Ok(Command::new("rustc")
@@ -177,8 +182,9 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             .status()?
             .into());
     };
-    let mut runner = RustcRunner::new(&pkg_name)?;
-    rpc_client.rustc_started(&runner.crate_name)?;
+    let crate_sel = CrateSel::from_env()?;
+    let mut runner = RustcRunner::new(crate_sel)?;
+    rpc_client.rustc_started(&runner.crate_sel)?;
     loop {
         match runner.run(rpc_client)? {
             RustcRunStatus::Retry => {}
@@ -193,7 +199,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
 }
 
 struct RustcRunner {
-    crate_name: CrateName,
+    crate_sel: CrateSel,
     linking_requested: bool,
     /// The paths of the sources for the crate being compiled. This is obtained by parsing the deps
     /// file written by rustc the first time we run it.
@@ -207,18 +213,10 @@ enum RustcRunStatus {
 }
 
 impl RustcRunner {
-    fn new(pkg_name: &str) -> Result<Self> {
-        let is_build_script = std::env::var("CARGO_CRATE_NAME")
-            .map(|v| v.starts_with("build_script_"))
-            .unwrap_or(false);
-        let crate_name = if is_build_script {
-            CrateName::for_build_script(pkg_name)
-        } else {
-            CrateName::from(pkg_name)
-        };
+    fn new(crate_sel: CrateSel) -> Result<Self> {
         let linking_requested = Self::linking_requested();
         Ok(Self {
-            crate_name,
+            crate_sel,
             linking_requested,
             source_paths: None,
         })
@@ -231,7 +229,8 @@ impl RustcRunner {
         // We need to parse the configuration each time, since it might have changed. Specifically
         // it might have been changed to allow unsafe.
         let config = get_config_from_env()?;
-        let unsafe_permitted = config.unsafe_permitted_for_crate(&self.crate_name);
+        let crate_name = CrateName::from(&self.crate_sel);
+        let unsafe_permitted = config.unsafe_permitted_for_crate(&crate_name);
         let mut command = self.get_command(allow_linking, unsafe_permitted)?;
         let output = command.output()?;
         let mut unsafe_locations = Vec::new();
@@ -243,7 +242,7 @@ impl RustcRunner {
                 // these so that it can attribute source files to a particular crate. We ignore the
                 // response, since we don't need it.
                 rpc_client.rustc_complete(RustcOutput {
-                    crate_name: self.crate_name.clone(),
+                    crate_sel: self.crate_sel.clone(),
                     source_paths: source_paths.clone(),
                 })?;
                 self.source_paths = Some(source_paths);
@@ -264,7 +263,7 @@ impl RustcRunner {
         if !unsafe_locations.is_empty() {
             unsafe_locations.sort();
             unsafe_locations.dedup();
-            let response = rpc_client.crate_uses_unsafe(&self.crate_name, unsafe_locations)?;
+            let response = rpc_client.crate_uses_unsafe(&self.crate_sel, unsafe_locations)?;
             if response == Outcome::Continue {
                 return Ok(RustcRunStatus::Retry);
             } else {
@@ -358,7 +357,7 @@ fn proxy_linker(
     // analysis.
     let exit_status = invoke_real_linker(args)?;
     let build_script_bin = link_info
-        .is_build_script
+        .is_build_script()
         .then(|| link_info.output_file.clone());
     match rpc_client.linker_invoked(link_info)? {
         Outcome::Continue => {

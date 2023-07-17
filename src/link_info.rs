@@ -1,32 +1,30 @@
 use anyhow::bail;
-use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::crate_index::CrateSel;
+
 /// Information about a linker invocation.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub(crate) struct LinkInfo {
-    pub(crate) is_build_script: bool,
-    pub(crate) package_name: String,
+    pub(crate) crate_sel: CrateSel,
     pub(crate) object_paths: Vec<PathBuf>,
     pub(crate) output_file: PathBuf,
 }
 
 impl LinkInfo {
     pub(crate) fn from_env() -> Result<Self> {
-        let package_name = std::env::var("CARGO_PKG_NAME").context("CARGO_PKG_NAME not set")?;
-        let crate_name = std::env::var("CARGO_CRATE_NAME").context("CARGO_CRATE_NAME not set")?;
+        let crate_sel = CrateSel::from_env()?;
         let object_paths = std::env::args()
             .skip(1)
             .map(PathBuf::from)
             .filter(|path| has_supported_extension(path))
             .collect();
         Ok(LinkInfo {
-            is_build_script: crate_name.starts_with("build_script_"),
-            package_name,
+            crate_sel,
             object_paths,
             output_file: get_output_file()?,
         })
@@ -39,6 +37,10 @@ impl LinkInfo {
             .filter_map(|path| path.canonicalize().ok())
             .filter(|path| path.starts_with(dir))
             .collect()
+    }
+
+    pub(crate) fn is_build_script(&self) -> bool {
+        matches!(self.crate_sel, CrateSel::BuildScript(_))
     }
 }
 

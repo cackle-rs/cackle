@@ -9,6 +9,7 @@ use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::Checker;
+use crate::config::CrateName;
 use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::problem::ApiUsages;
@@ -232,7 +233,8 @@ impl<'input> ApiUsageCollector<'input> {
                     trace!("{} -> {target_symbol}", first_sym_info.symbol);
 
                     let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
-                    for crate_name in &crate_names {
+                    for crate_sel in &crate_names {
+                        let crate_name = CrateName::from(crate_sel);
                         for name in &target_symbol_names {
                             // If a package references another symbol within the same package,
                             // ignore it.
@@ -265,7 +267,7 @@ impl<'input> ApiUsageCollector<'input> {
                                     }],
                                 );
                                 let api_usage = ApiUsages {
-                                    crate_name: crate_name.clone(),
+                                    crate_sel: crate_sel.clone(),
                                     usages,
                                 };
                                 new_api_usages

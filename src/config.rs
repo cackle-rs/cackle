@@ -1,4 +1,6 @@
+use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -33,8 +35,11 @@ pub(crate) struct Config {
     pub(crate) sandbox: SandboxConfig,
 }
 
-/// The name of a crate. Sort of. It's actually somewhere between a package and a crate. It's the
-/// package name except if it's a build script, in which case it's `{package_name}.build`.
+/// Selects either the primary crate of a package or the build script of a crate. In the latter
+/// case, the format of the name is for example "foo.build" where foo is the name of the primary
+/// package. This struct is like CrateSel, but without any version information. We use this when
+/// we're referring to the cackle configuration, since we don't distinguish between different
+/// versions of crates when granting permissions.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(transparent)]
 pub(crate) struct CrateName(pub(crate) Arc<str>);
@@ -177,7 +182,14 @@ impl Config {
             if imports.is_empty() {
                 continue;
             }
-            let pkg_exports = exported_config_for_package(crate_name, crate_index)?;
+            let pkg_id = crate_index
+                .newest_package_id_with_name(crate_name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Attempted to import APIs from package `{crate_name}` that wasn't found"
+                    )
+                })?;
+            let pkg_exports = exported_config_for_package(pkg_id, crate_index)?;
             for (api_name, api_def) in &pkg_exports.apis {
                 if !imports.iter().any(|imp| imp == api_name.name.as_ref()) {
                     // The user didn't request importing this API, so skip it.
@@ -211,22 +223,22 @@ impl Config {
     /// to import any APIs from this package, by listing `import = []`.
     pub(crate) fn unused_imports(&self, crate_index: &CrateIndex) -> ProblemList {
         let mut problems = ProblemList::default();
-        for crate_name in crate_index.package_names() {
+        for pkg_id in crate_index.package_ids() {
             // If our config lists any import for this package, even empty, then we skip this.
             if self
                 .packages
-                .get(crate_name)
+                .get(&pkg_id.into())
                 .map(|config| config.import.is_some())
                 .unwrap_or(false)
             {
                 continue;
             }
-            let Ok(pkg_exports) = exported_config_for_package(crate_name, crate_index) else {
+            let Ok(pkg_exports) = exported_config_for_package(pkg_id, crate_index) else {
                 continue;
             };
             for (api, config) in &pkg_exports.apis {
                 problems.push(Problem::AvailableApi(AvailableApi {
-                    crate_name: crate_name.to_owned(),
+                    pkg_id: pkg_id.clone(),
                     api: api.clone(),
                     config: config.clone(),
                 }))
@@ -236,17 +248,15 @@ impl Config {
     }
 }
 
+/// Attempts to load "cackle/export.toml" from the specified package.
 fn exported_config_for_package(
-    crate_name: &CrateName,
+    pkg_id: &PackageId,
     crate_index: &CrateIndex,
 ) -> Result<Arc<Config>> {
     let pkg_dir = crate_index
-        .pkg_dir(crate_name)
-        .ok_or_else(|| anyhow!("Missing pkg_dir for package `{crate_name}`"))?;
-    parse_file(
-        pkg_dir.join("cackle").join("export.toml").as_std_path(),
-        crate_index,
-    )
+        .pkg_dir(pkg_id)
+        .ok_or_else(|| anyhow!("Missing pkg_dir for package `{pkg_id}`"))?;
+    parse_file(&pkg_dir.join("cackle").join("export.toml"), crate_index)
 }
 
 fn flatten(config: &mut Config) {
@@ -289,8 +299,11 @@ impl Config {
             .unwrap_or(false)
     }
 
-    pub(crate) fn sandbox_config_for_build_script(&self, package_name: &str) -> SandboxConfig {
-        self.sandbox_config_for_package(&format!("{package_name}.build").as_str().into())
+    pub(crate) fn sandbox_config_for_build_script(
+        &self,
+        build_script_id: &BuildScriptId,
+    ) -> SandboxConfig {
+        self.sandbox_config_for_package(&CrateName::from(build_script_id))
     }
 
     /// Returns the configuration for `package_name`, inheriting options from the default sandbox
@@ -361,14 +374,6 @@ impl AsRef<str> for CrateName {
 impl CrateName {
     pub(crate) fn for_build_script(crate_name: &str) -> Self {
         Self(Arc::from(format!("{crate_name}.build").as_str()))
-    }
-
-    pub(crate) fn package_name(&self) -> &str {
-        if let Some(dot_index) = self.0.find('.') {
-            &self.0[..dot_index]
-        } else {
-            self.as_ref()
-        }
     }
 }
 

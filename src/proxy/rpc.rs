@@ -1,7 +1,8 @@
 //! Defines the communication protocol between the proxy subprocesses and the parent process.
 
-use crate::config::CrateName;
 use crate::config::SandboxConfig;
+use crate::crate_index::BuildScriptId;
+use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::outcome::Outcome;
@@ -28,21 +29,21 @@ impl RpcClient {
     /// Advises the parent process that the specified crate uses unsafe.
     pub(crate) fn crate_uses_unsafe(
         &self,
-        crate_name: &CrateName,
+        crate_sel: &CrateSel,
         locations: Vec<SourceLocation>,
     ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
-            crate_name: crate_name.clone(),
+            crate_sel: crate_sel.clone(),
             locations,
         });
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn rustc_started(&self, crate_name: &CrateName) -> Result<Outcome> {
+    pub(crate) fn rustc_started(&self, crate_sel: &CrateSel) -> Result<Outcome> {
         let mut ipc = self.connect()?;
-        let request = Request::RustcStarted(crate_name.clone());
+        let request = Request::RustcStarted(crate_sel.clone());
         write_to_stream(&request, &mut ipc)?;
         read_from_stream(&mut ipc)
     }
@@ -84,7 +85,7 @@ pub(crate) enum Request {
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
     BuildScriptComplete(BuildScriptOutput),
-    RustcStarted(CrateName),
+    RustcStarted(CrateSel),
     RustcComplete(RustcOutput),
 }
 
@@ -93,20 +94,20 @@ pub(crate) struct BuildScriptOutput {
     pub(crate) exit_code: i32,
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
-    pub(crate) crate_name: CrateName,
+    pub(crate) build_script_id: BuildScriptId,
     pub(crate) sandbox_config: SandboxConfig,
     pub(crate) build_script: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct RustcOutput {
-    pub(crate) crate_name: CrateName,
+    pub(crate) crate_sel: CrateSel,
     pub(crate) source_paths: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
-    pub(crate) crate_name: CrateName,
+    pub(crate) crate_sel: CrateSel,
     pub(crate) locations: Vec<SourceLocation>,
 }
 
@@ -130,25 +131,6 @@ pub(crate) fn read_from_stream<T: DeserializeOwned>(stream: &mut impl Read) -> R
     serde_json::from_str(serialized).with_context(|| format!("Invalid message `{serialized}`"))
 }
 
-impl BuildScriptOutput {
-    pub(crate) fn new(
-        value: &std::process::Output,
-        package_name: CrateName,
-        exit_status: &std::process::ExitStatus,
-        sandbox_config: SandboxConfig,
-        build_script: PathBuf,
-    ) -> Self {
-        Self {
-            exit_code: exit_status.code().unwrap_or(-1),
-            stdout: value.stdout.clone(),
-            stderr: value.stderr.clone(),
-            crate_name: package_name,
-            sandbox_config,
-            build_script,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,7 +139,7 @@ mod tests {
     #[test]
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
-            crate_name: "foo".into(),
+            crate_sel: CrateSel::Primary(crate::crate_index::testing::pkg_id("foo")),
             locations: vec![SourceLocation::new(Path::new("src/main.rs"), 42, None)],
         });
         let mut buf = Vec::new();

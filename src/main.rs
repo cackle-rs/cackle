@@ -186,7 +186,7 @@ impl Cackle {
             crate_index.clone(),
             config_path.clone(),
         );
-        for crate_name in &crate_index.proc_macros {
+        for crate_name in crate_index.proc_macros() {
             checker.report_proc_macro(crate_name);
         }
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
@@ -292,6 +292,7 @@ impl Cackle {
                 &config,
                 &args,
                 abort_recv,
+                &crate_index,
                 |request| self.new_request_handler(Some(request)),
             )
         } else {
