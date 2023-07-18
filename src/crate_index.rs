@@ -198,6 +198,10 @@ impl PackageId {
             name_is_unique,
         })
     }
+
+    pub(crate) fn version(&self) -> &Version {
+        &self.version
+    }
 }
 
 fn get_env(key: &str) -> Result<String> {

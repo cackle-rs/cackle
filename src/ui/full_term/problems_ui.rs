@@ -409,6 +409,7 @@ impl ProblemsUi {
             if let Some(description) = &crate_info.description {
                 writeln!(&mut text, "Description: {}", description.trim_end()).unwrap();
             }
+            writeln!(&mut text, "Version: {}", pkg_id.version()).unwrap();
             if let Some(documentation) = &crate_info.documentation {
                 writeln!(&mut text, "Documentation: {documentation}").unwrap();
             }
