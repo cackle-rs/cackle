@@ -258,7 +258,7 @@ impl Display for Problem {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
             Problem::DisallowedUnsafe(usage) => {
-                write!(f, "Crate {} uses unsafe", usage.crate_sel)?;
+                write!(f, "`{}` uses unsafe", usage.crate_sel)?;
                 if f.alternate() {
                     writeln!(f)?;
                     for location in &usage.locations {
@@ -269,14 +269,13 @@ impl Display for Problem {
             Problem::UsesBuildScript(build_script_id) => {
                 write!(
                     f,
-                    "Package {} has a build script, but config file doesn't have [pkg.{}]",
+                    "`{}` has a build script",
                     CrateSel::Primary(build_script_id.pkg_id.clone()),
-                    CrateName::from(build_script_id),
                 )?;
             }
             Problem::IsProcMacro(pkg_name) => write!(
                 f,
-                "Package `{}` is a proc macro but doesn't set allow_proc_macro",
+                "`{}` is a proc macro",
                 CrateSel::Primary(pkg_name.clone())
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
@@ -317,16 +316,16 @@ impl Display for Problem {
 impl Display for ApiUsages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(f, "Crate '{}' uses disallowed APIs:", self.crate_sel)?;
+            writeln!(f, "'{}' uses disallowed APIs:", self.crate_sel)?;
             for (perm_name, usages) in &self.usages {
                 writeln!(f, "  {perm_name}:")?;
                 display_usages(f, usages)?;
             }
         } else if self.usages.len() == 1 {
             let (perm, _) = self.usages.first_key_value().unwrap();
-            write!(f, "Crate `{}` uses API `{perm}`", self.crate_sel)?;
+            write!(f, "`{}` uses API `{perm}`", self.crate_sel)?;
         } else {
-            write!(f, "Crate '{}' uses disallowed APIs: ", self.crate_sel)?;
+            write!(f, "'{}' uses disallowed APIs: ", self.crate_sel)?;
             let mut first = true;
             for perm_name in self.usages.keys() {
                 if first {
