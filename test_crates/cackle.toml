@@ -16,6 +16,12 @@ import_std = [
 [sandbox]
 kind = "Bubblewrap"
 
+# Restrict access to an entire crate.
+[api.res1]
+include = [
+    "res1",
+]
+
 [pkg.crab1]
 allow_unsafe = true
 import = [
@@ -75,6 +81,7 @@ allow_proc_macro = true
 allow_apis = [
     "env",
     "fs",
+    "res1",
 ]
 allow_unsafe = true
 

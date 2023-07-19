@@ -209,12 +209,15 @@ impl<'input> ApiUsageCollector<'input> {
                 continue;
             };
 
-            // Compute what APIs would be used by a function that referenced our from-symbol, based
-            // only on the generics of our from-symbol. We then ignore API usages within our
-            // function for those same APIs.
-            let mut from_generics_apis = HashSet::new();
-            for name in crate::names::split_names(from_name).into_iter().skip(1) {
-                from_generics_apis.extend(checker.apis_for_name(&name).into_iter());
+            // Compute what APIs are used by the from-function. Any references made by that function
+            // that would trigger the same APIs are then ignored. Basically, we attribute API usages
+            // to the outermost usage of an API.
+            let mut from_apis = HashSet::new();
+            for name in crate::names::split_names(from_name).into_iter() {
+                from_apis.extend(checker.apis_for_name(&name).into_iter());
+            }
+            for name in first_sym_info.symbol.names()? {
+                from_apis.extend(checker.apis_for_name(&name).into_iter());
             }
 
             for (offset, rel) in section.relocations() {
@@ -247,7 +250,7 @@ impl<'input> ApiUsageCollector<'input> {
                                 continue;
                             }
                             for permission in checker.apis_for_name(name) {
-                                if from_generics_apis.contains(&permission) {
+                                if from_apis.contains(&permission) {
                                     continue;
                                 }
                                 let debug_data = self.debug_enabled.then(|| UsageDebugData {

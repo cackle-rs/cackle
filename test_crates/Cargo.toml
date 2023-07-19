@@ -11,6 +11,7 @@ members = [
     "crab-bin",
     "pmacro1",
     "shared1",
+    "res1",
 ]
 exclude = [
     "crab3v2",

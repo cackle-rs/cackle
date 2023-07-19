@@ -12,6 +12,25 @@ pub fn print_default<T: Default + std::fmt::Debug + Deref>() {
     let _ = T::default().deref();
 }
 
+pub trait Foo {
+    fn foo(&self);
+    fn foo2(&self);
+}
+
+#[macro_export]
+macro_rules! impl_foo {
+    ($name:ident) => {
+        pub struct $name;
+
+        impl $crate::Foo for $name {
+            fn foo(&self) {}
+            fn foo2(&self) {
+                self.foo();
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -12,6 +12,7 @@ crab6 = { path = "../crab6" }
 crab7 = { path = "../crab7" }
 crab8 = { path = "../crab8" }
 pmacro1 = { path = "../pmacro1" }
+res1 = { path = "../res1" }
 
 [features]
 crash-if-not-sandboxed = [ "crab2/crash-if-not-sandboxed" ]

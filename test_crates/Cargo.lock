@@ -14,6 +14,7 @@ dependencies = [
  "crab7",
  "crab8",
  "pmacro1",
+ "res1",
 ]
 
 [[package]]
@@ -71,6 +72,13 @@ dependencies = [
 [[package]]
 name = "pmacro1"
 version = "0.1.0"
+
+[[package]]
+name = "res1"
+version = "0.1.0"
+dependencies = [
+ "crab6",
+]
 
 [[package]]
 name = "shared1"
