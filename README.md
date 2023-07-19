@@ -84,6 +84,15 @@ So I'd say, if the problem is fixable, feel free to just file a bug or send a PR
 fixable, or you're not sure, feel free to just email me. You can find my email address by looking
 through the commit logs for David Lattimore.
 
+## Backward compatibility
+
+We have a version number field in the configuration file. At least initially and for minor, obscure
+changes, bug fixes etc, there probably won't be a version bump. This means that updating to a newer
+version of Cackle might result in errors that require a change to your cackle.toml. In cases where a
+change is being made that we think would require substantial unnecessary changes to people's
+cackle.toml, we'll put the change behind a new configuration option and set the default for that
+option based on the version field.
+
 ## How it works
 
 See [HOW_IT_WORKS.md](HOW_IT_WORKS.md).

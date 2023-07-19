@@ -94,10 +94,9 @@ We determine what API was referenced as follows:
   item, while the debug info gives us information about generics parameters.
 * We then split these names into names and look for any defined APIs in `cackle.toml` that are the
   prefix of these names.
-* Where a function uses an API and also has generic parameters that match that same API, we ignore
-  the usage by that function. The usage will be attributed to whatever uses that function. The idea
-  here is that if a crate defines a generic function, we don't want API usage to be attributed to
-  that crate just because some other crate instantiated the generic function with some type that
-  matched an API. e.g. if the either crate defines `Either<L, R>` and some other crate uses
-  `Either<Path, Path>`, we want to attribute the filesystem API only to the latter crate, not to the
-  `either` crate.
+* Where a function uses an API and also has a name that matches that same API, we ignore the usage
+  by that function. The usage will be attributed to whatever uses that function. The idea here is
+  that if a crate defines a generic function, we don't want API usage to be attributed to that crate
+  just because some other crate instantiated the generic function with some type that matched an
+  API. e.g. if the either crate defines `Either<L,R>` and some other crate uses `Either<Path,Path>`,
+  we want to attribute the filesystem API only to the latter crate, not to the `either` crate.
