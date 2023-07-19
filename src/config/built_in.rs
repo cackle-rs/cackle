@@ -13,7 +13,6 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
                 // allow filesystem access.
                 "std::env",
                 "std::fs",
-                "std::io",
                 "std::os::linux::fs",
                 "std::os::unix::fs",
                 "std::os::unix::io",
@@ -35,12 +34,6 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
                 "std::env::var_os",
                 "std::env::vars",
                 "std::env::vars_os",
-                "std::io::Read",
-                "std::io::Write",
-                "std::io::buffered",
-                "std::io::error",
-                "std::io::impls",
-                "std::io::stdio",
             ],
         ),
     );
