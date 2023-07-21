@@ -9,12 +9,15 @@ use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
 use crate::problem::Problem;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
+use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -62,6 +65,7 @@ enum Mode {
     SelectEdit,
     SelectUsage,
     PromptAutoAccept,
+    ShowPackageTree,
     Help,
 }
 
@@ -104,6 +108,7 @@ impl ProblemsUi {
                     self.render_usage_details(f, middle);
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
+                Mode::ShowPackageTree => self.render_package_tree(f),
                 Mode::Help => render_help(f, previous_mode),
             }
             previous_mode = Some(mode);
@@ -142,6 +147,12 @@ impl ProblemsUi {
                     bail!("Sorry. No additional details available for this problem");
                 }
                 self.enter_usage_mode();
+            }
+            (Mode::SelectProblem, KeyCode::Char('t')) => {
+                self.modes.push(Mode::ShowPackageTree);
+            }
+            (Mode::ShowPackageTree, _) => {
+                self.modes.pop();
             }
             (Mode::SelectUsage, KeyCode::Char('d')) => {
                 // We're already in details mode, drop back out to the problems list.
@@ -396,16 +407,12 @@ impl ProblemsUi {
     fn render_package_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         use std::fmt::Write;
 
-        let pstore = &self.problem_store.lock();
-        let Some((_, problem)) = pstore.deduplicated_into_iter().nth(self.problem_index) else {
+        let Some(pkg_id) = self.current_package_id() else {
             return;
         };
-        let Some(pkg_id) = problem.pkg_id() else {
-            return;
-        };
-        let pkg_name = CrateName::from(pkg_id);
+        let pkg_name = CrateName::from(&pkg_id);
         let mut text = String::new();
-        if let Some(crate_info) = self.crate_index.package_info(pkg_id) {
+        if let Some(crate_info) = self.crate_index.package_info(&pkg_id) {
             if let Some(description) = &crate_info.description {
                 writeln!(&mut text, "Description: {}", description.trim_end()).unwrap();
             }
@@ -421,6 +428,42 @@ impl ProblemsUi {
             .borders(Borders::ALL);
         let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);
+    }
+
+    fn render_package_tree(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
+        let text = self
+            .package_tree_text()
+            .unwrap_or_else(|error| error.to_string());
+        let lines: Vec<_> = text.lines().collect();
+        render_message(f, None, &lines);
+    }
+
+    fn package_tree_text(&self) -> Result<String> {
+        let pkg_id = self
+            .current_package_id()
+            .ok_or_else(|| anyhow!("No package selected"))?;
+        let output = std::process::Command::new("cargo")
+            .arg("tree")
+            .arg("--manifest-path")
+            .arg(&self.crate_index.manifest_path)
+            .arg("-i")
+            .arg(pkg_id.name())
+            .output()
+            .context("Failed to run `cargo tree`")?;
+        let mut text =
+            String::from_utf8(output.stdout).context("cargo tree produced invalid UTF-8")?;
+        if let Ok(stderr) = std::str::from_utf8(&output.stderr) {
+            text.push_str(stderr);
+        }
+        Ok(text)
+    }
+
+    fn current_package_id(&self) -> Option<PackageId> {
+        let pstore = &self.problem_store.lock();
+        let Some((_, problem)) = pstore.deduplicated_into_iter().nth(self.problem_index) else {
+            return None;
+        };
+        problem.pkg_id().cloned()
     }
 }
 
@@ -515,6 +558,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
                         "d",
                         "Select and show details of each usage (API/unsafe only)",
                     ),
+                    ("t", "Show tree of crate dependencies to this crate"),
                     ("up", "Select previous problem"),
                     ("down", "Select next problem"),
                     ("a", "Enable auto-apply for problems with only one edit"),

@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 #[derive(Default, Debug)]
 pub(crate) struct CrateIndex {
+    pub(crate) manifest_path: PathBuf,
     pub(crate) package_infos: HashMap<PackageId, PackageInfo>,
     dir_to_name: HashMap<PathBuf, PackageId>,
     pkg_name_to_ids: HashMap<String, Vec<PackageId>>,
@@ -59,10 +60,14 @@ const MULTIPLE_VERSION_PKG_NAMES_ENV: &str = "CACKLE_MULTIPLE_VERSION_PKG_NAMES"
 
 impl CrateIndex {
     pub(crate) fn new(dir: &Path) -> Result<Self> {
+        let manifest_path = dir.join("Cargo.toml");
         let metadata = cargo_metadata::MetadataCommand::new()
-            .manifest_path(dir.join("Cargo.toml"))
+            .manifest_path(&manifest_path)
             .exec()?;
-        let mut mapping = Self::default();
+        let mut mapping = CrateIndex {
+            manifest_path,
+            ..Self::default()
+        };
         let mut name_counts = HashMap::new();
         for package in &metadata.packages {
             *name_counts.entry(&package.name).or_default() += 1;
@@ -284,7 +289,6 @@ impl From<&CrateSel> for CrateName {
 }
 
 impl PackageId {
-    #[cfg(test)]
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
