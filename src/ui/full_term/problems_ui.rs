@@ -137,7 +137,7 @@ impl ProblemsUi {
                 }
                 self.enter_edit_mode();
             }
-            (Mode::SelectProblem, KeyCode::Char('d')) => {
+            (Mode::SelectProblem | Mode::SelectEdit, KeyCode::Char('d')) => {
                 if self.usages().is_empty() {
                     bail!("Sorry. No additional details available for this problem");
                 }
@@ -527,6 +527,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             keys.extend(
                 [
                     ("space/enter/f", "Apply this edit"),
+                    ("d", "Jump to usage details (API/unsafe only)"),
                     ("up", "Select previous edit"),
                     ("down", "Select next edit"),
                     ("esc", "Return to problem list"),
