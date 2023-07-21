@@ -409,7 +409,12 @@ fn display_usages(
         for (from, local_usages) in &by_from {
             writeln!(f, "      {from}")?;
             for u in local_usages {
-                write!(f, "        -> {} [{}", u.to, u.source_location.line(),)?;
+                write!(
+                    f,
+                    "        -> {} [{}",
+                    u.to_source,
+                    u.source_location.line(),
+                )?;
                 if let Some(column) = u.source_location.column() {
                     write!(f, ":{}", column)?;
                 }
@@ -471,6 +476,7 @@ mod tests {
     use crate::crate_index::CrateSel;
     use crate::location::SourceLocation;
     use crate::symbol::Symbol;
+    use crate::symbol_graph::NameSource;
     use std::collections::BTreeMap;
     use std::path::Path;
     use std::sync::Arc;
@@ -524,11 +530,13 @@ mod tests {
     }
 
     fn create_usage(from: &str, to: &str) -> ApiUsage {
+        let to_symbol = Symbol::borrowed(to.as_bytes()).to_heap();
         ApiUsage {
             source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
             from: Symbol::borrowed(from.as_bytes()).to_heap(),
             to: crate::names::split_names("foo:bar").pop().unwrap(),
-            to_symbol: Symbol::borrowed(to.as_bytes()).to_heap(),
+            to_source: NameSource::Symbol(to_symbol.clone()),
+            to_symbol,
             debug_data: None,
         }
     }

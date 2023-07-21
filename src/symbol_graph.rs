@@ -34,6 +34,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -238,7 +239,7 @@ impl<'input> ApiUsageCollector<'input> {
                     let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
                     for crate_sel in &crate_names {
                         let crate_name = CrateName::from(crate_sel);
-                        for name in &target_symbol_names {
+                        for (name, name_source) in &target_symbol_names {
                             // If a package references another symbol within the same package,
                             // ignore it.
                             if name
@@ -266,6 +267,7 @@ impl<'input> ApiUsageCollector<'input> {
                                         from: first_sym_info.symbol.to_heap(),
                                         to: name.clone(),
                                         to_symbol: target_symbol.to_heap(),
+                                        to_source: name_source.to_owned(),
                                         debug_data,
                                     }],
                                 );
@@ -413,15 +415,23 @@ impl<'input> BinInfo<'input> {
 
     /// Returns names present either in `symbol` or in the debug info for `symbol`. Generally the
     /// former is fully qualified, while the latter contains generics, so we need both.
-    fn names_from_symbol(&self, symbol: &Symbol) -> Result<Vec<Name>> {
-        let mut names = symbol.names()?;
+    fn names_from_symbol<'symbol>(
+        &self,
+        symbol: &Symbol<'symbol>,
+    ) -> Result<Vec<(Name, NameSource<'symbol>)>> {
+        let mut names: Vec<_> = symbol
+            .names()?
+            .into_iter()
+            .map(|name| (name, NameSource::Symbol(symbol.clone())))
+            .collect();
         if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
-            if let Some(name) = &target_symbol_debug.name {
+            if let Some(debug_name) = target_symbol_debug.name {
+                let debug_name = Arc::from(debug_name);
                 // This is O(n^2) in the number of names, but we expect N to be in the range 1..3
                 // and rarely more than 5, so using a hashmap or similar seems like overkill.
-                for name in crate::names::split_names(name) {
-                    if !names.contains(&name) {
-                        names.push(name);
+                for name in crate::names::split_names(&debug_name) {
+                    if !names.iter().any(|(n, _)| n == &name) {
+                        names.push((name, NameSource::DebugName(debug_name.clone())));
                     }
                 }
             }
@@ -448,6 +458,30 @@ impl<'input> BinInfo<'input> {
             return Ok(None);
         };
         Ok(Some(SourceLocation::new(Path::new(file), line, column)))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum NameSource<'symbol> {
+    Symbol(Symbol<'symbol>),
+    DebugName(Arc<str>),
+}
+
+impl<'symbol> NameSource<'symbol> {
+    fn to_owned(&self) -> NameSource<'static> {
+        match self {
+            NameSource::Symbol(symbol) => NameSource::Symbol(symbol.to_heap()),
+            NameSource::DebugName(name) => NameSource::DebugName(name.clone()),
+        }
+    }
+}
+
+impl<'symbol> Display for NameSource<'symbol> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameSource::Symbol(symbol) => symbol.fmt(f),
+            NameSource::DebugName(debug_name) => debug_name.fmt(f),
+        }
     }
 }
 

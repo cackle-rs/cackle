@@ -18,6 +18,7 @@ use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
 use crate::symbol_graph::object_file_path::ObjectFilePath;
+use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
 use crate::Args;
 use crate::CheckState;
@@ -70,6 +71,7 @@ pub(crate) struct ApiUsage {
     pub(crate) from: Symbol<'static>,
     pub(crate) to: Name,
     pub(crate) to_symbol: Symbol<'static>,
+    pub(crate) to_source: NameSource<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
 }
 
@@ -451,6 +453,7 @@ mod tests {
                     from: Symbol::borrowed(&[]),
                     to: crate::names::split_names("foo:bar").pop().unwrap(),
                     to_symbol: Symbol::borrowed(&[]),
+                    to_source: NameSource::Symbol(Symbol::borrowed(b"foo::bar")),
                     debug_data: None,
                 }],
             );

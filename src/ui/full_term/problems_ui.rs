@@ -664,7 +664,7 @@ impl DisplayUsage for ApiUsage {
     }
 
     fn list_display(&self) -> String {
-        format!("{} -> {}", self.from, self.to_symbol)
+        format!("{} -> {}", self.from, self.to_source)
     }
 }
 
