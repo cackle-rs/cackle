@@ -692,11 +692,9 @@ fn problem_details(problem: &Problem) -> String {
         problem,
         Problem::DisallowedUnsafe(..) | Problem::DisallowedApiUsage(..)
     ) {
-        // For kinds of problems where we support showing each usage, we just use a short-form.
-        problem.to_string()
+        "Press 'd' to see details of each usage".to_owned()
     } else {
-        // For other kinds of problems, especially problems like build script failures, we use the
-        // long form.
+        // For kinds of problems that don't support per-usage details, show the full details report.
         format!("{problem:#}")
     }
 }
