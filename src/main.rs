@@ -239,7 +239,11 @@ impl Cackle {
         if self.args.print_path_to_crate_map {
             self.checker.lock().unwrap().print_path_to_crate_map();
         }
-        if exit_code == outcome::SUCCESS {
+        if exit_code == outcome::SUCCESS && !self.args.quiet {
+            println!(
+                "Completed successfully for configuration {}",
+                self.config_path.display()
+            );
             let checker = self.checker.lock().unwrap();
             let summary = summary::Summary::new(&self.crate_index, &checker.config);
             println!("{summary}");
@@ -311,18 +315,6 @@ impl Cackle {
         let resolution = self.problem_store.fix_problems(unused_problems);
         if resolution != Outcome::Continue {
             return Ok(outcome::FAILURE);
-        }
-
-        if !self.args.quiet {
-            // TODO: Figure out how we want to report success.
-
-            // self.ui.display_message(
-            //     "Cackle success",
-            //     &format!(
-            //         "Completed successfully for configuration {}",
-            //         self.config_path.display()
-            //     ),
-            // )?;
         }
 
         Ok(outcome::SUCCESS)
