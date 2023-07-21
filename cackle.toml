@@ -19,6 +19,9 @@ exclude = [
 
 [pkg.serde_derive]
 allow_proc_macro = true
+allow_apis = [
+    "process",
+]
 
 [pkg.clap_derive]
 allow_proc_macro = true
@@ -31,11 +34,6 @@ allow_proc_macro = true
 
 [pkg.unicode-ident]
 allow_unsafe = true
-
-[pkg.quote.build]
-allow_apis = [
-    "process",
-]
 
 [pkg.serde]
 allow_unsafe = true
@@ -266,3 +264,11 @@ allow_apis = [
 
 [pkg.anstyle-query]
 allow_unsafe = true
+
+[pkg.paste]
+allow_proc_macro = true
+
+[pkg.paste.build]
+allow_apis = [
+    "process",
+]
