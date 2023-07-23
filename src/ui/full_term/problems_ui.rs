@@ -195,6 +195,9 @@ impl ProblemsUi {
     }
 
     fn enter_usage_mode(&mut self) {
+        while self.modes.last() != Some(&Mode::SelectProblem) {
+            self.modes.pop();
+        }
         self.modes.push(Mode::SelectUsage);
         self.usage_index = 0;
     }
