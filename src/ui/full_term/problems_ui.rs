@@ -320,11 +320,19 @@ impl ProblemsUi {
     fn render_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let block = Block::default().title("Details").borders(Borders::ALL);
         let pstore_lock = &self.problem_store.lock();
-        let details = pstore_lock
+        let problem = pstore_lock
             .deduplicated_into_iter()
             .nth(self.problem_index)
-            .map(|(_, problem)| problem_details(problem))
-            .unwrap_or_default();
+            .map(|(_, problem)| problem);
+        let mut details = problem.map(problem_details).unwrap_or_default();
+        // If the details are the same as what we already displayed in the list then display
+        // nothing. We don't want to needlessly repeat information.
+        if problem
+            .map(|problem| problem.to_string() == details)
+            .unwrap_or(false)
+        {
+            details.clear();
+        }
         let paragraph = Paragraph::new(details)
             .block(block)
             .wrap(Wrap { trim: false });
@@ -735,14 +743,19 @@ impl DisplayUsage for UnsafeLocation {
 }
 
 fn problem_details(problem: &Problem) -> String {
-    if matches!(
-        problem,
-        Problem::DisallowedUnsafe(..) | Problem::DisallowedApiUsage(..)
-    ) {
-        "Press 'd' to see details of each usage".to_owned()
-    } else {
-        // For kinds of problems that don't support per-usage details, show the full details report.
-        format!("{problem:#}")
+    match problem {
+        Problem::DisallowedUnsafe(..) | Problem::DisallowedApiUsage(..) => {
+            "Press 'd' to see details of each usage".to_owned()
+        }
+        Problem::MissingConfiguration(..) => {
+            "This user interface can guide you through creating an initial cackle.toml. \
+             Press 'h' at any time to see what keys are available."
+                .to_owned()
+        }
+        _ => {
+            // For kinds of problems that don't support per-usage details, show the full details report.
+            format!("{problem:#}")
+        }
     }
 }
 
