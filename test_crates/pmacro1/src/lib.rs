@@ -10,3 +10,15 @@ pub fn create_write_to_file(_item: TokenStream) -> TokenStream {
     .parse()
     .unwrap()
 }
+
+#[proc_macro_derive(FooBar, attributes(marker))]
+pub fn derive_foo_bar(_item: TokenStream) -> TokenStream {
+    "impl FooBar for Foo { fn foo_bar() -> u32 { 42 } }"
+        .parse()
+        .unwrap()
+}
+
+#[proc_macro_attribute]
+pub fn baz(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    item
+}

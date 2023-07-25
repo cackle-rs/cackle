@@ -1,4 +1,14 @@
+use pmacro1::baz;
+use pmacro1::FooBar;
+
 pmacro1::create_write_to_file!();
+
+pub trait FooBar {
+    fn foo_bar() -> u32;
+}
+
+#[derive(FooBar)]
+struct Foo {}
 
 fn main() {
     let values = [1, 2, crab6::add(40, 2)];
@@ -16,8 +26,15 @@ fn main() {
     crab8::print_defaults();
     crab3::run_process();
     res1::print_something();
+    assert_eq!(Foo::foo_bar(), 42);
+    assert_eq!(function_with_custom_attr(), 40);
     // Note, the following call exits
     crab2::stuff::do_stuff();
+}
+
+#[baz]
+fn function_with_custom_attr() -> i32 {
+    40
 }
 
 #[no_mangle]
