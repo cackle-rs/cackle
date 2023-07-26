@@ -559,11 +559,18 @@ impl Edit for AllowApiUsage {
     fn title(&self) -> String {
         let mut sorted_keys: Vec<_> = self.usage.usages.keys().map(|u| u.to_string()).collect();
         sorted_keys.sort();
-        format!(
-            "Allow `{}` to use APIs: {}",
-            CrateName::from(&self.usage.crate_sel),
-            sorted_keys.join(", ")
-        )
+        if let [api] = sorted_keys.as_slice() {
+            format!(
+                "Allow `{}` to use API `{api}`",
+                CrateName::from(&self.usage.crate_sel),
+            )
+        } else {
+            format!(
+                "Allow `{}` to use APIs: {}",
+                CrateName::from(&self.usage.crate_sel),
+                sorted_keys.join(", ")
+            )
+        }
     }
 
     fn help(&self) -> Cow<'static, str> {
