@@ -183,6 +183,9 @@ impl ProblemsUi {
             (_, KeyCode::Char('p')) => {
                 self.show_package_details = !self.show_package_details;
             }
+            (Mode::Help, KeyCode::Char('h')) => {
+                self.modes.pop();
+            }
             (_, KeyCode::Char('h' | '?')) => self.modes.push(Mode::Help),
             (_, KeyCode::Esc) => {
                 if self.modes.len() >= 2 {
