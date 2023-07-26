@@ -1,5 +1,6 @@
 //! Terminal user interface for showing and resolving detected problems.
 
+use super::centre_area;
 use super::message_area;
 use super::render_list;
 use super::update_counter;
@@ -645,7 +646,14 @@ fn render_message<S: AsRef<str>>(
     title: Option<&str>,
     raw_lines: &[S],
 ) {
-    let area = message_area(f.size());
+    let width = raw_lines
+        .iter()
+        .map(|line| line.as_ref().len())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    let height = raw_lines.len() + 2;
+    let area = centre_area(f.size(), (width as u16).max(20), (height as u16).max(5));
     let mut block = active_block();
     if let Some(title) = title {
         block = block.title(title);
