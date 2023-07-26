@@ -11,13 +11,11 @@ cargo build --features unsupported-os
 
 ### Mac
 
-Mac fortunately uses ELF for binaries and DWARF for debug info. Unfortunately it looks like it
-doesn't put each function into a separate section, which our code currently relies upon. It may be
-possible to convince it to use a separate section per function, but if not, it may be necessary to
-figure out the start and end address of each function and combine that with the address of each
-relocation in order to figure out the function graph.
-
-There also appears to be some differences in how DWARF is used.
+Fortunately Mac, like Linux, uses ELF for binaries and DWARF for debug info. However it looks like
+Mac possibly doesn't put each symbol into a separate section of the object file like happens on
+Linux. This may cause problems for Cackle that would need to be resolved. Someone with a Mac would
+need to try running it and investigate what goes wrong. Please reach out if you have a Mac and would
+like to help with this.
 
 ### Windows
 
