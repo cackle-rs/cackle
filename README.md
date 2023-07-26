@@ -13,11 +13,14 @@ result, but is actually using network APIs.
 
 Currently Cackle only works on Linux. See [PORTING.md](PORTING.md) for more details.
 
-Right now Cackle is under fairly active development and the version on crates.io is very very
-out-of-date to the point of being unusable. So installing directly from git is recommended.
+```sh
+cargo install --locked cackle
+```
+
+Or if you'd like to install from git:
 
 ```sh
-cargo install --git https://github.com/davidlattimore/cackle.git cackle
+cargo install --locked --git https://github.com/davidlattimore/cackle.git cackle
 ```
 
 Installing `bubblewrap` is recommended as it allows build.rs build scripts to be run inside a
@@ -47,12 +50,6 @@ details.
 
 See [CONFIG.md](CONFIG.md).
 
-## Non-interactive use
-
-If you're running Cackle in a non-interactive workflow, e.g. as part of CI, you might like to
-disable the user interface for a slightly lighter build. Add `--no-default-features` to your `cargo
-install` command-line.
-
 ## Limitations and precautions
 
 * A proc macro might detect that it's being run under Cackle and emit different code.
@@ -69,15 +66,6 @@ install` command-line.
 With all these limitations, what's the point? The goal really is to just raise the bar for what's
 required to sneak problematic code unnoticed into some package. Use of Cackle should not replace any
 manual code reviews of your dependencies that you would otherwise have done.
-
-## Backward compatibility
-
-We have a version number field in the configuration file. At least initially and for minor, obscure
-changes, bug fixes etc, there probably won't be a version bump. This means that updating to a newer
-version of Cackle might result in errors that require a change to your cackle.toml. In cases where a
-change is being made that we think would require substantial unnecessary changes to people's
-cackle.toml, we'll put the change behind a new configuration option and set the default for that
-option based on the version field.
 
 ## How it works
 
