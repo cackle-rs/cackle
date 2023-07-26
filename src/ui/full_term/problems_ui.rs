@@ -36,6 +36,8 @@ use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
+use ratatui::widgets::Row;
+use ratatui::widgets::Table;
 use ratatui::widgets::Wrap;
 use ratatui::Frame;
 use std::io::Stdout;
@@ -615,11 +617,17 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
         ]
         .into_iter(),
     );
-    let lines: Vec<String> = keys
+    let rows: Vec<Row> = keys
         .into_iter()
-        .map(|(key, action)| format!("{key:14} {action}"))
+        .map(|(key, action)| Row::new(vec![key, action]))
         .collect();
-    render_message(f, Some(title), &lines);
+    let area = message_area(f.size());
+    let constraints = [Constraint::Length(5), Constraint::Max(area.width)];
+    let table = Table::new(rows)
+        .block(active_block().title(title))
+        .widths(&constraints);
+    f.render_widget(Clear, area);
+    f.render_widget(table, area);
 }
 
 fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
@@ -638,9 +646,7 @@ fn render_message<S: AsRef<str>>(
     raw_lines: &[S],
 ) {
     let area = message_area(f.size());
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+    let mut block = active_block();
     if let Some(title) = title {
         block = block.title(title);
     }
@@ -650,6 +656,12 @@ fn render_message<S: AsRef<str>>(
         .wrap(Wrap { trim: false });
     f.render_widget(Clear, area);
     f.render_widget(paragraph, area);
+}
+
+fn active_block() -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
 }
 
 fn edits_for_problem(
