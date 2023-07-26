@@ -1,5 +1,6 @@
 [common]
 version = 1
+all_targets = true
 features = [
     "crash-if-not-sandboxed",
     "foo",
@@ -31,6 +32,7 @@ allow_apis = [
     # Don't include fs permission.
     "env",
     "terminate",
+    "unix_sockets",
 ]
 
 [pkg.crab1.build]

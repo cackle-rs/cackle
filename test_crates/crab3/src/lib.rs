@@ -23,3 +23,8 @@ pub fn do_stuff() {
     crab1::read_file("");
     foo!();
 }
+
+#[test]
+fn test_do_unix_socket_stuff() {
+    crab1::do_unix_socket_stuff();
+}

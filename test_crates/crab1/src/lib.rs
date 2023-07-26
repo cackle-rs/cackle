@@ -40,3 +40,8 @@ pub extern "C" fn crab1_entry() {
 pub fn inlined_abort() {
     std::process::abort();
 }
+
+/// This function is only called from a test in crab3.
+pub fn do_unix_socket_stuff() {
+    let _ = std::os::unix::net::UnixStream::pair();
+}
