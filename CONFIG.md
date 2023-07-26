@@ -106,10 +106,26 @@ allow_apis = [
 If you're the owner of a crate that provides APIs that you'd like classified, you can create
 `cackle/export.toml` in your crate.
 
-## Specifying features
+## Build options
+
+### Specifying features
 
 Features to be be passed to `cargo build` can be specified in `cackle.toml` as follows:
 
 ```toml
 features = ["feature1", "feature2"]
 ```
+
+### Selecting build targets
+
+Arbitrary build flags can be passed to `cargo build` using the `build_flags` option. The default is
+to pass `--all-targets`.
+
+```toml
+[common]
+build_flags = ["--all-targets"]
+```
+
+If you'd like to not analyse tests, examples etc, you might override this to just the empty array
+`[]`. Or if you want to analyse tests, but not examples you might set it to `[--tests]`. For
+available options see `cargo build --help`.
