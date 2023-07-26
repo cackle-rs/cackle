@@ -88,8 +88,14 @@ pub(crate) fn invoke_cargo_build(
         .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
 
     let mut command = cargo::command("build", dir, args);
-    if config.common.all_targets {
-        command.arg("--all-targets");
+    let default_build_flags = ["--all-targets".to_owned()];
+    for flag in config
+        .common
+        .build_flags
+        .as_deref()
+        .unwrap_or(default_build_flags.as_slice())
+    {
+        command.arg(flag);
     }
     if let Some(target) = &args.target {
         command.arg("--target").arg(target);

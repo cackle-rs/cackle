@@ -53,7 +53,7 @@ pub(crate) struct CommonConfig {
     pub(crate) explicit_build_scripts: bool,
 
     #[serde(default)]
-    pub(crate) all_targets: bool,
+    pub(crate) build_flags: Option<Vec<String>>,
 
     #[serde(default)]
     pub(crate) import_std: Vec<String>,

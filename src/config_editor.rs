@@ -333,9 +333,6 @@ impl Edit for CreateRecommendedConfig {
         editor.toggle_std_import("fs")?;
         editor.toggle_std_import("net")?;
         editor.toggle_std_import("process")?;
-        editor
-            .common_table()?
-            .insert("all_targets", Item::Value(true.into()));
         Ok(())
     }
 

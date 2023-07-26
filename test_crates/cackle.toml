@@ -1,6 +1,5 @@
 [common]
 version = 1
-all_targets = true
 features = [
     "crash-if-not-sandboxed",
     "foo",
