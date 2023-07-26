@@ -1,7 +1,6 @@
 //! Terminal user interface for showing and resolving detected problems.
 
 use super::centre_area;
-use super::message_area;
 use super::render_list;
 use super::update_counter;
 use crate::checker::ApiUsage;
@@ -618,12 +617,18 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
         ]
         .into_iter(),
     );
+    let left_col_width = 5;
+    let width = keys.iter().map(|(_, text)| text.len()).max().unwrap_or(0) + left_col_width + 3;
+    let height = keys.len() + 2;
     let rows: Vec<Row> = keys
         .into_iter()
         .map(|(key, action)| Row::new(vec![key, action]))
         .collect();
-    let area = message_area(f.size());
-    let constraints = [Constraint::Length(5), Constraint::Max(area.width)];
+    let area = centre_area(f.size(), width as u16, height as u16);
+    let constraints = [
+        Constraint::Length(left_col_width as u16),
+        Constraint::Max(area.width),
+    ];
     let table = Table::new(rows)
         .block(active_block().title(title))
         .widths(&constraints);
