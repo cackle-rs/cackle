@@ -168,24 +168,30 @@ fn render_error(f: &mut Frame<CrosstermBackend<Stdout>>, error: &anyhow::Error) 
 }
 
 fn message_area(area: Rect) -> Rect {
+    centre_area(area, 80, 25)
+}
+
+fn centre_area(area: Rect, width: u16, height: u16) -> Rect {
     let vertical_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(vec![
-            Constraint::Percentage(25),
-            Constraint::Percentage(50),
-            Constraint::Percentage(25),
-        ])
+        .constraints(centre(height, area.height))
         .split(area);
 
     let horizontal_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints(vec![
-            Constraint::Percentage(10),
-            Constraint::Percentage(80),
-            Constraint::Percentage(10),
-        ])
+        .constraints(centre(width, area.width))
         .split(vertical_chunks[1]);
     horizontal_chunks[1]
+}
+
+fn centre(target: u16, available: u16) -> Vec<Constraint> {
+    let actual = target.min(available);
+    let margin = (available - actual) / 2;
+    vec![
+        Constraint::Length(margin),
+        Constraint::Length(actual),
+        Constraint::Length(margin),
+    ]
 }
 
 fn render_list(
