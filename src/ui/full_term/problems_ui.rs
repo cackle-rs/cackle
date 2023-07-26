@@ -78,9 +78,9 @@ impl ProblemsUi {
 
     pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
         let chunks = if self.show_package_details {
-            split_vertial(f.size(), &[40, 40, 20])
+            split_vertial(f.size(), &[30, 50, 20])
         } else {
-            split_vertial(f.size(), &[50, 50])
+            split_vertial(f.size(), &[35, 65])
         };
         let (top, middle) = (chunks[0], chunks[1]);
 
