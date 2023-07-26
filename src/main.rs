@@ -77,11 +77,6 @@ struct Args {
     #[clap(long)]
     fail_on_warnings: bool,
 
-    /// Maximum number of source locations that use an API that should be
-    /// reported.
-    #[clap(long, default_value = "2")]
-    usage_report_cap: i32,
-
     /// Whether to use coloured output.
     #[clap(long, alias = "color", default_value = "auto")]
     colour: colour::Colour,
@@ -95,10 +90,6 @@ struct Args {
     /// target.
     #[clap(long)]
     target: Option<String>,
-
-    /// Provide additional information on some kinds of errors.
-    #[clap(long)]
-    verbose_errors: bool,
 
     /// Print how long various things take to run.
     #[clap(long)]
