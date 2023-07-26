@@ -974,7 +974,6 @@ mod tests {
                 build_script_id: build_script_id("crab1"),
                 sandbox_config: SandboxConfig {
                     kind: crate::config::SandboxKind::Bubblewrap,
-                    allow_read: vec![],
                     extra_args: vec![],
                     allow_network: None,
                 },

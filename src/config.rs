@@ -69,9 +69,6 @@ pub(crate) struct SandboxConfig {
     pub(crate) kind: SandboxKind,
 
     #[serde(default)]
-    pub(crate) allow_read: Vec<String>,
-
-    #[serde(default)]
     pub(crate) extra_args: Vec<String>,
 
     pub(crate) allow_network: Option<bool>,
@@ -326,9 +323,6 @@ impl Config {
         config
             .extra_args
             .extend(pkg_sandbox_config.extra_args.iter().cloned());
-        config
-            .allow_read
-            .extend(pkg_sandbox_config.allow_read.iter().cloned());
         if let Some(allow_network) = pkg_sandbox_config.allow_network {
             config.allow_network = Some(allow_network);
         }
@@ -485,18 +479,11 @@ mod tests {
             r#"
                 [sandbox]
                 kind = "Bubblewrap"
-                allow_read = [
-                    "/foo",
-                    "/bar",
-                ]
                 extra_args = [
                     "--extra1",
                 ]
 
                 [pkg.a.build.sandbox]
-                allow_read = [
-                    "/baz",
-                ]
                 extra_args = [
                     "--extra2",
                 ]
@@ -509,7 +496,6 @@ mod tests {
 
         let sandbox_a = config.sandbox_config_for_package(&"a.build".into());
         assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
-        assert_eq!(sandbox_a.allow_read, vec!["/foo", "/bar", "/baz"]);
         assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
 
         let sandbox_b = config.sandbox_config_for_package(&"b.build".into());

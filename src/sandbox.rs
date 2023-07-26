@@ -58,9 +58,6 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
         SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
         SandboxKind::Bubblewrap => Box::<bubblewrap::Bubblewrap>::default(),
     };
-    for dir in &config.allow_read {
-        sandbox.ro_bind(Path::new(dir));
-    }
     let home = PathBuf::from(std::env::var("HOME").context("Couldn't get HOME env var")?);
     // We allow access to the root of the filesystem, but only selected parts of the user's home
     // directory. The home directory is where sensitive stuff is most likely to live. e.g. access
