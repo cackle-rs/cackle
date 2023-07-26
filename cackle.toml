@@ -272,3 +272,8 @@ allow_proc_macro = true
 allow_apis = [
     "process",
 ]
+
+[pkg.tempfile]
+allow_apis = [
+    "fs",
+]
