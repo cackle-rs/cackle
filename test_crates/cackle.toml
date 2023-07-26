@@ -87,12 +87,10 @@ allow_apis = [
 allow_unsafe = true
 
 [pkg.crab-bin.build]
+sandbox.kind = "Disabled"
 allow_apis = [
     "fs",
 ]
-
-[pkg.crab-bin.build.sandbox]
-kind = "Disabled"
 
 [pkg.crab4]
 allow_apis = [

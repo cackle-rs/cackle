@@ -52,8 +52,8 @@ allow_apis = [
 ]
 ```
 
-Here we declare a package called `crab1` and say that it is allowed to use the APIs `fs` and
-`process`. We also say that it's allowed to use unsafe code.
+Here we declare a package called `crab1` and say that it is allowed to use the `fs` and `process`
+APIs. We also say that it's allowed to use unsafe code.
 
 ## Sandbox
 
@@ -70,15 +70,15 @@ If for some reason you don't want to sandbox a particular build script, you can 
 just for that build script.
 
 ```toml
-[pkg.foo.build.sandbox]
-kind = "Disabled"
+[pkg.foo.build]
+sandbox.kind = "Disabled"
 ```
 
 If a build script needs network access, you can relax the sandbox to allow it as follows:
 
 ```toml
-[pkg.foo.build.sandbox]
-allow_network = true
+[pkg.foo.build]
+sandbox.allow_network = true
 ```
 
 ## Importing API definitions from an external crate
@@ -127,5 +127,5 @@ build_flags = ["--all-targets"]
 ```
 
 If you'd like to not analyse tests, examples etc, you might override this to just the empty array
-`[]`. Or if you want to analyse tests, but not examples you might set it to `[--tests]`. For
-available options see `cargo build --help`.
+`[]`. Or if you want to analyse tests, but not examples you might set it to `["--tests"]`. For
+available options run `cargo build --help`.
