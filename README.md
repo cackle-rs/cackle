@@ -6,8 +6,8 @@ Cackle is a tool to analyse the transitive dependencies of your crate to see wha
 crate uses.
 
 The idea is look for crates that are using APIs that you don't think they should be using. For
-example a crate that from its description should just be transforming some data and returning the
-result, but is actually using network APIs.
+example a crate that from its description should just be doing some data processing, but is actually
+using network APIs.
 
 ## Installation
 
@@ -23,7 +23,7 @@ Or if you'd like to install from git:
 cargo install --locked --git https://github.com/davidlattimore/cackle.git cackle
 ```
 
-Installing `bubblewrap` is recommended as it allows build.rs build scripts to be run inside a
+Installing `bubblewrap` is recommended as it allows build scripts (build.rs) to be run inside a
 sandbox.
 
 On systems with `apt`, this can be done by running:
@@ -61,7 +61,8 @@ See [CONFIG.md](CONFIG.md).
 * Your configuration might miss defining an API provided by a crate as falling into a certain
   category that you care about.
 * There are undoubtedly countless ways that a determined person could circumvent detection that
-  they're using some APIs. With time we may try to prevent such circumventions, but for now, you should definitely assume that circumvention is possible.
+  they're using some APIs. With time we may try to prevent such circumventions, but for now, you
+  should definitely assume that circumvention is possible.
 
 With all these limitations, what's the point? The goal really is to just raise the bar for what's
 required to sneak problematic code unnoticed into some package. Use of Cackle should not replace any
@@ -74,6 +75,11 @@ See [HOW_IT_WORKS.md](HOW_IT_WORKS.md).
 ## FAQ
 
 [FAQ](FAQ.md)
+
+## Contributing
+
+Contributions are very welcome. If you'd like to get involved, please reach out either by filing an
+issue or emailing David Lattimore (email address is in the commit log).
 
 ## License
 
