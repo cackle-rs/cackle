@@ -303,24 +303,24 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
     fn new(obj: &'obj object::File<'data>) -> Self {
         let max_section_index = obj.sections().map(|s| s.index().0).max().unwrap_or(0);
         let mut section_infos = vec![SectionInfo::default(); max_section_index + 1];
-        for symbol in obj.symbols() {
-            let name = symbol.name_bytes().unwrap_or_default();
-            if name.is_empty() || !symbol.is_definition() {
+        for obj_symbol in obj.symbols() {
+            let name = obj_symbol.name_bytes().unwrap_or_default();
+            if name.is_empty() || !obj_symbol.is_definition() {
                 continue;
             }
-            let Some(section_index) = symbol.section_index() else {
+            let Some(section_index) = obj_symbol.section_index() else {
                 continue;
             };
             let section_info = &mut section_infos[section_index.0];
-            if section_info
+            let symbol_is_first_in_section = section_info
                 .first_symbol
                 .as_ref()
-                .map(|existing| symbol.address() < existing.offset)
-                .unwrap_or(true)
-            {
+                .map(|existing| obj_symbol.address() < existing.offset)
+                .unwrap_or(true);
+            if symbol_is_first_in_section {
                 section_info.first_symbol = Some(SymbolInfo {
                     symbol: Symbol::borrowed(name),
-                    offset: symbol.address(),
+                    offset: obj_symbol.address(),
                 });
             }
         }
