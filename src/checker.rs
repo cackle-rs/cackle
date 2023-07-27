@@ -60,9 +60,6 @@ pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
     unused_allowed_perms: HashSet<PermissionName>,
-
-    /// Whether this crate is allowed to be a proc macro according to our config.
-    allow_proc_macro: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,7 +135,6 @@ impl Checker {
                 .crate_infos
                 .entry(crate_name.as_ref().into())
                 .or_default();
-            crate_info.allow_proc_macro = crate_config.allow_proc_macro;
             for perm in &crate_config.allow_apis {
                 if crate_info.allowed_perms.insert(perm.clone()) {
                     crate_info.unused_allowed_perms.insert(perm.clone());
@@ -152,9 +148,10 @@ impl Checker {
         let mut problems = ProblemList::default();
         for pkg_id in &self.proc_macros {
             if !self
-                .crate_infos
+                .config
+                .packages
                 .get(&pkg_id.into())
-                .map(|crate_info| crate_info.allow_proc_macro)
+                .map(|pkg_config| pkg_config.allow_proc_macro)
                 .unwrap_or(false)
             {
                 problems.push(Problem::IsProcMacro(pkg_id.clone()));
