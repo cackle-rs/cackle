@@ -2,6 +2,7 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
+use crate::config::ApiPath;
 use crate::config::CrateName;
 use crate::config::PermConfig;
 use crate::config::PermissionName;
@@ -18,6 +19,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Default, Debug, PartialEq, Clone)]
 pub(crate) struct ProblemList {
@@ -40,6 +42,7 @@ pub(crate) enum Problem {
     SelectSandbox,
     ImportStdApi(PermissionName),
     AvailableApi(AvailableApi),
+    PossibleExportedApi(PossibleExportedApi),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -77,6 +80,22 @@ pub(crate) struct AvailableApi {
     pub(crate) pkg_id: PackageId,
     pub(crate) api: PermissionName,
     pub(crate) config: PermConfig,
+}
+
+/// The name of a top-level module in a crate that matches the name of a restricted API. For
+/// example, if there's an API named "fs" and we find a crate with a module named "fs".
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub(crate) struct PossibleExportedApi {
+    pub(crate) pkg_id: PackageId,
+    pub(crate) api: PermissionName,
+    pub(crate) symbol: Symbol<'static>,
+}
+impl PossibleExportedApi {
+    pub(crate) fn api_path(&self) -> ApiPath {
+        ApiPath {
+            prefix: Arc::from(format!("{}::{}", self.pkg_id.name(), self.api).as_str()),
+        }
+    }
 }
 
 impl ProblemList {
@@ -194,6 +213,7 @@ impl Problem {
         match self {
             Problem::UnusedAllowApi(..)
             | Problem::UnusedPackageConfig(..)
+            | Problem::PossibleExportedApi(..)
             | Problem::AvailableApi(..) => Severity::Warning,
             _ => Severity::Error,
         }
@@ -210,20 +230,29 @@ impl Problem {
     /// Returns `self` or a clone of `self` with any bits that aren't relevant for deduplication
     /// removed.
     pub(crate) fn deduplication_key(&self) -> Cow<Problem> {
-        if let Problem::DisallowedApiUsage(api_usage) = self {
-            if api_usage
-                .usages
-                .values()
-                .any(|usages| usages.iter().any(|usage| usage.debug_data.is_some()))
-            {
-                let mut api_usage = api_usage.clone();
-                for usages in api_usage.usages.values_mut() {
-                    for usage in usages {
-                        usage.debug_data = None;
+        match self {
+            Problem::DisallowedApiUsage(api_usage) => {
+                if api_usage
+                    .usages
+                    .values()
+                    .any(|usages| usages.iter().any(|usage| usage.debug_data.is_some()))
+                {
+                    let mut api_usage = api_usage.clone();
+                    for usages in api_usage.usages.values_mut() {
+                        for usage in usages {
+                            usage.debug_data = None;
+                        }
                     }
+                    return Cow::Owned(Problem::DisallowedApiUsage(api_usage));
                 }
-                return Cow::Owned(Problem::DisallowedApiUsage(api_usage));
             }
+            Problem::PossibleExportedApi(info) => {
+                return Cow::Owned(Problem::PossibleExportedApi(PossibleExportedApi {
+                    symbol: Symbol::borrowed(&[]),
+                    ..info.clone()
+                }))
+            }
+            _ => (),
         }
         Cow::Borrowed(self)
     }
@@ -243,6 +272,7 @@ impl Problem {
             Problem::SelectSandbox => None,
             Problem::ImportStdApi(_) => None,
             Problem::AvailableApi(d) => Some(&d.pkg_id),
+            Problem::PossibleExportedApi(d) => Some(&d.pkg_id),
         }
     }
 }
@@ -307,6 +337,22 @@ impl Display for Problem {
                     CrateSel::Primary(info.pkg_id.clone()),
                     info.api
                 )?;
+            }
+            Problem::PossibleExportedApi(info) => {
+                if f.alternate() {
+                    write!(
+                        f,
+                        "Package `{}` provides symbol `{}`, which provides a top-level \
+                         module with the same name as the API `{}`",
+                        info.pkg_id, info.symbol, info.api
+                    )?;
+                } else {
+                    write!(
+                        f,
+                        "Package `{}` may provide API `{}`",
+                        info.pkg_id, info.api
+                    )?;
+                }
             }
         }
         Ok(())

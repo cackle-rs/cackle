@@ -10,9 +10,12 @@ use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::Checker;
 use crate::config::CrateName;
+use crate::config::PermissionName;
+use crate::crate_index::CrateSel;
 use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::problem::ApiUsages;
+use crate::problem::PossibleExportedApi;
 use crate::problem::ProblemList;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
@@ -75,6 +78,8 @@ pub(crate) struct ScanOutputs {
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
     /// once computed, they won't be recomputed.
     base_problems: ProblemList,
+
+    possible_exported_apis: Vec<PossibleExportedApi>,
 }
 
 struct ObjectIndex<'obj, 'data> {
@@ -123,6 +128,7 @@ pub(crate) fn scan_objects(
         debug_enabled: checker.args.debug,
     };
     collector.bin.load_symbols(&obj)?;
+    collector.find_possible_exports(checker);
     for path in paths {
         collector
             .process_file(path, checker)
@@ -138,6 +144,7 @@ impl ScanOutputs {
         for api_usage in &self.api_usages {
             checker.permission_used(api_usage, &mut problems);
         }
+        checker.possible_exported_api_problems(&self.possible_exported_apis, &mut problems);
 
         Ok(problems)
     }
@@ -296,6 +303,44 @@ impl<'input> ApiUsageCollector<'input> {
             }
         }
         Ok(())
+    }
+
+    fn find_possible_exports(&mut self, checker: &Checker) {
+        let api_names: HashMap<&str, &PermissionName> = checker
+            .config
+            .apis
+            .keys()
+            .map(|n| (n.name.as_ref(), n))
+            .collect();
+        let mut found = HashSet::new();
+        for (symbol, debug_info) in &self.bin.symbol_debug_info {
+            let Some(module_name) = symbol.module_name() else {
+                continue;
+            };
+            let Some(permission_name) = api_names.get(module_name.as_str()) else {
+                continue;
+            };
+            let location = debug_info.source_location();
+            for crate_sel in checker
+                .opt_crate_names_from_source_path(location.filename())
+                .as_deref()
+                .unwrap_or_default()
+            {
+                // APIs can only be exported from the primary crate in a package.
+                let CrateSel::Primary(pkg_id) = crate_sel else {
+                    continue;
+                };
+                if found.insert((pkg_id.clone(), permission_name)) {
+                    self.outputs
+                        .possible_exported_apis
+                        .push(PossibleExportedApi {
+                            pkg_id: pkg_id.to_owned(),
+                            api: PermissionName::clone(permission_name),
+                            symbol: symbol.to_heap(),
+                        });
+                }
+            }
+        }
     }
 }
 

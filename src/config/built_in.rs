@@ -71,5 +71,6 @@ fn perm(include: &[&str], exclude: &[&str]) -> PermConfig {
     PermConfig {
         include: include.iter().map(|s| ApiPath::from_str(s)).collect(),
         exclude: exclude.iter().map(|s| ApiPath::from_str(s)).collect(),
+        no_auto_detect: Vec::new(),
     }
 }

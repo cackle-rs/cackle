@@ -77,10 +77,14 @@ pub(crate) struct SandboxConfig {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermConfig {
+    #[serde(default)]
     pub(crate) include: Vec<ApiPath>,
 
     #[serde(default)]
     pub(crate) exclude: Vec<ApiPath>,
+
+    #[serde(default)]
+    pub(crate) no_auto_detect: Vec<CrateName>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -274,6 +278,12 @@ fn flatten(config: &mut Config) {
 impl Display for PermissionName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+
+impl Display for ApiPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.prefix)
     }
 }
 

@@ -22,6 +22,16 @@ include = [
     "res1",
 ]
 
+[api.fs]
+no_auto_detect = [
+    "crab3",
+]
+
+[api.terminate]
+include = [
+    "crab3::terminate",
+]
+
 [pkg.crab1]
 allow_unsafe = true
 import = [

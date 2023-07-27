@@ -63,6 +63,10 @@ impl<'data> Symbol<'data> {
     pub(crate) fn len(&self) -> usize {
         self.data().len()
     }
+
+    pub(crate) fn module_name(&self) -> Option<String> {
+        self.names().ok()?.first()?.parts.get(1).cloned()
+    }
 }
 
 impl<'data> Display for Symbol<'data> {

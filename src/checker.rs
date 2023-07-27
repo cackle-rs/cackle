@@ -11,6 +11,7 @@ use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::problem::ApiUsages;
+use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
@@ -261,21 +262,25 @@ impl Checker {
         source_path: &Path,
         ref_path: &ObjectFilePath,
     ) -> Result<Vec<CrateSel>> {
-        self.path_to_crate
-            .get(source_path)
-            .cloned()
-            .or_else(|| {
-                // Fall-back to just finding the package that contains the source path.
-                self.crate_index
-                    .package_id_for_path(source_path)
-                    .map(|pkg_id| vec![CrateSel::Primary(pkg_id.clone())])
-            })
+        self.opt_crate_names_from_source_path(source_path)
             .ok_or_else(|| {
                 anyhow!(
                     "Couldn't find crate name for {} referenced from {ref_path}",
                     source_path.display(),
                 )
             })
+    }
+
+    pub(crate) fn opt_crate_names_from_source_path(
+        &self,
+        source_path: &Path,
+    ) -> Option<Vec<CrateSel>> {
+        self.path_to_crate.get(source_path).cloned().or_else(|| {
+            // Fall-back to just finding the package that contains the source path.
+            self.crate_index
+                .package_id_for_path(source_path)
+                .map(|pkg_id| vec![CrateSel::Primary(pkg_id.clone())])
+        })
     }
 
     pub(crate) fn report_proc_macro(&mut self, pkg_id: &PackageId) {
@@ -351,6 +356,31 @@ impl Checker {
             for c in crates {
                 println!("{c} -> {}", path.display());
             }
+        }
+    }
+
+    pub(crate) fn possible_exported_api_problems(
+        &self,
+        possible_exported_apis: &[PossibleExportedApi],
+        problems: &mut ProblemList,
+    ) {
+        for p in possible_exported_apis {
+            let crate_name = CrateName::from(&p.pkg_id);
+            if let Some(pkg_config) = self.config.packages.get(&crate_name) {
+                // If we've imported any APIs, or ignored available APIs from the package, then we
+                // don't want to report a possible export.
+                if pkg_config.import.is_some() {
+                    continue;
+                }
+            }
+            if let Some(api_config) = self.config.apis.get(&p.api) {
+                if api_config.no_auto_detect.contains(&crate_name)
+                    || api_config.include.contains(&p.api_path())
+                {
+                    continue;
+                }
+            }
+            problems.push(Problem::PossibleExportedApi(p.clone()));
         }
     }
 }

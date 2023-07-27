@@ -5,6 +5,7 @@ use crate::config::PermissionName;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
+use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
@@ -104,6 +105,10 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         Problem::UnusedPackageConfig(crate_name) => edits.push(Box::new(RemoveUnusedPkgConfig {
             crate_name: crate_name.clone(),
         })),
+        Problem::PossibleExportedApi(info) => {
+            edits.push(Box::new(ExtendApi(info.clone())));
+            edits.push(Box::new(NoDetectApi(info.clone())));
+        }
         _ => {}
     }
     edits
@@ -548,6 +553,61 @@ impl Edit for IgnoreApi {
 
     fn resolve_problem_if_edit_is_empty(&self) -> bool {
         false
+    }
+}
+
+struct ExtendApi(PossibleExportedApi);
+
+impl Edit for ExtendApi {
+    fn title(&self) -> String {
+        format!("Extend API `{}` with `{}`", self.0.api, self.0.api_path(),)
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        format!(
+            "Classify usages of `{}` as the API `{}`",
+            self.0.api_path(),
+            self.0.api
+        )
+        .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
+        add_to_array(
+            table,
+            "include",
+            &[format!("{}::{}", self.0.pkg_id.name(), self.0.api).as_str()],
+        )?;
+        Ok(())
+    }
+}
+
+struct NoDetectApi(PossibleExportedApi);
+
+impl Edit for NoDetectApi {
+    fn title(&self) -> String {
+        format!(
+            "Don't detect `{}` in `{}`",
+            self.0.api,
+            self.0.pkg_id.name(),
+        )
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        format!(
+            "Ignore this possible exported API. Select this if you've looked at `{}` and \
+             determined that it doesn't export the API `{}`",
+            self.0.pkg_id.name(),
+            self.0.api,
+        )
+        .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
+        add_to_array(table, "no_auto_detect", &[self.0.pkg_id.name()])?;
+        Ok(())
     }
 }
 
