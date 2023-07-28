@@ -28,6 +28,7 @@ mod sandbox;
 mod summary;
 pub(crate) mod symbol;
 mod symbol_graph;
+mod timing;
 mod ui;
 mod unsafe_checker;
 
@@ -227,15 +228,18 @@ impl Cackle {
             println!("{error:#}");
         }
 
+        let checker = self.checker.lock().unwrap();
         if self.args.print_path_to_crate_map {
-            self.checker.lock().unwrap().print_path_to_crate_map();
+            checker.print_path_to_crate_map();
+        }
+        if self.args.print_timing {
+            checker.print_timing();
         }
         if exit_code == outcome::SUCCESS && !self.args.quiet {
             println!(
                 "Completed successfully for configuration {}",
                 self.config_path.display()
             );
-            let checker = self.checker.lock().unwrap();
             let summary = summary::Summary::new(&self.crate_index, &checker.config);
             println!("{summary}");
         }

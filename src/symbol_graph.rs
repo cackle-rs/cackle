@@ -43,6 +43,7 @@ use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 mod dwarf;
 pub(crate) mod object_file_path;
@@ -105,8 +106,9 @@ struct SymbolInfo<'data> {
 pub(crate) fn scan_objects(
     paths: &[PathBuf],
     bin_path: &Path,
-    checker: &Checker,
+    checker: &mut Checker,
 ) -> Result<ScanOutputs> {
+    let start = Instant::now();
     let file_bytes = std::fs::read(bin_path)
         .with_context(|| format!("Failed to read `{}`", bin_path.display()))?;
     let obj = object::File::parse(file_bytes.as_slice())
@@ -116,6 +118,7 @@ pub(crate) fn scan_objects(
     let symbol_to_locations = dwarf::get_symbol_debug_info(&dwarf)?;
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed to process {}", bin_path.display()))?;
+    let start = checker.timings.add_timing(start, "Parse bin");
 
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
@@ -128,12 +131,15 @@ pub(crate) fn scan_objects(
         debug_enabled: checker.args.debug,
     };
     collector.bin.load_symbols(&obj)?;
+    let start = checker.timings.add_timing(start, "Load symbols from bin");
     collector.find_possible_exports(checker);
+    let start = checker.timings.add_timing(start, "Find possible exports");
     for path in paths {
         collector
             .process_file(path, checker)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
+    checker.timings.add_timing(start, "Process object files");
 
     Ok(collector.outputs)
 }

@@ -21,6 +21,7 @@ use crate::symbol::Symbol;
 use crate::symbol_graph::object_file_path::ObjectFilePath;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
+use crate::timing::TimingCollector;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
@@ -44,10 +45,13 @@ pub(crate) struct Checker {
     target_dir: PathBuf,
     pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
+
     /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
     /// map to a single crate, but in rare cases multiple crates within a package could use the same
     /// source path.
     path_to_crate: HashMap<PathBuf, Vec<CrateSel>>,
+
+    pub(crate) timings: TimingCollector,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -80,6 +84,7 @@ impl Checker {
         crate_index: Arc<CrateIndex>,
         config_path: PathBuf,
     ) -> Self {
+        let timings = TimingCollector::new(args.print_timing);
         Self {
             inclusions: Default::default(),
             exclusions: Default::default(),
@@ -91,6 +96,7 @@ impl Checker {
             crate_index,
             path_to_crate: Default::default(),
             proc_macros: Default::default(),
+            timings,
         }
     }
 
@@ -114,6 +120,10 @@ impl Checker {
         self.update_config(config);
         info!("Config (re)loaded");
         Ok(())
+    }
+
+    pub(crate) fn print_timing(&self) {
+        println!("{}", self.timings);
     }
 
     fn update_config(&mut self, config: Arc<Config>) {
@@ -191,6 +201,7 @@ impl Checker {
         info: &LinkInfo,
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
+        let start = std::time::Instant::now();
         let mut problems = ProblemList::default();
         if let CrateSel::BuildScript(build_script_id) = &info.crate_sel {
             problems.merge(self.verify_build_script_permitted(build_script_id));
@@ -201,6 +212,7 @@ impl Checker {
             check_state,
         )?);
         let problems = problems.grouped_by_type_crate_and_api();
+        self.timings.add_timing(start, "Total object processing");
         info!(
             "Checking linker args for {} with {} objects. {} problems",
             info.crate_sel,
@@ -217,19 +229,11 @@ impl Checker {
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
         if check_state.graph_outputs.is_none() {
-            let start = std::time::Instant::now();
             let graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
-            if self.args.print_timing {
-                println!("Graph computation took {}ms", start.elapsed().as_millis());
-            }
             check_state.graph_outputs = Some(graph_outputs);
         }
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
-        let start = std::time::Instant::now();
         let problems = graph_outputs.problems(self)?;
-        if self.args.print_timing {
-            println!("API usage checking took {}ms", start.elapsed().as_millis());
-        }
         Ok(problems)
     }
 
