@@ -323,7 +323,7 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(module_name) = symbol.module_name() else {
                 continue;
             };
-            let Some(permission_name) = api_names.get(module_name.as_str()) else {
+            let Some(permission_name) = api_names.get(module_name) else {
                 continue;
             };
             let location = debug_info.source_location();

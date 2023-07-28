@@ -64,8 +64,9 @@ impl<'data> Symbol<'data> {
         self.data().len()
     }
 
-    pub(crate) fn module_name(&self) -> Option<String> {
-        self.names().ok()?.first()?.parts.get(1).cloned()
+    pub(crate) fn module_name(&self) -> Option<&str> {
+        let data_str = self.to_str().ok()?;
+        crate::demangle::DemangleIterator::new(data_str).nth(1)
     }
 }
 
@@ -125,6 +126,9 @@ fn test_names() {
             vec!["core", "fmt", "Debug", "fmt"]
         ]
     );
+    assert_eq!(symbol.module_name(), None);
+
+    assert_eq!(Symbol::borrowed(b"foo").module_name(), None);
 }
 
 #[test]

@@ -13,6 +13,7 @@ mod config;
 mod config_editor;
 mod config_validation;
 mod crate_index;
+mod demangle;
 mod deps;
 pub(crate) mod events;
 pub(crate) mod fs;
