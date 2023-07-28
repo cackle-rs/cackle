@@ -463,7 +463,7 @@ impl ProblemsUi {
             .arg("--manifest-path")
             .arg(&self.crate_index.manifest_path)
             .arg("-i")
-            .arg(pkg_id.name())
+            .arg(format!("{}@{}", pkg_id.name(), pkg_id.version()))
             .output()
             .context("Failed to run `cargo tree`")?;
         let mut text =
