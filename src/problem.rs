@@ -342,8 +342,9 @@ impl Display for Problem {
                 if f.alternate() {
                     write!(
                         f,
-                        "Package `{}` provides symbol `{}`, which provides a top-level \
-                         module with the same name as the API `{}`",
+                        "Package `{}` provides symbol `{}`. A top-level module has the same name \
+                         as the API `{}`. If this module is public (we can't tell), then consider \
+                         adjusting the API includes.",
                         info.pkg_id, info.symbol, info.api
                     )?;
                 } else {
