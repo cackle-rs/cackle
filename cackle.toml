@@ -12,9 +12,50 @@ kind = "Bubblewrap"
 [api.net]
 include = [
     "mio::net",
+    "rustix::net",
 ]
 exclude = [
     "mio::net::uds",
+]
+
+[api.fs]
+include = [
+    "rustix::fs",
+    "rustix::fd",
+    "rustix::mm",
+    "rustix::path",
+]
+no_auto_detect = [
+    # TODO: This is a false positive. Remove once we fix it.
+    "bitflags",
+    "cackle",
+]
+
+[api.process]
+include = [
+    "rustix::process",
+]
+
+[api.termios]
+include = [
+    "rustix::termios",
+]
+no_auto_detect = [
+    "bitflags",
+]
+
+[api.rustix-other]
+include = [
+    "rustix"
+]
+exclude = [
+    "rustix::process",
+    "rustix::fs",
+    "rustix::fd",
+    "rustix::mm",
+    "rustix::path",
+    "rustix::net",
+    "rustix::termios",
 ]
 
 [pkg.serde_derive]
@@ -130,6 +171,9 @@ allow_unsafe = true
 
 [pkg.is-terminal]
 allow_unsafe = true
+allow_apis = [
+    "termios",
+]
 
 [pkg.camino]
 allow_unsafe = true
