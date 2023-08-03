@@ -146,7 +146,7 @@ pub(crate) fn scan_objects(
 
 impl ScanOutputs {
     pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
-        let mut problems = self.base_problems.clone();
+        let mut problems: ProblemList = self.base_problems.clone();
         for api_usage in &self.api_usages {
             checker.permission_used(api_usage, &mut problems);
         }
@@ -337,6 +337,12 @@ impl<'input> ApiUsageCollector<'input> {
                     continue;
                 };
                 if found.insert((pkg_id.clone(), permission_name)) {
+                    // Macros can sometimes result in symbols being attributed to lower-level
+                    // crates, so we only consider exported APIs that start with the crate name we
+                    // expect for the package.
+                    if symbol.crate_name() != Some(pkg_id.crate_name().as_ref()) {
+                        continue;
+                    }
                     self.outputs
                         .possible_exported_apis
                         .push(PossibleExportedApi {

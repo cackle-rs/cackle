@@ -68,6 +68,11 @@ impl<'data> Symbol<'data> {
         let data_str = self.to_str().ok()?;
         crate::demangle::DemangleIterator::new(data_str).nth(1)
     }
+
+    pub(crate) fn crate_name(&self) -> Option<&str> {
+        let data_str = self.to_str().ok()?;
+        crate::demangle::DemangleIterator::new(data_str).next()
+    }
 }
 
 impl<'data> Display for Symbol<'data> {

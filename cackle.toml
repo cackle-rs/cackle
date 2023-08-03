@@ -20,14 +20,12 @@ exclude = [
 
 [api.fs]
 include = [
-    "rustix::fs",
     "rustix::fd",
+    "rustix::fs",
     "rustix::mm",
     "rustix::path",
 ]
 no_auto_detect = [
-    # TODO: This is a false positive. Remove once we fix it.
-    "bitflags",
     "cackle",
 ]
 
@@ -39,9 +37,6 @@ include = [
 [api.termios]
 include = [
     "rustix::termios",
-]
-no_auto_detect = [
-    "bitflags",
 ]
 
 [api.rustix-other]

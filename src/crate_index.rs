@@ -8,6 +8,7 @@ use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
 use serde::Deserialize;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
@@ -206,6 +207,14 @@ impl PackageId {
 
     pub(crate) fn version(&self) -> &Version {
         &self.version
+    }
+
+    pub(crate) fn crate_name(&self) -> Cow<str> {
+        if self.name.contains('-') {
+            self.name.replace('-', "_").into()
+        } else {
+            Cow::Borrowed(&self.name)
+        }
     }
 }
 
