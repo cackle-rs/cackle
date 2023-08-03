@@ -22,7 +22,6 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
@@ -122,7 +121,10 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
         };
         // Allow read access to the crate's root source directory.
         sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
-        sandbox.ro_bind(target_subdir(&orig_build_script)?);
+        // Allow read access to the directory containing the build script itself.
+        if let Some(build_script_dir) = orig_build_script.parent() {
+            sandbox.ro_bind(build_script_dir);
+        }
         // Allow write access to OUT_DIR.
         sandbox.writable_bind(Path::new(&get_env("OUT_DIR")?));
         sandbox.pass_cargo_env();
@@ -149,26 +151,6 @@ fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Res
                 // retry the build script with a hopefully changed config.
             }
             Outcome::GiveUp => std::process::exit(-1),
-        }
-    }
-}
-
-/// Given some path in our target/profile directory, returns the profile directory. This is always
-/// "cackle", since we specify what profile to use.
-fn target_subdir(build_script_path: &Path) -> Result<&Path> {
-    let mut path = build_script_path;
-    loop {
-        if path.file_name() == Some(OsStr::new(super::cargo::PROFILE_NAME)) {
-            return Ok(path);
-        }
-        if let Some(parent) = path.parent() {
-            path = parent;
-        } else {
-            bail!(
-                "Build script path `{}` expected to be under `{}`",
-                build_script_path.display(),
-                super::cargo::PROFILE_NAME
-            );
         }
     }
 }
