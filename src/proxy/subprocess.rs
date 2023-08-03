@@ -401,5 +401,6 @@ fn get_config_from_env() -> Result<Arc<Config>> {
 }
 
 fn get_env(var_name: &str) -> Result<String> {
-    std::env::var(var_name).with_context(|| "Failed to get environment variable `{var_name}`")
+    std::env::var(var_name)
+        .with_context(|| format!("Failed to get environment variable `{var_name}`"))
 }
