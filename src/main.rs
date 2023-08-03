@@ -145,7 +145,7 @@ struct Cackle {
     root_path: PathBuf,
     config_path: PathBuf,
     checker: Arc<Mutex<Checker>>,
-    target_dir: PathBuf,
+    tmpdir: Arc<tempfile::TempDir>,
     args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
@@ -173,7 +173,9 @@ impl Cackle {
 
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
         let target_dir = root_path.join("target");
+        let tmpdir = Arc::new(tempfile::TempDir::new()?);
         let mut checker = Checker::new(
+            tmpdir.clone(),
             target_dir.clone(),
             args.clone(),
             crate_index.clone(),
@@ -197,11 +199,11 @@ impl Cackle {
             root_path,
             config_path,
             checker: Arc::new(Mutex::new(checker)),
-            target_dir,
             args,
             event_sender,
             ui_join_handle,
             crate_index,
+            tmpdir,
         })
     }
 
@@ -266,7 +268,7 @@ impl Cackle {
         self.checker.lock().unwrap().load_config()?;
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;
-        let config_path = crate::config::flattened_config_path(&self.target_dir);
+        let config_path = crate::config::flattened_config_path(self.tmpdir.path());
         let config = self.checker.lock().unwrap().config.clone();
         let crate_index = self.checker.lock().unwrap().crate_index.clone();
         initial_outcome = initial_outcome.and(

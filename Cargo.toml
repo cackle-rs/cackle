@@ -26,6 +26,7 @@ rustc-ap-rustc_lexer = "727.0.0"
 indoc = "2.0.1"
 log = { version = "0.4.19", features = [ "std" ] }
 addr2line = { version = "0.20.0", default-features = false, features = [ "std" ] }
+tempfile = "3.6.0"
 
 toml_edit = { version = "0.19.8", optional = true }
 ratatui = { version = "0.22.0", optional = true }
@@ -41,6 +42,3 @@ ui = ["toml_edit", "ratatui", "diff", "crossterm"]
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working
 # on porting.
 unsupported-os = []
-
-[dev-dependencies]
-tempfile = "3.6.0"

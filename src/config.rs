@@ -340,8 +340,8 @@ impl Config {
     }
 }
 
-pub(crate) fn flattened_config_path(target_dir: &Path) -> PathBuf {
-    target_dir
+pub(crate) fn flattened_config_path(tmpdir: &Path) -> PathBuf {
+    tmpdir
         .join(crate::proxy::cargo::PROFILE_NAME)
         .join("flattened_cackle.toml")
 }

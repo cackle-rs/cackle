@@ -33,8 +33,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::TempDir;
 
-#[derive(Default)]
 pub(crate) struct Checker {
     inclusions: HashMap<ApiPath, HashSet<PermissionName>>,
     exclusions: HashMap<ApiPath, HashSet<PermissionName>>,
@@ -43,6 +43,7 @@ pub(crate) struct Checker {
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
+    tmpdir: Arc<TempDir>,
     pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
 
@@ -79,6 +80,7 @@ pub(crate) struct ApiUsage {
 
 impl Checker {
     pub(crate) fn new(
+        tmpdir: Arc<TempDir>,
         target_dir: PathBuf,
         args: Arc<Args>,
         crate_index: Arc<CrateIndex>,
@@ -92,6 +94,7 @@ impl Checker {
             config_path,
             config: Default::default(),
             target_dir,
+            tmpdir,
             args,
             crate_index,
             path_to_crate: Default::default(),
@@ -107,7 +110,7 @@ impl Checker {
         // flattened configuration is used by subprocesses rather than using the original
         // configuration since using the original would require each subprocess to run `cargo
         // metadata`.
-        let flattened_path = crate::config::flattened_config_path(&self.target_dir);
+        let flattened_path = crate::config::flattened_config_path(self.tmpdir.path());
         if let Some(dir) = flattened_path.parent() {
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
@@ -407,9 +410,19 @@ mod tests {
         }
     }
 
+    fn checker_for_testing() -> Checker {
+        Checker::new(
+            Arc::new(TempDir::new().unwrap()),
+            PathBuf::default(),
+            Arc::new(Args::default()),
+            Arc::new(CrateIndex::default()),
+            PathBuf::default(),
+        )
+    }
+
     #[track_caller]
     fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
-        let mut checker = Checker::default();
+        let mut checker = checker_for_testing();
         checker.update_config(parse(config).unwrap());
 
         let parts: Vec<String> = path.iter().map(|s| s.to_string()).collect();
@@ -457,7 +470,7 @@ mod tests {
         .unwrap();
         let mut checker = Checker {
             crate_index: crate::crate_index::testing::index_with_package_names(&["foo"]),
-            ..Checker::default()
+            ..checker_for_testing()
         };
         checker.update_config(config.clone());
         let mut problems = ProblemList::default();
