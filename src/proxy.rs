@@ -39,6 +39,7 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tempfile::TempDir;
 
 use self::rpc::Request;
 
@@ -68,7 +69,7 @@ pub(crate) fn clean(dir: &Path, args: &Args) -> Result<()> {
 /// the linker. If calling this, you must call handle_wrapped_binaries from the start of main.
 pub(crate) fn invoke_cargo_build(
     dir: &Path,
-    config_path: &Path,
+    tmpdir: &TempDir,
     config: &Config,
     args: &Args,
     abort_recv: Receiver<()>,
@@ -79,10 +80,7 @@ pub(crate) fn invoke_cargo_build(
         panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
     }
 
-    let target_dir = dir.join("target");
-    std::fs::create_dir_all(&target_dir)
-        .with_context(|| format!("Failed to create directory `{}`", target_dir.display()))?;
-    let ipc_path = target_dir.join("cackle.socket");
+    let ipc_path = tmpdir.path().join("cackle.socket");
     let _ = std::fs::remove_file(&ipc_path);
     let listener = UnixListener::bind(&ipc_path)
         .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
@@ -104,6 +102,7 @@ pub(crate) fn invoke_cargo_build(
         command.arg("--features");
         command.arg(config.common.features.join(","));
     }
+    let config_path = crate::config::flattened_config_path(tmpdir.path());
     command
         .env(SOCKET_ENV, &ipc_path)
         .env(CONFIG_PATH_ENV, config_path)

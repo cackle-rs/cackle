@@ -268,7 +268,6 @@ impl Cackle {
         self.checker.lock().unwrap().load_config()?;
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;
-        let config_path = crate::config::flattened_config_path(self.tmpdir.path());
         let config = self.checker.lock().unwrap().config.clone();
         let crate_index = self.checker.lock().unwrap().crate_index.clone();
         initial_outcome = initial_outcome.and(
@@ -290,7 +289,7 @@ impl Cackle {
         let build_result = if initial_outcome == Outcome::Continue {
             proxy::invoke_cargo_build(
                 &root_path,
-                &config_path,
+                &self.tmpdir,
                 &config,
                 &args,
                 abort_recv,
