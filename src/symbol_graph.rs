@@ -250,7 +250,7 @@ impl<'input> ApiUsageCollector<'input> {
                     trace!("{} -> {target_symbol}", first_sym_info.symbol);
 
                     let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
-                    for crate_sel in &crate_names {
+                    for crate_sel in crate_names.as_ref() {
                         let crate_name = CrateName::from(crate_sel);
                         for (name, name_source) in &target_symbol_names {
                             // If a package references another symbol within the same package,
@@ -329,8 +329,8 @@ impl<'input> ApiUsageCollector<'input> {
             let location = debug_info.source_location();
             for crate_sel in checker
                 .opt_crate_names_from_source_path(location.filename())
-                .as_deref()
-                .unwrap_or_default()
+                .unwrap_or_else(|| Cow::Owned(Vec::new()))
+                .as_ref()
             {
                 // APIs can only be exported from the primary crate in a package.
                 let CrateSel::Primary(pkg_id) = crate_sel else {

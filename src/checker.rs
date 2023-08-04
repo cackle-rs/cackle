@@ -28,6 +28,7 @@ use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
 use log::info;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -268,7 +269,7 @@ impl Checker {
         &self,
         source_path: &Path,
         ref_path: &ObjectFilePath,
-    ) -> Result<Vec<CrateSel>> {
+    ) -> Result<Cow<Vec<CrateSel>>> {
         self.opt_crate_names_from_source_path(source_path)
             .ok_or_else(|| {
                 anyhow!(
@@ -281,13 +282,16 @@ impl Checker {
     pub(crate) fn opt_crate_names_from_source_path(
         &self,
         source_path: &Path,
-    ) -> Option<Vec<CrateSel>> {
-        self.path_to_crate.get(source_path).cloned().or_else(|| {
-            // Fall-back to just finding the package that contains the source path.
-            self.crate_index
-                .package_id_for_path(source_path)
-                .map(|pkg_id| vec![CrateSel::Primary(pkg_id.clone())])
-        })
+    ) -> Option<Cow<Vec<CrateSel>>> {
+        self.path_to_crate
+            .get(source_path)
+            .map(Cow::Borrowed)
+            .or_else(|| {
+                // Fall-back to just finding the package that contains the source path.
+                self.crate_index
+                    .package_id_for_path(source_path)
+                    .map(|pkg_id| Cow::Owned(vec![CrateSel::Primary(pkg_id.clone())]))
+            })
     }
 
     pub(crate) fn report_proc_macro(&mut self, pkg_id: &PackageId) {
