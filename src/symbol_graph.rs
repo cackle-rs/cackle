@@ -14,6 +14,7 @@ use crate::config::PermissionName;
 use crate::crate_index::CrateSel;
 use crate::location::SourceLocation;
 use crate::names::Name;
+use crate::problem::ApiUsageGroupKey;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
 use crate::problem::ProblemList;
@@ -59,6 +60,7 @@ struct ApiUsageCollector<'input> {
 
     bin: BinInfo<'input>,
     debug_enabled: bool,
+    new_api_usages: HashMap<ApiUsageGroupKey, Vec<ApiUsages>>,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
@@ -129,6 +131,7 @@ pub(crate) fn scan_objects(
             symbol_debug_info: symbol_to_locations,
         },
         debug_enabled: checker.args.debug,
+        new_api_usages: HashMap::new(),
     };
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
@@ -168,21 +171,17 @@ impl<'input> ApiUsageCollector<'input> {
                     };
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
-                    self.process_object_file_bytes(
-                        &ObjectFilePath::in_archive(filename, &entry)?,
-                        &buffer,
-                        checker,
-                    )?;
+                    let object_file_path = ObjectFilePath::in_archive(filename, &entry)?;
+                    self.process_object_file_bytes(&object_file_path, &buffer, checker)
+                        .with_context(|| format!("Failed to process {object_file_path}"))?;
                 }
             }
             Filetype::Other => {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
-                self.process_object_file_bytes(
-                    &ObjectFilePath::non_archive(filename),
-                    &file_bytes,
-                    checker,
-                )?;
+                let object_file_path = ObjectFilePath::non_archive(filename);
+                self.process_object_file_bytes(&object_file_path, &file_bytes, checker)
+                    .with_context(|| format!("Failed to process {object_file_path}"))?;
             }
         }
         Ok(())
@@ -198,10 +197,9 @@ impl<'input> ApiUsageCollector<'input> {
     ) -> Result<()> {
         debug!("Processing object file {}", filename);
 
-        let obj = object::File::parse(file_bytes)
-            .with_context(|| format!("Failed to parse {}", filename))?;
+        let obj = object::File::parse(file_bytes).context("Failed to parse object file")?;
         let object_index = ObjectIndex::new(&obj);
-        let mut new_api_usages: HashMap<_, Vec<ApiUsages>> = HashMap::new();
+        self.new_api_usages.clear();
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
             let Some(first_sym_info) = object_index.first_symbol(&section) else {
@@ -219,20 +217,11 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(debug_info) = self.bin.symbol_debug_info.get(&first_sym_info.symbol) else {
                 continue;
             };
-            let Some(from_name) = debug_info.name.as_ref() else {
-                continue;
-            };
-
-            // Compute what APIs are used by the from-function. Any references made by that function
-            // that would trigger the same APIs are then ignored. Basically, we attribute API usages
-            // to the outermost usage of an API.
-            let mut from_apis = HashSet::new();
-            for name in crate::names::split_names(from_name).into_iter() {
-                from_apis.extend(checker.apis_for_name(&name).into_iter());
-            }
-            for name in first_sym_info.symbol.names()? {
-                from_apis.extend(checker.apis_for_name(&name).into_iter());
-            }
+            let debug_data = self.debug_enabled.then(|| UsageDebugData {
+                bin_path: self.bin.filename.clone(),
+                object_file_path: filename.clone(),
+                section_name: section_name.to_owned(),
+            });
 
             for (offset, rel) in section.relocations() {
                 let location = self
@@ -243,13 +232,22 @@ impl<'input> ApiUsageCollector<'input> {
                 if location.is_in_rust_std() {
                     continue;
                 }
-                let crate_names =
-                    checker.crate_names_from_source_path(location.filename(), filename)?;
 
                 for target_symbol in object_index.target_symbols(&rel)? {
-                    trace!("{} -> {target_symbol}", first_sym_info.symbol);
+                    let from_symbol = &first_sym_info.symbol;
+
+                    trace!("{from_symbol} -> {target_symbol}");
+
+                    // Compute what APIs are used by the from-function. Any references made by that
+                    // function that would trigger the same APIs are then ignored. Basically, we
+                    // attribute API usages to the outermost usage of an API.
+                    let mut from_apis = HashSet::new();
+                    for (name, _) in self.bin.names_from_symbol(from_symbol)? {
+                        from_apis.extend(checker.apis_for_name(&name).into_iter());
+                    }
 
                     let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
+                    let crate_names = checker.crate_names_from_source_path(location.filename())?;
                     for crate_sel in crate_names.as_ref() {
                         let crate_name = CrateName::from(crate_sel);
                         for (name, name_source) in &target_symbol_names {
@@ -267,28 +265,23 @@ impl<'input> ApiUsageCollector<'input> {
                                 if from_apis.contains(&permission) {
                                     continue;
                                 }
-                                let debug_data = self.debug_enabled.then(|| UsageDebugData {
-                                    bin_path: self.bin.filename.clone(),
-                                    object_file_path: filename.clone(),
-                                    section_name: section_name.to_owned(),
-                                });
                                 let mut usages = BTreeMap::new();
                                 usages.insert(
                                     permission.clone(),
                                     vec![ApiUsage {
                                         source_location: location.clone(),
-                                        from: first_sym_info.symbol.to_heap(),
+                                        from: from_symbol.to_heap(),
                                         to: name.clone(),
                                         to_symbol: target_symbol.to_heap(),
                                         to_source: name_source.to_owned(),
-                                        debug_data,
+                                        debug_data: debug_data.clone(),
                                     }],
                                 );
                                 let api_usage = ApiUsages {
                                     crate_sel: crate_sel.clone(),
                                     usages,
                                 };
-                                new_api_usages
+                                self.new_api_usages
                                     .entry(api_usage.deduplication_key())
                                     .or_default()
                                     .push(api_usage);
@@ -300,7 +293,7 @@ impl<'input> ApiUsageCollector<'input> {
         }
         // New API usages are grouped by their deduplication key, which doesn't include the target
         // symbol. We then output only the API usage with the shortest target symbol.
-        for api_usages in new_api_usages.into_values() {
+        for api_usages in std::mem::take(&mut self.new_api_usages).into_values() {
             if let Some(shortest_target_usage) = api_usages
                 .into_iter()
                 .min_by_key(|u| u.first_usage().unwrap().to_symbol.len())

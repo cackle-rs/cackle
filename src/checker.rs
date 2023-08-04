@@ -18,7 +18,6 @@ use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
-use crate::symbol_graph::object_file_path::ObjectFilePath;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
 use crate::timing::TimingCollector;
@@ -268,15 +267,9 @@ impl Checker {
     pub(crate) fn crate_names_from_source_path(
         &self,
         source_path: &Path,
-        ref_path: &ObjectFilePath,
     ) -> Result<Cow<Vec<CrateSel>>> {
         self.opt_crate_names_from_source_path(source_path)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Couldn't find crate name for {} referenced from {ref_path}",
-                    source_path.display(),
-                )
-            })
+            .ok_or_else(|| anyhow!("Couldn't find crate name for {}", source_path.display(),))
     }
 
     pub(crate) fn opt_crate_names_from_source_path(
