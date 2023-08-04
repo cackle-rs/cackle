@@ -390,20 +390,12 @@ impl Display for ApiUsages {
 impl Display for UnusedAllowApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(
-                f,
-                "The config for package '{}' allows the following APIs that aren't used:",
-                self.crate_name
-            )?;
+            writeln!(f, "`pkg.{}` allows APIs that aren't used:", self.crate_name)?;
             for api in &self.permissions {
                 writeln!(f, "    {api}")?;
             }
         } else {
-            write!(
-                f,
-                "Config for `{}` allows APIs that it doesn't use",
-                self.crate_name
-            )?;
+            write!(f, "`pkg.{}` allows APIs that aren't used", self.crate_name)?;
         }
         Ok(())
     }
