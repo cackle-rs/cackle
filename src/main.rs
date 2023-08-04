@@ -93,6 +93,12 @@ struct Args {
     #[clap(long)]
     target: Option<String>,
 
+    /// Build profile to use. This is currently for testing purposes and isn't yet properly
+    /// supported. In particular, the selected profile needs to satisfy certain criteria and failure
+    /// to meet those criteria leads to surprising behaviour.
+    #[clap(long, default_value = proxy::cargo::DEFAULT_PROFILE_NAME, hide = true)]
+    profile: String,
+
     /// Print how long various things take to run.
     #[clap(long)]
     print_timing: bool,
