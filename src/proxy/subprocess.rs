@@ -283,6 +283,17 @@ impl RustcRunner {
                     args.next();
                     continue;
                 }
+                // Force-enable -C debuginfo=2. We need debug info in order to know where code
+                // originated.
+                if args
+                    .peek()
+                    .map(|arg| arg.starts_with("debuginfo="))
+                    .unwrap_or(false)
+                {
+                    command.arg("-C").arg("debuginfo=2");
+                    args.next();
+                    continue;
+                }
             }
             if arg.starts_with("--error-format") {
                 continue;
