@@ -142,6 +142,7 @@ pub(crate) fn scan_objects(
             .process_file(path, checker)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
+    collector.emit_shortest_api_usages();
     checker.timings.add_timing(start, "Process object files");
 
     Ok(collector.outputs)
@@ -199,14 +200,17 @@ impl<'input> ApiUsageCollector<'input> {
 
         let obj = object::File::parse(file_bytes).context("Failed to parse object file")?;
         let object_index = ObjectIndex::new(&obj);
-        self.new_api_usages.clear();
         for section in obj.sections() {
             let section_name = section.name().unwrap_or("");
             let Some(first_sym_info) = object_index.first_symbol(&section) else {
                 debug!("Skipping section `{section_name}` due to lack of debug info");
                 continue;
             };
-            let Some(symbol_address_in_bin) = self.bin.symbol_addresses.get(&first_sym_info.symbol)
+            let Some(symbol_address_in_bin) = self
+                .bin
+                .symbol_addresses
+                .get(&first_sym_info.symbol)
+                .cloned()
             else {
                 debug!(
                     "Skipping section `{}` because symbol `{}` doesn't appear in exe/so",
@@ -217,6 +221,7 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(debug_info) = self.bin.symbol_debug_info.get(&first_sym_info.symbol) else {
                 continue;
             };
+            let fallback_source_location = debug_info.source_location();
             let debug_data = self.debug_enabled.then(|| UsageDebugData {
                 bin_path: self.bin.filename.clone(),
                 object_file_path: filename.clone(),
@@ -227,70 +232,87 @@ impl<'input> ApiUsageCollector<'input> {
                 let location = self
                     .bin
                     .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
-                    .unwrap_or_else(|| debug_info.source_location());
-                // Ignore references that come from code in the rust standard library.
-                if location.is_in_rust_std() {
-                    continue;
-                }
+                    .unwrap_or_else(|| fallback_source_location.clone());
 
-                for target_symbol in object_index.target_symbols(&rel)? {
+                let mut target_symbols = Vec::new();
+                let rel = &rel;
+                object_index.add_target_symbols(rel, &mut target_symbols, &mut HashSet::new())?;
+                for target_symbol in target_symbols {
                     let from_symbol = &first_sym_info.symbol;
 
-                    trace!("{from_symbol} -> {target_symbol}");
-
-                    // Compute what APIs are used by the from-function. Any references made by that
-                    // function that would trigger the same APIs are then ignored. Basically, we
-                    // attribute API usages to the outermost usage of an API.
-                    let mut from_apis = HashSet::new();
-                    for (name, _) in self.bin.names_from_symbol(from_symbol)? {
-                        from_apis.extend(checker.apis_for_name(&name).into_iter());
-                    }
-
-                    let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
-                    let crate_names = checker.crate_names_from_source_path(location.filename())?;
-                    for crate_sel in crate_names.as_ref() {
-                        let crate_name = CrateName::from(crate_sel);
-                        for (name, name_source) in &target_symbol_names {
-                            // If a package references another symbol within the same package,
-                            // ignore it.
-                            if name
-                                .parts
-                                .first()
-                                .map(|name_start| crate_name.as_ref() == name_start)
-                                .unwrap_or(false)
-                            {
-                                continue;
-                            }
-                            for permission in checker.apis_for_name(name) {
-                                if from_apis.contains(&permission) {
-                                    continue;
-                                }
-                                let mut usages = BTreeMap::new();
-                                usages.insert(
-                                    permission.clone(),
-                                    vec![ApiUsage {
-                                        source_location: location.clone(),
-                                        from: from_symbol.to_heap(),
-                                        to: name.clone(),
-                                        to_symbol: target_symbol.to_heap(),
-                                        to_source: name_source.to_owned(),
-                                        debug_data: debug_data.clone(),
-                                    }],
-                                );
-                                let api_usage = ApiUsages {
-                                    crate_sel: crate_sel.clone(),
-                                    usages,
-                                };
-                                self.new_api_usages
-                                    .entry(api_usage.deduplication_key())
-                                    .or_default()
-                                    .push(api_usage);
-                            }
-                        }
-                    }
+                    self.process_reference(
+                        from_symbol,
+                        target_symbol,
+                        checker,
+                        &location,
+                        &debug_data,
+                    )?;
                 }
             }
         }
+        Ok(())
+    }
+
+    fn process_reference(
+        &mut self,
+        from_symbol: &Symbol,
+        target_symbol: Symbol,
+        checker: &Checker,
+        location: &SourceLocation,
+        debug_data: &Option<UsageDebugData>,
+    ) -> Result<(), anyhow::Error> {
+        trace!("{from_symbol} -> {target_symbol}");
+
+        let mut from_apis = HashSet::new();
+        for (name, _) in self.bin.names_from_symbol(from_symbol)? {
+            from_apis.extend(checker.apis_for_name(&name).into_iter());
+        }
+        let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
+        let crate_names = checker.crate_names_from_source_path(location.filename())?;
+        for crate_sel in crate_names.as_ref() {
+            let crate_name = CrateName::from(crate_sel);
+            for (name, name_source) in &target_symbol_names {
+                // If a package references another symbol within the same package,
+                // ignore it.
+                if name
+                    .parts
+                    .first()
+                    .map(|name_start| crate_name.as_ref() == name_start)
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                for permission in checker.apis_for_name(name) {
+                    if from_apis.contains(&permission) {
+                        continue;
+                    }
+                    let mut usages = BTreeMap::new();
+                    usages.insert(
+                        permission.clone(),
+                        vec![ApiUsage {
+                            source_location: location.clone(),
+                            from: from_symbol.to_heap(),
+                            to: name.clone(),
+                            to_symbol: target_symbol.to_heap(),
+                            to_source: name_source.to_owned(),
+                            debug_data: debug_data.clone(),
+                        }],
+                    );
+                    let api_usage = ApiUsages {
+                        crate_sel: crate_sel.clone(),
+                        usages,
+                    };
+                    self.new_api_usages
+                        .entry(api_usage.deduplication_key())
+                        .or_default()
+                        .push(api_usage);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn emit_shortest_api_usages(&mut self) {
         // New API usages are grouped by their deduplication key, which doesn't include the target
         // symbol. We then output only the API usage with the shortest target symbol.
         for api_usages in std::mem::take(&mut self.new_api_usages).into_values() {
@@ -301,7 +323,6 @@ impl<'input> ApiUsageCollector<'input> {
                 self.outputs.api_usages.push(shortest_target_usage);
             }
         }
-        Ok(())
     }
 
     fn find_possible_exports(&mut self, checker: &Checker) {
@@ -377,15 +398,9 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
         Self { obj, section_infos }
     }
 
-    /// Returns the symbol or symbols that `rel` refers to. If `rel` refers to a section that
-    /// doesn't define a non-local symbol at address 0, then all outgoing references from that
-    /// section will be included and so on recursively.
-    fn target_symbols(&self, rel: &object::Relocation) -> Result<Vec<Symbol<'data>>> {
-        let mut symbols_out = Vec::new();
-        self.add_target_symbols(rel, &mut symbols_out, &mut HashSet::new())?;
-        Ok(symbols_out)
-    }
-
+    /// Adds the symbol or symbols that `rel` refers to into `symbols_out`. If `rel` refers to a
+    /// section that doesn't define a non-local symbol at address 0, then all outgoing references
+    /// from that section will be included and so on recursively.
     fn add_target_symbols(
         &self,
         rel: &object::Relocation,

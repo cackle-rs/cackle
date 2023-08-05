@@ -280,6 +280,12 @@ impl Checker {
             .get(source_path)
             .map(Cow::Borrowed)
             .or_else(|| {
+                // If the source path is from the rust standard library, or from one of the
+                // precompiled crates that comes with the standard library, then report no crates.
+                if is_in_rust_std(source_path) {
+                    return Some(Cow::Owned(vec![]));
+                }
+
                 // Fall-back to just finding the package that contains the source path.
                 self.crate_index
                     .package_id_for_path(source_path)
@@ -387,6 +393,12 @@ impl Checker {
             problems.push(Problem::PossibleExportedApi(p.clone()));
         }
     }
+}
+
+// Returns whether `source_path` is from the rust standard library or precompiled crates that are
+// bundled with the standard library (e.g. hashbrown).
+pub(crate) fn is_in_rust_std(source_path: &Path) -> bool {
+    source_path.starts_with("/rustc/") || source_path.starts_with("/cargo/registry")
 }
 
 #[cfg(test)]
