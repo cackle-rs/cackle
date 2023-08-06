@@ -11,11 +11,11 @@ cargo build --features unsupported-os
 
 ### Mac
 
-Fortunately Mac, like Linux, uses ELF for binaries and DWARF for debug info. However it looks like
-Mac possibly doesn't put each symbol into a separate section of the object file like happens on
-Linux. This may cause problems for Cackle that would need to be resolved. Someone with a Mac would
-need to try running it and investigate what goes wrong. Please reach out if you have a Mac and would
-like to help with this.
+Fortunately Mac, like Linux, uses DWARF for debug info. However it looks like Mac possibly doesn't
+put each symbol into a separate section of the object file like happens on Linux. This may cause
+problems for Cackle that would need to be resolved. Someone with a Mac would need to try running it
+and investigate what goes wrong. Please reach out if you have a Mac and would like to help with
+this.
 
 ### Windows
 
