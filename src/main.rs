@@ -34,6 +34,7 @@ mod ui;
 mod unsafe_checker;
 
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
@@ -71,7 +72,7 @@ struct Args {
     cackle_path: Option<PathBuf>,
 
     /// Print the mapping from paths to crate names. Useful for debugging.
-    #[clap(long)]
+    #[clap(long, hide = true)]
     print_path_to_crate_map: bool,
 
     /// If set, warnings (e.g. due to unused permissions) will cause termination with a non-zero
@@ -114,6 +115,16 @@ struct Args {
     /// How detailed the logs should be.
     #[clap(long, default_value = "info")]
     log_level: logging::LevelFilter,
+
+    /// When specified, writes all requests into a subdirectory of the target directory. For
+    /// debugging use.
+    #[clap(long, hide = true)]
+    save_requests: bool,
+
+    /// Instead of running `cargo build`, replay requests saved by a previous run where
+    /// --write-requests was specified. For debugging use.
+    #[clap(long, hide = true)]
+    replay_requests: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -170,7 +181,9 @@ impl Cackle {
             .canonicalize()
             .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-        proxy::clean(&root_path, &args)?;
+        if !args.replay_requests {
+            proxy::clean(&root_path, &args)?;
+        }
 
         let config_path = args
             .cackle_path
@@ -291,15 +304,26 @@ impl Cackle {
         let root_path = self.root_path.clone();
         let args = self.args.clone();
         let build_result = if initial_outcome == Outcome::Continue {
-            proxy::invoke_cargo_build(
-                &root_path,
-                &self.tmpdir,
-                &config,
-                &args,
-                abort_recv,
-                &crate_index,
-                |request| self.new_request_handler(Some(request)),
-            )
+            if self.args.replay_requests {
+                self.replay_requests()
+            } else {
+                proxy::invoke_cargo_build(
+                    &root_path,
+                    &self.tmpdir,
+                    &config,
+                    &args,
+                    abort_recv,
+                    &crate_index,
+                    |request| {
+                        if self.args.save_requests {
+                            if let Err(error) = self.save_request(&request) {
+                                println!("Failed to save request: {error}");
+                            }
+                        }
+                        self.new_request_handler(Some(request))
+                    },
+                )
+            }
         } else {
             // We've already detected problems before running cargo, don't run cargo.
             Ok(())
@@ -337,6 +361,49 @@ impl Cackle {
                 .fix_problems(Problem::MissingConfiguration(self.config_path.clone()).into()));
         }
         Ok(Outcome::Continue)
+    }
+
+    fn saved_request_path(&self) -> PathBuf {
+        self.root_path
+            .join("target")
+            .join(&self.args.profile)
+            .join("saved-cackle-rpcs")
+    }
+
+    fn replay_requests(&self) -> Result<()> {
+        let rpcs_dir = &self.saved_request_path();
+        let mut rpc_paths: Vec<PathBuf> = rpcs_dir
+            .read_dir()
+            .with_context(|| format!("Failed to read saved RPCs dir `{}`", rpcs_dir.display()))?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .collect();
+        rpc_paths.sort();
+        for path in rpc_paths {
+            info!("Replaying RPC `{}`", path.display());
+            let request_str = crate::fs::read_to_string(&path)?;
+            let request: Request = serde_json::from_str(&request_str)?;
+            let mut handler = self.new_request_handler(Some(request));
+            if handler
+                .handle_request()
+                .with_context(|| format!("Replay of request `{}` failed", path.display()))?
+                == Outcome::GiveUp
+            {
+                bail!("Request gave error");
+            }
+        }
+        Ok(())
+    }
+
+    fn save_request(&self, request: &Request) -> Result<()> {
+        let rpcs_dir = self.saved_request_path();
+        std::fs::create_dir_all(&rpcs_dir)?;
+        let num_entries = rpcs_dir.read_dir()?.count();
+        let serialized = serde_json::to_string(request)?;
+        std::fs::write(
+            rpcs_dir.join(format!("{num_entries:03}.cackle-rpc")),
+            serialized,
+        )?;
+        Ok(())
     }
 }
 
