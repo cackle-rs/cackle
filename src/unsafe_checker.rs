@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_scan_test_crates() {
-        assert!(!has_unsafe_in_file("test_crates/crab1/src/lib.rs"));
+        assert!(has_unsafe_in_file("test_crates/crab1/src/lib.rs"));
         assert!(has_unsafe_in_file("test_crates/crab1/src/impl1.rs"));
         assert!(!has_unsafe_in_file("test_crates/crab2/src/lib.rs"));
         assert!(has_unsafe_in_file("test_crates/crab3/src/lib.rs"));

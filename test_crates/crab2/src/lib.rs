@@ -29,3 +29,8 @@ pub mod stuff {
         println!("{}", total);
     }
 }
+
+#[inline(always)]
+pub fn res_b() -> u64 {
+    crab3::res_a()
+}

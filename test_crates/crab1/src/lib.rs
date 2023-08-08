@@ -45,3 +45,16 @@ pub fn inlined_abort() {
 pub fn do_unix_socket_stuff() {
     let _ = std::os::unix::net::UnixStream::pair();
 }
+
+/// A function that we restrict access to, is inlined and which calls no other functions. This tests
+/// that inlined function usages are attributed correctly.
+#[inline(always)]
+pub fn restrict1() -> u64 {
+    let mut x: u64;
+    unsafe {
+        std::arch::asm!(
+            "mov {res}, 42",
+            res = out(reg) x);
+    }
+    x
+}

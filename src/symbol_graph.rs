@@ -110,6 +110,7 @@ pub(crate) fn scan_objects(
     bin_path: &Path,
     checker: &mut Checker,
 ) -> Result<ScanOutputs> {
+    log::info!("Scanning {}", bin_path.display());
     let start = Instant::now();
     let file_bytes = std::fs::read(bin_path)
         .with_context(|| format!("Failed to read `{}`", bin_path.display()))?;
@@ -117,10 +118,18 @@ pub(crate) fn scan_objects(
         .with_context(|| format!("Failed to parse {}", bin_path.display()))?;
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
+    let start = checker.timings.add_timing(start, "Parse bin");
+    let mut inlined_references = Vec::new();
+    dwarf::find_inlined_functions(&dwarf, |a, b, location| {
+        inlined_references.push((a.to_heap(), b.to_heap(), location));
+    })
+    .context("find_inlined_functions")?;
+    let start = checker.timings.add_timing(start, "Find inlined functions");
     let symbol_to_locations = dwarf::get_symbol_debug_info(&dwarf)?;
+    let start = checker.timings.add_timing(start, "Get symbol debug info");
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed to process {}", bin_path.display()))?;
-    let start = checker.timings.add_timing(start, "Parse bin");
+    let start = checker.timings.add_timing(start, "Build addr2line context");
 
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
@@ -135,6 +144,12 @@ pub(crate) fn scan_objects(
     };
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
+    for (a, b, location) in inlined_references {
+        collector.process_reference(&a, b, checker, &location, None)?;
+    }
+    let start = checker
+        .timings
+        .add_timing(start, "Process inlined references");
     collector.find_possible_exports(checker);
     let start = checker.timings.add_timing(start, "Find possible exports");
     for path in paths {
@@ -245,7 +260,7 @@ impl<'input> ApiUsageCollector<'input> {
                         target_symbol,
                         checker,
                         &location,
-                        &debug_data,
+                        debug_data.as_ref(),
                     )?;
                 }
             }
@@ -259,7 +274,7 @@ impl<'input> ApiUsageCollector<'input> {
         target_symbol: Symbol,
         checker: &Checker,
         location: &SourceLocation,
-        debug_data: &Option<UsageDebugData>,
+        debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
         trace!("{from_symbol} -> {target_symbol}");
 
@@ -295,7 +310,7 @@ impl<'input> ApiUsageCollector<'input> {
                             to: name.clone(),
                             to_symbol: target_symbol.to_heap(),
                             to_source: name_source.to_owned(),
-                            debug_data: debug_data.clone(),
+                            debug_data: debug_data.cloned(),
                         }],
                     );
                     let api_usage = ApiUsages {

@@ -26,6 +26,7 @@ fn main() {
     crab8::print_defaults();
     crab3::run_process();
     res1::print_something();
+    assert_eq!(crab2::res_b(), 42);
     assert_eq!(Foo::foo_bar(), 42);
     assert_eq!(function_with_custom_attr(), 40);
     // Note, the following call exits

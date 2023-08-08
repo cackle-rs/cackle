@@ -41,3 +41,8 @@ pub mod fs {
 pub mod terminate {
     pub(super) fn do_stuff() {}
 }
+
+#[inline(always)]
+pub fn res_a() -> u64 {
+    crab1::restrict1()
+}
