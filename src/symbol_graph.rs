@@ -119,11 +119,8 @@ pub(crate) fn scan_objects(
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
-    let mut inlined_references = Vec::new();
-    dwarf::find_inlined_functions(&dwarf, |a, b, location| {
-        inlined_references.push((a.clone(), b.clone(), location));
-    })
-    .context("find_inlined_functions")?;
+    let inlined_references =
+        dwarf::find_inlined_functions(&dwarf).context("find_inlined_functions")?;
     let start = checker.timings.add_timing(start, "Find inlined functions");
     let symbol_to_locations = dwarf::get_symbol_debug_info(&dwarf)?;
     let start = checker.timings.add_timing(start, "Get symbol debug info");
@@ -144,8 +141,8 @@ pub(crate) fn scan_objects(
     };
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
-    for (a, b, location) in inlined_references {
-        collector.process_reference(&a, &b, checker, &location, None)?;
+    for f in inlined_references {
+        collector.process_reference(&f.from_symbol, &f.to_symbol, checker, &f.location, None)?;
     }
     let start = checker
         .timings

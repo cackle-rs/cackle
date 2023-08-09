@@ -25,6 +25,13 @@ pub(crate) struct SymbolDebugInfo<'input> {
     pub(crate) name: Option<&'input str>,
 }
 
+/// A reference pair resulting from one function being inlined into another.
+pub(crate) struct InlinedFunction<'input> {
+    pub(crate) from_symbol: Symbol<'input>,
+    pub(crate) to_symbol: Symbol<'input>,
+    pub(crate) location: SourceLocation,
+}
+
 impl<'input> SymbolDebugInfo<'input> {
     pub(crate) fn source_location(&self) -> SourceLocation {
         let mut filename = self.compdir.to_owned();
@@ -154,13 +161,10 @@ struct FrameState<'input> {
     symbol: Option<Symbol<'input>>,
 }
 
-/// Invokes `emit_ref_pair` for each pair of symbols where the second symbol is a function that was
-/// inlined into the first. Also includes the source location where the inlining occurred. i.e. the
-/// location in the first function that referenced the second.
 pub(crate) fn find_inlined_functions<'input>(
     dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-    mut emit_ref_pair: impl FnMut(&Symbol<'input>, &Symbol<'input>, SourceLocation),
-) -> Result<()> {
+) -> Result<Vec<InlinedFunction<'input>>> {
+    let mut inlined_functions = Vec::new();
     let mut units = dwarf.units();
     let mut frames: Vec<FrameState> = Vec::new();
     while let Some(header) = units.next()? {
@@ -232,7 +236,11 @@ pub(crate) fn find_inlined_functions<'input>(
                     if let Some(prev_sym) = frame.symbol.as_ref() {
                         let location =
                             SourceLocation::new(Arc::from(file.as_path()), *line, column);
-                        emit_ref_pair(prev_sym, symbol, location);
+                        inlined_functions.push(InlinedFunction {
+                            from_symbol: prev_sym.clone(),
+                            to_symbol: symbol.clone(),
+                            location,
+                        });
                         break;
                     }
                 }
@@ -242,7 +250,7 @@ pub(crate) fn find_inlined_functions<'input>(
             }
         }
     }
-    Ok(())
+    Ok(inlined_functions)
 }
 
 fn get_symbol<'input>(
