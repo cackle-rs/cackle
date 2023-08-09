@@ -119,11 +119,8 @@ pub(crate) fn scan_objects(
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
-    let inlined_references =
-        dwarf::find_inlined_functions(&dwarf).context("find_inlined_functions")?;
-    let start = checker.timings.add_timing(start, "Find inlined functions");
-    let symbol_to_locations = dwarf::get_symbol_debug_info(&dwarf)?;
-    let start = checker.timings.add_timing(start, "Get symbol debug info");
+    let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf)?;
+    let start = checker.timings.add_timing(start, "Read debug artifacts");
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed to process {}", bin_path.display()))?;
     let start = checker.timings.add_timing(start, "Build addr2line context");
@@ -134,14 +131,14 @@ pub(crate) fn scan_objects(
             filename: Arc::from(bin_path),
             symbol_addresses: Default::default(),
             ctx,
-            symbol_debug_info: symbol_to_locations,
+            symbol_debug_info: debug_artifacts.symbol_debug_info,
         },
         debug_enabled: checker.args.debug,
         new_api_usages: HashMap::new(),
     };
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
-    for f in inlined_references {
+    for f in debug_artifacts.inlined_functions {
         collector.process_reference(&f.from_symbol, &f.to_symbol, checker, &f.location, None)?;
     }
     let start = checker
