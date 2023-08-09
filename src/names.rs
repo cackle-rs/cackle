@@ -1,11 +1,20 @@
+use crate::utf8::Utf8Bytes;
 use std::fmt::Debug;
 use std::fmt::Display;
 
 /// A name of something. e.g. `std::path::Path`.
 #[derive(Eq, PartialEq, Hash, Clone)]
-pub(crate) struct Name {
+pub(crate) struct Name<'data> {
     /// The components of this name. e.g. ["std", "path", "Path"]
-    pub(crate) parts: Vec<String>,
+    pub(crate) parts: Vec<Utf8Bytes<'data>>,
+}
+
+impl<'data> Name<'data> {
+    pub(crate) fn to_heap(&self) -> Name<'static> {
+        Name {
+            parts: self.parts.iter().map(|p| p.to_heap()).collect(),
+        }
+    }
 }
 
 /// Splits a composite name into names. Each name is further split on "::". For example:
@@ -21,123 +30,119 @@ pub(crate) struct Name {
 ///   ["std", "fmt", "Debug", "fmt"],
 /// ]
 pub(crate) fn split_names(composite: &str) -> Vec<Name> {
+    let mut input = composite;
     let mut all_names: Vec<Name> = Vec::new();
-    let mut part = String::new();
     let mut parts = Vec::new();
-    let mut chars = composite.chars();
     // True if we encountered " as ". When we subsequently encounter '>', we'll ignore it so
     // that the subsequent name part gets added to whatever part came after the " as ".
     let mut as_active = false;
-    while let Some(ch) = chars.next() {
-        let mut end_part = false;
-        if ch == '(' || ch == ')' {
-            // Ignore parenthesis.
-        } else if ch == '<' || ch == '>' || ch == ',' {
-            if as_active {
-                as_active = false;
-            } else {
-                end_part = true;
+    loop {
+        let end_word = input
+            .char_indices()
+            .find_map(|(pos, ch)| "():&<>, ".contains(ch).then_some(pos))
+            .unwrap_or(input.len());
+        let part = &input[..end_word];
+        if !part.is_empty() && part != "mut" {
+            parts.push(Utf8Bytes::borrowed(part));
+        }
+        input = &input[end_word..];
+        if let Some(rest) = input.strip_prefix(" as ") {
+            all_names.push(Name {
+                parts: std::mem::take(&mut parts),
+            });
+            input = rest;
+            as_active = true;
+        } else if let Some(ch) = input.chars().next() {
+            if "()<>,".contains(ch) {
+                if as_active {
+                    as_active = false;
+                } else if !parts.is_empty() {
+                    all_names.push(Name {
+                        parts: std::mem::take(&mut parts),
+                    });
+                }
             }
-        } else if ch == ':' {
-            if !part.is_empty() {
-                parts.push(std::mem::take(&mut part));
-            }
-        } else if ch == '&' {
-            continue;
-        } else if ch == ' ' {
-            let mut ahead = chars.clone();
-            if let (Some('a'), Some('s'), Some(' ')) = (ahead.next(), ahead.next(), ahead.next()) {
-                chars = ahead;
-                as_active = true;
-                end_part = true;
-            } else {
-                end_part = true;
-            }
+            input = &input[1..];
         } else {
-            part.push(ch);
+            break;
         }
-
-        if end_part {
-            if part == "mut" {
-                part.clear();
-                continue;
-            }
-            if !part.is_empty() {
-                parts.push(std::mem::take(&mut part));
-            }
-            if !parts.is_empty() {
-                all_names.push(Name {
-                    parts: std::mem::take(&mut parts),
-                });
-            }
-        }
-    }
-    if !part.is_empty() {
-        parts.push(std::mem::take(&mut part));
     }
     if !parts.is_empty() {
-        all_names.push(Name {
-            parts: std::mem::take(&mut parts),
-        });
+        all_names.push(Name { parts });
     }
     all_names
 }
 
-impl Display for Name {
+impl<'data> Display for Name<'data> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.parts.join("::"))
+        let parts: Vec<String> = self.parts.iter().map(|p| p.to_string()).collect();
+        write!(f, "{}", parts.join("::"))
     }
 }
 
-impl Debug for Name {
+impl<'data> Debug for Name<'data> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Name({})", self.parts.join("::"))
+        write!(f, "Name({})", self)
     }
 }
 
-#[test]
-fn test_split_names() {
-    fn borrow(input: &[Name]) -> Vec<Vec<&str>> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn borrow<'a>(input: &'a [Name]) -> Vec<Vec<&'a str>> {
         input
             .iter()
-            .map(|name| name.parts.iter().map(|s| s.as_str()).collect())
+            .map(|name| name.parts.iter().map(|s| s.data()).collect())
             .collect()
     }
 
-    assert_eq!(
-        borrow(&split_names(
-            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
-        )),
-        vec![
-            vec!["core", "ptr", "drop_in_place"],
-            vec!["std", "rt", "lang_start"],
-            vec!["{{closure}}"],
-        ]
-    );
+    #[test]
+    fn test_split_with_closure() {
+        assert_eq!(
+            borrow(&split_names(
+                "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
+            )),
+            vec![
+                vec!["core", "ptr", "drop_in_place"],
+                vec!["std", "rt", "lang_start"],
+                vec!["{{closure}}"],
+            ]
+        );
+    }
 
-    assert_eq!(
-        borrow(&split_names(
-            "<alloc::string::String as core::fmt::Debug>::fmt"
-        )),
-        vec![
-            vec!["alloc", "string", "String"],
-            vec!["core", "fmt", "Debug", "fmt"],
-        ]
-    );
+    #[test]
+    fn test_split_as() {
+        assert_eq!(
+            borrow(&split_names(
+                "<alloc::string::String as core::fmt::Debug>::fmt"
+            )),
+            vec![
+                vec!["alloc", "string", "String"],
+                vec!["core", "fmt", "Debug", "fmt"],
+            ]
+        );
+    }
 
-    assert_eq!(
-        borrow(&split_names(
-            "HashMap<std::string::String, std::path::PathBuf>"
-        )),
-        vec![
-            vec!["HashMap"],
-            vec!["std", "string", "String"],
-            vec!["std", "path", "PathBuf"],
-        ]
-    );
+    #[test]
+    fn test_split_with_comma() {
+        assert_eq!(
+            borrow(&split_names(
+                "HashMap<std::string::String, std::path::PathBuf>"
+            )),
+            vec![
+                vec!["HashMap"],
+                vec!["std", "string", "String"],
+                vec!["std", "path", "PathBuf"],
+            ]
+        );
+    }
 
-    assert_eq!(
-        borrow(&split_names("Vec<&mut std::string::String>")),
-        vec![vec!["Vec"], vec!["std", "string", "String"],]
-    );
+    #[test]
+    fn test_split_mut_ref() {
+        assert_eq!(
+            borrow(&split_names("Vec<&mut std::string::String>")),
+            vec![vec!["Vec"], vec!["std", "string", "String"],]
+        );
+    }
 }

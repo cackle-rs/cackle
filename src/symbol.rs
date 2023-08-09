@@ -1,5 +1,8 @@
 use crate::bytes::Bytes;
+use crate::demangle::DemangleIterator;
+use crate::demangle::DemangleToken;
 use crate::names::Name;
+use crate::utf8::Utf8Bytes;
 use anyhow::Result;
 use rustc_demangle::demangle;
 use std::fmt::Debug;
@@ -38,9 +41,14 @@ impl<'data> Symbol<'data> {
     }
 
     /// Splits the name of this symbol into names. See `crate::names::split_names` for details.
-    pub(crate) fn names(&self) -> Result<Vec<Name>> {
-        let name = demangle(self.to_str()?).to_string();
-        let mut all_names = crate::names::split_names(&name);
+    pub(crate) fn names(&self) -> Result<Vec<Name<'data>>> {
+        let mut all_names = match &self.bytes {
+            Bytes::Heap(bytes) => names_from_bytes(bytes)?
+                .into_iter()
+                .map(|n| n.to_heap())
+                .collect(),
+            Bytes::Borrowed(bytes) => names_from_bytes(bytes)?,
+        };
         // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
         if all_names.len() >= 2 {
             if let Some(last_name) = all_names.last_mut() {
@@ -65,13 +73,99 @@ impl<'data> Symbol<'data> {
     }
 
     pub(crate) fn module_name(&self) -> Option<&str> {
-        let data_str = self.to_str().ok()?;
-        crate::demangle::DemangleIterator::new(data_str).nth(1)
+        let mut it = crate::demangle::DemangleIterator::new(self.to_str().ok()?);
+        if let (Some(DemangleToken::Text(..)), Some(DemangleToken::Text(text))) =
+            (it.next(), it.next())
+        {
+            Some(text)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn crate_name(&self) -> Option<&str> {
         let data_str = self.to_str().ok()?;
-        crate::demangle::DemangleIterator::new(data_str).next()
+        if let Some(DemangleToken::Text(text)) =
+            crate::demangle::DemangleIterator::new(data_str).next()
+        {
+            Some(text)
+        } else {
+            None
+        }
+    }
+}
+
+fn names_from_bytes(bytes: &[u8]) -> Result<Vec<Name>> {
+    let mut all_names = Vec::new();
+    collect_names(
+        DemangleIterator::new(std::str::from_utf8(bytes)?),
+        &mut all_names,
+    );
+    Ok(all_names)
+}
+
+#[derive(Debug)]
+struct AsState<'a> {
+    parts: Option<Vec<Utf8Bytes<'a>>>,
+    gt_depth: i32,
+}
+
+fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>) {
+    let mut parts = Vec::new();
+    let mut as_state = None;
+    for token in it {
+        match token {
+            DemangleToken::Text(text) => parts.push(Utf8Bytes::borrowed(text)),
+            DemangleToken::Escape(esc) => {
+                match esc.symbol() {
+                    Some('}') if parts == [Utf8Bytes::borrowed("closure")] => {
+                        parts.clear();
+                    }
+                    Some(' ') if parts == [Utf8Bytes::borrowed("as")] => {
+                        parts.clear();
+                        as_state = Some(AsState {
+                            parts: None,
+                            gt_depth: 1,
+                        });
+                    }
+                    Some('<') => {
+                        if let Some(s) = as_state.as_mut() {
+                            s.gt_depth += 1;
+                        }
+                    }
+                    Some('>') => {
+                        if let Some(s) = as_state.as_mut() {
+                            s.gt_depth -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(s) = as_state.as_mut() {
+                    if !parts.is_empty() && s.parts.is_none() {
+                        s.parts = Some(std::mem::take(&mut parts));
+                    }
+                    if s.gt_depth == 0 {
+                        if let Some(p) = s.parts.take() {
+                            parts = p;
+                            continue;
+                        }
+                        as_state = None;
+                    }
+                }
+                if !parts.is_empty() {
+                    let name = Name {
+                        parts: std::mem::take(&mut parts),
+                    };
+                    // Ignore names where all parts are just integers.
+                    if !name.parts.iter().all(|p| p.parse::<i64>().is_ok()) {
+                        out.push(name)
+                    }
+                }
+            }
+        }
+    }
+    if !parts.is_empty() {
+        out.push(Name { parts })
     }
 }
 
@@ -102,64 +196,81 @@ impl<'data> Debug for Symbol<'data> {
     }
 }
 
-#[test]
-fn test_names() {
-    fn borrow(input: &[Name]) -> Vec<Vec<&str>> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn borrow<'a>(input: &'a [Name]) -> Vec<Vec<&'a str>> {
         input
             .iter()
-            .map(|name| name.parts.iter().map(|s| s.as_str()).collect())
+            .map(|name| name.parts.iter().map(|s| s.data()).collect())
             .collect()
     }
 
-    let symbol = Symbol::borrowed(b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
-    assert_eq!(
-        borrow(&symbol.names().unwrap()),
-        vec![
-            vec!["core", "ptr", "drop_in_place"],
-            vec!["std", "rt", "lang_start"],
-            vec!["{{closure}}"],
-        ]
-    );
+    #[test]
+    fn test_names() {
+        let symbol = Symbol::borrowed(b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
+        assert_eq!(
+            borrow(&symbol.names().unwrap()),
+            vec![
+                vec!["core", "ptr", "drop_in_place"],
+                vec!["std", "rt", "lang_start"],
+            ]
+        );
 
-    let symbol = Symbol::borrowed(
+        let symbol = Symbol::borrowed(
         b"_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
     );
-    assert_eq!(
-        borrow(&symbol.names().unwrap()),
-        vec![
-            vec!["alloc", "string", "String"],
-            vec!["core", "fmt", "Debug", "fmt"]
-        ]
-    );
-    assert_eq!(symbol.module_name(), None);
+        assert_eq!(
+            borrow(&symbol.names().unwrap()),
+            vec![
+                vec!["alloc", "string", "String"],
+                vec!["core", "fmt", "Debug", "fmt"]
+            ]
+        );
+        assert_eq!(symbol.module_name(), None);
 
-    assert_eq!(Symbol::borrowed(b"foo").module_name(), None);
-}
-
-#[test]
-fn test_display() {
-    let symbol = Symbol::borrowed(b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
-    assert_eq!(
-        symbol.to_string(),
-        "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
-    );
-}
-
-#[test]
-fn comparison() {
-    fn hash(sym: &Symbol) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        sym.hash(&mut hasher);
-        hasher.finish()
+        assert_eq!(Symbol::borrowed(b"foo").module_name(), None);
     }
-    use std::hash::Hash;
-    use std::hash::Hasher;
 
-    let sym1 = Symbol::borrowed(b"sym1");
-    let sym2 = Symbol::borrowed(b"sym2");
-    assert_eq!(sym1, sym1.to_heap());
-    assert!(sym1 < sym2);
-    assert!(sym1.to_heap() < sym2);
-    assert!(sym1 < sym2.to_heap());
-    assert_eq!(hash(&sym1), hash(&sym1.to_heap()));
+    #[test]
+    fn test_names_literal_number() {
+        let symbol = Symbol::borrowed(b"_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E");
+        assert_eq!(
+            borrow(&symbol.names().unwrap()),
+            vec![
+                vec!["proc_macro2", "Span"],
+                vec!["proc_macro2", "Span"],
+                vec!["syn", "span", "IntoSpans", "into_spans"],
+            ]
+        );
+    }
+
+    #[test]
+    fn test_display() {
+        let symbol = Symbol::borrowed(b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
+        assert_eq!(
+            symbol.to_string(),
+            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
+        );
+    }
+
+    #[test]
+    fn comparison() {
+        fn hash(sym: &Symbol) -> u64 {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            sym.hash(&mut hasher);
+            hasher.finish()
+        }
+        use std::hash::Hash;
+        use std::hash::Hasher;
+
+        let sym1 = Symbol::borrowed(b"sym1");
+        let sym2 = Symbol::borrowed(b"sym2");
+        assert_eq!(sym1, sym1.to_heap());
+        assert!(sym1 < sym2);
+        assert!(sym1.to_heap() < sym2);
+        assert!(sym1 < sym2.to_heap());
+        assert_eq!(hash(&sym1), hash(&sym1.to_heap()));
+    }
 }

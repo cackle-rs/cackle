@@ -32,6 +32,7 @@ mod symbol_graph;
 mod timing;
 mod ui;
 mod unsafe_checker;
+pub(crate) mod utf8;
 
 use anyhow::anyhow;
 use anyhow::bail;

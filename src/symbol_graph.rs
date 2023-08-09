@@ -286,7 +286,7 @@ impl<'input> ApiUsageCollector<'input> {
                 if name
                     .parts
                     .first()
-                    .map(|name_start| crate_name.as_ref() == name_start)
+                    .map(|name_start| crate_name.as_ref() == &**name_start)
                     .unwrap_or(false)
                 {
                     continue;
@@ -301,7 +301,7 @@ impl<'input> ApiUsageCollector<'input> {
                         vec![ApiUsage {
                             source_location: location.clone(),
                             from: from_symbol.to_heap(),
-                            to: name.clone(),
+                            to: name.to_heap(),
                             to_symbol: target_symbol.to_heap(),
                             to_source: name_source.to_owned(),
                             debug_data: debug_data.cloned(),
@@ -492,7 +492,7 @@ impl<'input> BinInfo<'input> {
     fn names_from_symbol<'symbol>(
         &self,
         symbol: &Symbol<'symbol>,
-    ) -> Result<Vec<(Name, NameSource<'symbol>)>> {
+    ) -> Result<Vec<(Name<'symbol>, NameSource<'symbol>)>> {
         let mut names: Vec<_> = symbol
             .names()?
             .into_iter()
@@ -500,12 +500,15 @@ impl<'input> BinInfo<'input> {
             .collect();
         if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
             if let Some(debug_name) = target_symbol_debug.name {
-                let debug_name = Arc::from(debug_name);
+                let debug_name_arc: Arc<str> = Arc::from(debug_name);
                 // This is O(n^2) in the number of names, but we expect N to be in the range 1..3
                 // and rarely more than 5, so using a hashmap or similar seems like overkill.
-                for name in crate::names::split_names(&debug_name) {
+                for name in crate::names::split_names(debug_name) {
                     if !names.iter().any(|(n, _)| n == &name) {
-                        names.push((name, NameSource::DebugName(debug_name.clone())));
+                        names.push((
+                            name.to_heap(),
+                            NameSource::DebugName(debug_name_arc.clone()),
+                        ));
                     }
                 }
             }

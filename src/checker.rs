@@ -72,7 +72,7 @@ pub(crate) struct CrateInfo {
 pub(crate) struct ApiUsage {
     pub(crate) source_location: SourceLocation,
     pub(crate) from: Symbol<'static>,
-    pub(crate) to: Name,
+    pub(crate) to: Name<'static>,
     pub(crate) to_symbol: Symbol<'static>,
     pub(crate) to_source: NameSource<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
@@ -409,6 +409,7 @@ mod tests {
 
     use super::*;
     use crate::config::testing::parse;
+    use crate::utf8::Utf8Bytes;
 
     // Wraps a type T and makes it implement Debug by deferring to the Display implementation of T.
     struct DebugAsDisplay<T: Display>(T);
@@ -434,7 +435,7 @@ mod tests {
         let mut checker = checker_for_testing();
         checker.update_config(parse(config).unwrap());
 
-        let parts: Vec<String> = path.iter().map(|s| s.to_string()).collect();
+        let parts: Vec<Utf8Bytes> = path.iter().map(|s| Utf8Bytes::Borrowed(s)).collect();
         let apis = checker.apis_for_name(&Name { parts });
         let mut api_names: Vec<_> = apis.iter().map(AsRef::as_ref).collect();
         api_names.sort();
@@ -487,9 +488,9 @@ mod tests {
         let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
         let permissions = checker.apis_for_name(&Name {
             parts: vec![
-                "std".to_owned(),
-                "fs".to_owned(),
-                "read_to_string".to_owned(),
+                Utf8Bytes::Borrowed("std"),
+                Utf8Bytes::Borrowed("fs"),
+                Utf8Bytes::Borrowed("read_to_string"),
             ],
         });
         assert_eq!(permissions.len(), 1);
