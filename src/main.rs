@@ -191,9 +191,11 @@ impl Cackle {
             .unwrap_or_else(|| root_path.join("cackle.toml"));
 
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
+        let target_dir = root_path.join("target");
         let tmpdir = Arc::new(tempfile::TempDir::new()?);
         let mut checker = Checker::new(
             tmpdir.clone(),
+            target_dir.clone(),
             args.clone(),
             crate_index.clone(),
             config_path.clone(),

@@ -18,13 +18,10 @@ pub(crate) struct LinkInfo {
 impl LinkInfo {
     pub(crate) fn from_env() -> Result<Self> {
         let crate_sel = CrateSel::from_env()?;
-        // We only examine objects files that under the current directory. This avoids us needing to
-        // process the rust standard library.
-        let current_dir = std::env::current_dir()?;
         let object_paths = std::env::args()
             .skip(1)
             .map(PathBuf::from)
-            .filter(|path| has_supported_extension(path) && path.starts_with(&current_dir))
+            .filter(|path| has_supported_extension(path))
             .collect();
         Ok(LinkInfo {
             crate_sel,
@@ -32,6 +29,16 @@ impl LinkInfo {
             output_file: get_output_file()?,
         })
     }
+
+    /// Filters `object_paths` to just those under `dir`.
+    pub(crate) fn object_paths_under(&self, dir: &Path) -> Vec<PathBuf> {
+        self.object_paths
+            .iter()
+            .filter_map(|path| path.canonicalize().ok())
+            .filter(|path| path.starts_with(dir))
+            .collect()
+    }
+
     pub(crate) fn is_build_script(&self) -> bool {
         matches!(self.crate_sel, CrateSel::BuildScript(_))
     }

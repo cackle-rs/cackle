@@ -42,6 +42,7 @@ pub(crate) struct Checker {
     pub(crate) crate_infos: HashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
+    target_dir: PathBuf,
     tmpdir: Arc<TempDir>,
     pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
@@ -80,6 +81,7 @@ pub(crate) struct ApiUsage {
 impl Checker {
     pub(crate) fn new(
         tmpdir: Arc<TempDir>,
+        target_dir: PathBuf,
         args: Arc<Args>,
         crate_index: Arc<CrateIndex>,
         config_path: PathBuf,
@@ -91,6 +93,7 @@ impl Checker {
             crate_infos: Default::default(),
             config_path,
             config: Default::default(),
+            target_dir,
             tmpdir,
             args,
             crate_index,
@@ -207,7 +210,7 @@ impl Checker {
             problems.merge(self.verify_build_script_permitted(build_script_id));
         }
         problems.merge(self.check_object_paths(
-            &info.object_paths,
+            &info.object_paths_under(&self.target_dir),
             &info.output_file,
             check_state,
         )?);
@@ -419,6 +422,7 @@ mod tests {
     fn checker_for_testing() -> Checker {
         Checker::new(
             Arc::new(TempDir::new().unwrap()),
+            PathBuf::default(),
             Arc::new(Args::default()),
             Arc::new(CrateIndex::default()),
             PathBuf::default(),
