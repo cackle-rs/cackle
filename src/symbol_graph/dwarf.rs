@@ -157,9 +157,9 @@ struct FrameState<'input> {
 /// Invokes `emit_ref_pair` for each pair of symbols where the second symbol is a function that was
 /// inlined into the first. Also includes the source location where the inlining occurred. i.e. the
 /// location in the first function that referenced the second.
-pub(crate) fn find_inlined_functions(
-    dwarf: &Dwarf<EndianSlice<LittleEndian>>,
-    mut emit_ref_pair: impl FnMut(&Symbol, &Symbol, SourceLocation),
+pub(crate) fn find_inlined_functions<'input>(
+    dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
+    mut emit_ref_pair: impl FnMut(&Symbol<'input>, &Symbol<'input>, SourceLocation),
 ) -> Result<()> {
     let mut units = dwarf.units();
     let mut frames: Vec<FrameState> = Vec::new();

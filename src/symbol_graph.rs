@@ -121,7 +121,7 @@ pub(crate) fn scan_objects(
     let start = checker.timings.add_timing(start, "Parse bin");
     let mut inlined_references = Vec::new();
     dwarf::find_inlined_functions(&dwarf, |a, b, location| {
-        inlined_references.push((a.to_heap(), b.to_heap(), location));
+        inlined_references.push((a.clone(), b.clone(), location));
     })
     .context("find_inlined_functions")?;
     let start = checker.timings.add_timing(start, "Find inlined functions");
@@ -145,7 +145,7 @@ pub(crate) fn scan_objects(
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for (a, b, location) in inlined_references {
-        collector.process_reference(&a, b, checker, &location, None)?;
+        collector.process_reference(&a, &b, checker, &location, None)?;
     }
     let start = checker
         .timings
@@ -257,7 +257,7 @@ impl<'input> ApiUsageCollector<'input> {
 
                     self.process_reference(
                         from_symbol,
-                        target_symbol,
+                        &target_symbol,
                         checker,
                         &location,
                         debug_data.as_ref(),
@@ -271,7 +271,7 @@ impl<'input> ApiUsageCollector<'input> {
     fn process_reference(
         &mut self,
         from_symbol: &Symbol,
-        target_symbol: Symbol,
+        target_symbol: &Symbol,
         checker: &Checker,
         location: &SourceLocation,
         debug_data: Option<&UsageDebugData>,
@@ -282,7 +282,7 @@ impl<'input> ApiUsageCollector<'input> {
         for (name, _) in self.bin.names_from_symbol(from_symbol)? {
             from_apis.extend(checker.apis_for_name(&name).into_iter());
         }
-        let target_symbol_names = self.bin.names_from_symbol(&target_symbol)?;
+        let target_symbol_names = self.bin.names_from_symbol(target_symbol)?;
         let crate_names = checker.crate_names_from_source_path(location.filename())?;
         for crate_sel in crate_names.as_ref() {
             let crate_name = CrateName::from(crate_sel);
