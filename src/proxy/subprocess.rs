@@ -67,15 +67,15 @@ fn is_path_to_rustc(arg: Option<&String>) -> bool {
 
 /// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
 /// the build script.
-fn setup_build_script_wrapper(build_script_bin: &PathBuf) -> Result<()> {
-    std::fs::rename(build_script_bin, orig_build_rs_bin_path(build_script_bin)).with_context(
-        || {
-            format!(
-                "Failed to rename build.rs binary `{}`",
-                build_script_bin.display()
-            )
-        },
-    )?;
+fn setup_build_script_wrapper(link_info: &mut LinkInfo) -> Result<()> {
+    let build_script_bin = &link_info.output_file;
+    let new_filename = orig_build_rs_bin_path(build_script_bin);
+    std::fs::rename(build_script_bin, &new_filename).with_context(|| {
+        format!(
+            "Failed to rename build.rs binary `{}`",
+            build_script_bin.display()
+        )
+    })?;
     let cackle_exe = cackle_exe()?;
     // Note, we use hard links rather than symbolic links because cargo apparently canonicalises the
     // path to the build script binary when it runs it, so if we give it a symlink, we don't know
@@ -91,6 +91,7 @@ fn setup_build_script_wrapper(build_script_bin: &PathBuf) -> Result<()> {
             )
         })?;
     }
+    link_info.output_file = new_filename;
     Ok(())
 }
 
@@ -342,25 +343,18 @@ fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Vec<SourceLocation>> {
 /// as the output file. If the parent process says that all checks have been satisfied, then we
 /// return, otherwise we exit.
 fn proxy_linker(
-    link_info: LinkInfo,
+    mut link_info: LinkInfo,
     rpc_client: RpcClient,
     args: std::iter::Peekable<std::env::Args>,
 ) -> Result<ExitCode, anyhow::Error> {
     // Invoke the actual linker first, since the parent process uses the output file to aid with
     // analysis.
     let exit_status = invoke_real_linker(args)?;
-    let build_script_bin = link_info
-        .is_build_script()
-        .then(|| link_info.output_file.clone());
+    if exit_status.is_ok() && link_info.is_build_script() {
+        setup_build_script_wrapper(&mut link_info)?;
+    }
     match rpc_client.linker_invoked(link_info)? {
-        Outcome::Continue => {
-            if exit_status.is_ok() {
-                if let Some(build_script_bin) = build_script_bin {
-                    setup_build_script_wrapper(&build_script_bin)?;
-                }
-            }
-            Ok(exit_status)
-        }
+        Outcome::Continue => Ok(exit_status),
         Outcome::GiveUp => std::process::exit(1),
     }
 }
