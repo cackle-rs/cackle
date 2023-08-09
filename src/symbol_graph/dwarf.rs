@@ -48,42 +48,61 @@ pub(super) fn get_symbol_debug_info<'input>(
         };
         let header = line_program.header();
         let compdir = path_from_opt_slice(unit.comp_dir);
-        let mut entries = unit.entries();
-        while let Some((_, entry)) = entries.next_dfs()? {
-            let name = entry
-                .attr_value(gimli::DW_AT_name)?
-                .map(|name| dwarf.attr_string(&unit, name))
-                .transpose()?
-                .map(|name| name.to_string())
-                .transpose()?;
+        let mut entries = unit.entries_raw(None)?;
+        while !entries.is_empty() {
+            let Some(abbrev) = entries.read_abbreviation()? else {
+                continue;
+            };
+            let mut name = None;
+            let mut linkage_name = None;
+            let mut line = None;
+            let mut column = None;
+            let mut file_index = None;
+            for spec in abbrev.attributes() {
+                let attr = entries.read_attribute(*spec)?;
+                match attr.name() {
+                    gimli::DW_AT_name => {
+                        name = Some(attr.value());
+                    }
+                    gimli::DW_AT_linkage_name => {
+                        linkage_name = Some(attr.value());
+                    }
+                    gimli::DW_AT_decl_line => {
+                        line = attr.udata_value().map(|v| v as u32);
+                    }
+                    gimli::DW_AT_decl_column => {
+                        column = attr.udata_value().map(|v| v as u32);
+                    }
+                    gimli::DW_AT_decl_file => {
+                        file_index = Some(attr.value());
+                    }
+                    _ => {}
+                }
+            }
+
             // When `linkage_name` and `name` would be the same (symbol is not mangled), then
             // `linkage_name` is omitted, so we use `name` as a fallback.
-            let Some(linkage_name) = entry
-                .attr_value(gimli::DW_AT_linkage_name)?
-                .or_else(|| entry.attr_value(gimli::DW_AT_name).ok().flatten())
-            else {
+            let linkage_name = linkage_name.or(name);
+
+            let name = name
+                .map(|attr| dwarf.attr_string(&unit, attr))
+                .transpose()?
+                .map(|n| n.to_string())
+                .transpose()?;
+
+            let Some(linkage_name) = linkage_name else {
                 continue;
             };
-            let Some(line) = entry
-                .attr_value(gimli::DW_AT_decl_line)?
-                .and_then(|v| v.udata_value())
-                .map(|v| v as u32)
-            else {
+            let Some(line) = line else { continue };
+            let Some(file_index) = file_index else {
                 continue;
             };
-            let column = entry
-                .attr_value(gimli::DW_AT_decl_column)?
-                .and_then(|v| v.udata_value())
-                .map(|v| v as u32);
             let symbol = Symbol::borrowed(
                 dwarf
                     .attr_string(&unit, linkage_name)
                     .context("symbol invalid")?
                     .slice(),
             );
-            let Ok(Some(file_index)) = entry.attr_value(gimli::DW_AT_decl_file) else {
-                continue;
-            };
             let (directory, path_name) =
                 get_directory_and_filename(file_index, header, dwarf, &unit)?;
 
