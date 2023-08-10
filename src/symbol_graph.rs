@@ -274,7 +274,7 @@ impl<'input> ApiUsageCollector<'input> {
 
         let mut from_apis = HashSet::new();
         for (name, _) in self.bin.names_from_symbol(from_symbol)? {
-            from_apis.extend(checker.apis_for_name(&name).into_iter());
+            from_apis.extend(checker.apis_for_name(&name).iter());
         }
         let target_symbol_names = self.bin.names_from_symbol(target_symbol)?;
         let crate_names = checker.crate_names_from_source_path(location.filename())?;

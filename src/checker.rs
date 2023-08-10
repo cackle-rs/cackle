@@ -1,5 +1,4 @@
 use crate::build_script_checker;
-use crate::config::ApiPath;
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::PermissionName;
@@ -36,8 +35,10 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 pub(crate) struct Checker {
-    inclusions: HashMap<ApiPath, HashSet<PermissionName>>,
-    exclusions: HashMap<ApiPath, HashSet<PermissionName>>,
+    /// For each name, the set of permissions active for that name and all names that have this name
+    /// as a prefix.
+    permissions_by_prefix: HashMap<Name<'static>, HashSet<PermissionName>>,
+    empty_permissions: HashSet<PermissionName>,
     proc_macros: HashSet<PackageId>,
     pub(crate) crate_infos: HashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
@@ -88,8 +89,8 @@ impl Checker {
     ) -> Self {
         let timings = TimingCollector::new(args.print_timing);
         Self {
-            inclusions: Default::default(),
-            exclusions: Default::default(),
+            permissions_by_prefix: Default::default(),
+            empty_permissions: Default::default(),
             crate_infos: Default::default(),
             config_path,
             config: Default::default(),
@@ -130,18 +131,32 @@ impl Checker {
     }
 
     fn update_config(&mut self, config: Arc<Config>) {
-        for (perm_name, api) in &config.apis {
-            for prefix in &api.include {
-                self.inclusions
-                    .entry(prefix.to_owned())
-                    .or_default()
-                    .insert(perm_name.clone());
+        self.permissions_by_prefix.clear();
+        for api in config.apis.values() {
+            for path in api.include.iter().chain(api.exclude.iter()) {
+                self.permissions_by_prefix
+                    .entry(crate::names::split_simple(&path.prefix).to_heap())
+                    .or_default();
             }
-            for prefix in &api.exclude {
-                self.exclusions
-                    .entry(prefix.to_owned())
-                    .or_default()
-                    .insert(perm_name.clone());
+        }
+        for (perm_name, api) in &config.apis {
+            for path in &api.include {
+                let name = &crate::names::split_simple(&path.prefix);
+                for (prefix, permissions) in &mut self.permissions_by_prefix {
+                    if prefix.parts.starts_with(&name.parts) {
+                        permissions.insert(perm_name.clone());
+                    }
+                }
+            }
+        }
+        for (perm_name, api) in &config.apis {
+            for path in &api.exclude {
+                let name = &crate::names::split_simple(&path.prefix);
+                for (prefix, permissions) in &mut self.permissions_by_prefix {
+                    if prefix.parts.starts_with(&name.parts) {
+                        permissions.remove(perm_name);
+                    }
+                }
             }
         }
         for (crate_name, crate_config) in &config.packages {
@@ -298,25 +313,25 @@ impl Checker {
     }
 
     /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
-    /// might return the APIs `{"net"}`
-    pub(crate) fn apis_for_name(&self, name: &Name) -> HashSet<PermissionName> {
-        let mut matched = HashSet::new();
-        let mut prefix = String::new();
-        for name_part in &name.parts {
-            if !prefix.is_empty() {
-                prefix.push_str("::");
+    /// might return the APIs `{"net"}`.
+    ///
+    /// A note on the lifetimes here. In theory, the returned reference should be valid for 'this,
+    /// however due to some sort of variance issue / limitation, the lifetime 'data gets involved,
+    /// even though it's tied to the key of the hashmap, not the value. See rust issues #103289 and
+    /// #89265.
+    pub(crate) fn apis_for_name<'ret, 'this: 'ret, 'data: 'ret>(
+        &'this self,
+        name: &Name<'data>,
+    ) -> &'ret HashSet<PermissionName> {
+        let mut name = name.clone();
+        loop {
+            if let Some(permissions) = self.permissions_by_prefix.get(&name) {
+                return permissions;
             }
-            prefix.push_str(name_part);
-            let empty_hash_set = HashSet::new();
-            let api_path = ApiPath::from_str(&prefix);
-            for perm_id in self.inclusions.get(&api_path).unwrap_or(&empty_hash_set) {
-                matched.insert(perm_id.clone());
-            }
-            for perm_id in self.exclusions.get(&api_path).unwrap_or(&empty_hash_set) {
-                matched.remove(perm_id);
+            if name.parts.pop().is_none() {
+                return &self.empty_permissions;
             }
         }
-        matched
     }
 
     pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
@@ -486,13 +501,15 @@ mod tests {
         let mut problems = ProblemList::default();
 
         let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
-        let permissions = checker.apis_for_name(&Name {
-            parts: vec![
-                Utf8Bytes::Borrowed("std"),
-                Utf8Bytes::Borrowed("fs"),
-                Utf8Bytes::Borrowed("read_to_string"),
-            ],
-        });
+        let permissions = checker
+            .apis_for_name(&Name {
+                parts: vec![
+                    Utf8Bytes::Borrowed("std"),
+                    Utf8Bytes::Borrowed("fs"),
+                    Utf8Bytes::Borrowed("read_to_string"),
+                ],
+            })
+            .clone();
         assert_eq!(permissions.len(), 1);
         assert_eq!(
             permissions.iter().next().unwrap(),

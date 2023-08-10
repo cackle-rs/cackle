@@ -86,6 +86,12 @@ impl<'data> Debug for Name<'data> {
     }
 }
 
+pub(crate) fn split_simple(value: &str) -> Name {
+    Name {
+        parts: value.split("::").map(Utf8Bytes::Borrowed).collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
