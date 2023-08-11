@@ -42,30 +42,13 @@ impl<'data> Symbol<'data> {
 
     /// Splits the name of this symbol into names. See `crate::names::split_names` for details.
     pub(crate) fn names(&self) -> Result<Vec<Name<'data>>> {
-        let mut all_names = match &self.bytes {
+        Ok(match &self.bytes {
             Bytes::Heap(bytes) => names_from_bytes(bytes)?
                 .into_iter()
                 .map(|n| n.to_heap())
                 .collect(),
             Bytes::Borrowed(bytes) => names_from_bytes(bytes)?,
-        };
-        // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
-        if all_names.len() >= 2 {
-            if let Some(last_name) = all_names.last_mut() {
-                if let Some(last) = last_name.parts.last() {
-                    if last.len() == 17
-                        && last.starts_with('h')
-                        && u64::from_str_radix(&last[1..], 16).is_ok()
-                    {
-                        last_name.parts.pop();
-                        if last_name.parts.is_empty() {
-                            all_names.pop();
-                        }
-                    }
-                }
-            }
-        }
-        Ok(all_names)
+        })
     }
 
     pub(crate) fn len(&self) -> usize {

@@ -58,7 +58,7 @@ pub(crate) fn collect_names<'data, I: Clone + Iterator<Item = DemangleToken<'dat
     Ok(())
 }
 
-struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>> {
+pub(crate) struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>> {
     it: I,
     state: NamesIteratorState<I>,
     brace_depth: i32,
@@ -76,7 +76,7 @@ impl<'data, I: Iterator<Item = DemangleToken<'data>>> NamesIterator<'data, I> {
     }
 }
 
-enum NameToken<'data> {
+pub(crate) enum NameToken<'data> {
     Part(&'data str),
     EndName,
     Error(anyhow::Error),
@@ -114,6 +114,14 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator for Names
                             .unwrap_or(false)
                     {
                         // This text was already output as the final part of an as-name. Ignore it.
+                        continue;
+                    }
+                    // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
+                    if text.len() == 17
+                        && text.starts_with('h')
+                        && u64::from_str_radix(&text[1..], 16).is_ok()
+                        && self.it.clone().next().is_none()
+                    {
                         continue;
                     }
                     match &self.state {
