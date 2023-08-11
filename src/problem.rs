@@ -1,6 +1,8 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
+use fxhash::FxHashMap;
+
 use crate::checker::ApiUsage;
 use crate::config::ApiPath;
 use crate::config::CrateName;
@@ -16,7 +18,6 @@ use crate::symbol::Symbol;
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
@@ -152,7 +153,7 @@ impl ProblemList {
     #[must_use]
     fn grouped_by(mut self, group_fn: impl Fn(&ApiUsages) -> String) -> ProblemList {
         let mut merged = ProblemList::default();
-        let mut disallowed_by_crate_name: HashMap<String, usize> = HashMap::new();
+        let mut disallowed_by_crate_name: FxHashMap<String, usize> = FxHashMap::default();
         for problem in self.problems.drain(..) {
             match problem {
                 Problem::DisallowedApiUsage(usage) => {

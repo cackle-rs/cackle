@@ -6,14 +6,16 @@ use anyhow::Context;
 use anyhow::Result;
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
+use fxhash::FxHashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+type HashMap<K, V> = fxhash::FxHashMap<K, V>;
 
 #[derive(Default, Debug)]
 pub(crate) struct CrateIndex {
@@ -69,7 +71,7 @@ impl CrateIndex {
             manifest_path,
             ..Self::default()
         };
-        let mut name_counts = HashMap::new();
+        let mut name_counts = FxHashMap::default();
         for package in &metadata.packages {
             *name_counts.entry(&package.name).or_default() += 1;
         }

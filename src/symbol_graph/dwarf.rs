@@ -3,6 +3,7 @@ use crate::symbol::Symbol;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use fxhash::FxHashMap;
 use gimli::Attribute;
 use gimli::AttributeValue;
 use gimli::Dwarf;
@@ -10,7 +11,6 @@ use gimli::EndianSlice;
 use gimli::IncompleteLineProgram;
 use gimli::LittleEndian;
 use gimli::Unit;
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[derive(Default)]
 pub(crate) struct DebugArtifacts<'input> {
-    pub(crate) symbol_debug_info: HashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
+    pub(crate) symbol_debug_info: FxHashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
     pub(crate) inlined_functions: Vec<InlinedFunction<'input>>,
 }
 

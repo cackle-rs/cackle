@@ -24,6 +24,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
+use fxhash::FxHashMap;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
@@ -36,7 +37,6 @@ use object::RelocationTarget;
 use object::SectionIndex;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::fs::File;
@@ -60,18 +60,18 @@ struct ApiUsageCollector<'input> {
 
     bin: BinInfo<'input>,
     debug_enabled: bool,
-    new_api_usages: HashMap<ApiUsageGroupKey, Vec<ApiUsages>>,
+    new_api_usages: FxHashMap<ApiUsageGroupKey, Vec<ApiUsages>>,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
 /// object (so).
 struct BinInfo<'input> {
     filename: Arc<Path>,
-    symbol_addresses: HashMap<Symbol<'input>, u64>,
+    symbol_addresses: FxHashMap<Symbol<'input>, u64>,
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
 
     /// Information about each symbol obtained from the debug info.
-    symbol_debug_info: HashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
+    symbol_debug_info: FxHashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
 }
 
 #[derive(Default)]
@@ -134,7 +134,7 @@ pub(crate) fn scan_objects(
             symbol_debug_info: debug_artifacts.symbol_debug_info,
         },
         debug_enabled: checker.args.debug,
-        new_api_usages: HashMap::new(),
+        new_api_usages: FxHashMap::default(),
     };
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
@@ -335,7 +335,7 @@ impl<'input> ApiUsageCollector<'input> {
     }
 
     fn find_possible_exports(&mut self, checker: &Checker) {
-        let api_names: HashMap<&str, &PermissionName> = checker
+        let api_names: FxHashMap<&str, &PermissionName> = checker
             .config
             .apis
             .keys()

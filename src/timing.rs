@@ -1,8 +1,9 @@
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::time::Duration;
 use std::time::Instant;
+
+use fxhash::FxHashMap;
 
 /// Records how long different parts of execution take.
 #[derive(Default)]
@@ -13,7 +14,7 @@ pub(crate) struct TimingCollector {
     order: Vec<&'static str>,
 
     /// The total time for each category.
-    timings: HashMap<&'static str, Duration>,
+    timings: FxHashMap<&'static str, Duration>,
 }
 
 impl TimingCollector {
@@ -21,7 +22,7 @@ impl TimingCollector {
         Self {
             enabled,
             order: Vec::new(),
-            timings: HashMap::default(),
+            timings: FxHashMap::default(),
         }
     }
 

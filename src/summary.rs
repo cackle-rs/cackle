@@ -5,8 +5,8 @@ use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateSel;
 use clap::Parser;
+use fxhash::FxHashMap;
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::fmt::Display;
 
 /// Counts of how many packages in the dependency tree use different permissions, how many use no
@@ -46,7 +46,7 @@ struct PackageSummary {
 
 impl Summary {
     pub(crate) fn new(crate_index: &CrateIndex, config: &Config) -> Self {
-        let pkg_configs: HashMap<&CrateName, &PackageConfig> =
+        let pkg_configs: FxHashMap<&CrateName, &PackageConfig> =
             config.packages.iter().map(|(k, v)| (k, v)).collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_ids()

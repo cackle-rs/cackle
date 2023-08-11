@@ -25,10 +25,10 @@ use crate::CheckState;
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
+use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 use log::info;
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,10 +37,10 @@ use tempfile::TempDir;
 pub(crate) struct Checker {
     /// For each name, the set of permissions active for that name and all names that have this name
     /// as a prefix.
-    permissions_by_prefix: HashMap<Name<'static>, HashSet<PermissionName>>,
-    empty_permissions: HashSet<PermissionName>,
-    proc_macros: HashSet<PackageId>,
-    pub(crate) crate_infos: HashMap<CrateName, CrateInfo>,
+    permissions_by_prefix: FxHashMap<Name<'static>, FxHashSet<PermissionName>>,
+    empty_permissions: FxHashSet<PermissionName>,
+    proc_macros: FxHashSet<PackageId>,
+    pub(crate) crate_infos: FxHashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
@@ -51,7 +51,7 @@ pub(crate) struct Checker {
     /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
     /// map to a single crate, but in rare cases multiple crates within a package could use the same
     /// source path.
-    path_to_crate: HashMap<PathBuf, Vec<CrateSel>>,
+    path_to_crate: FxHashMap<PathBuf, Vec<CrateSel>>,
 
     pub(crate) timings: TimingCollector,
 }
@@ -62,11 +62,11 @@ pub(crate) struct PermId(usize);
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml.
-    allowed_perms: HashSet<PermissionName>,
+    allowed_perms: FxHashSet<PermissionName>,
 
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
-    unused_allowed_perms: HashSet<PermissionName>,
+    unused_allowed_perms: FxHashSet<PermissionName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -322,7 +322,7 @@ impl Checker {
     pub(crate) fn apis_for_name<'ret, 'this: 'ret, 'data: 'ret>(
         &'this self,
         name: &Name<'data>,
-    ) -> &'ret HashSet<PermissionName> {
+    ) -> &'ret FxHashSet<PermissionName> {
         let mut name = name.clone();
         loop {
             if let Some(permissions) = self.permissions_by_prefix.get(&name) {
@@ -351,7 +351,7 @@ impl Checker {
 
     pub(crate) fn check_unused(&self) -> ProblemList {
         let mut problems = ProblemList::default();
-        let crate_names_in_index: HashSet<_> = self.crate_index.crate_names().collect();
+        let crate_names_in_index: FxHashSet<_> = self.crate_index.crate_names().collect();
         for (crate_name, crate_info) in &self.crate_infos {
             if !crate_names_in_index.contains(crate_name) {
                 problems.push(Problem::UnusedPackageConfig(crate_name.clone()));

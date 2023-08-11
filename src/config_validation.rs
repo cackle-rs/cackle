@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::config::MAX_VERSION;
-use std::collections::HashSet;
+use fxhash::FxHashSet;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
@@ -26,9 +26,9 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
     if config.common.version < 1 || config.common.version > MAX_VERSION {
         problems.push(Problem::UnsupportedVersion(config.common.version));
     }
-    let permission_names: HashSet<_> = config.apis.keys().collect();
+    let permission_names: FxHashSet<_> = config.apis.keys().collect();
     for (name, crate_config) in &config.packages {
-        let mut used = HashSet::new();
+        let mut used = FxHashSet::default();
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
                 problems.push(Problem::UnknownPermission(permission_name.clone()));
