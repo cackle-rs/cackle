@@ -12,8 +12,11 @@ use crate::checker::Checker;
 use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::crate_index::CrateSel;
+use crate::demangle::DemangleIterator;
+use crate::demangle::NonMangledIterator;
 use crate::location::SourceLocation;
 use crate::names::Name;
+use crate::names::NamesIterator;
 use crate::problem::ApiUsageGroupKey;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
@@ -273,14 +276,15 @@ impl<'input> ApiUsageCollector<'input> {
         trace!("{from_symbol} -> {target_symbol}");
 
         let mut from_apis = HashSet::new();
-        for (name, _) in self.bin.names_from_symbol(from_symbol)? {
+        let mut from_symbol_names = self.bin.names_from_symbol(from_symbol)?;
+        while let Some((name, _)) = from_symbol_names.next_name()? {
             from_apis.extend(checker.apis_for_name(&name).iter());
         }
-        let target_symbol_names = self.bin.names_from_symbol(target_symbol)?;
+        let mut target_symbol_names = self.bin.names_from_symbol(target_symbol)?;
         let crate_names = checker.crate_names_from_source_path(location.filename())?;
-        for crate_sel in crate_names.as_ref() {
-            let crate_name = CrateName::from(crate_sel);
-            for (name, name_source) in &target_symbol_names {
+        while let Some((name, name_source)) = target_symbol_names.next_name()? {
+            for crate_sel in crate_names.as_ref() {
+                let crate_name = CrateName::from(crate_sel);
                 // If a package references another symbol within the same package,
                 // ignore it.
                 if name
@@ -291,7 +295,7 @@ impl<'input> ApiUsageCollector<'input> {
                 {
                     continue;
                 }
-                for permission in checker.apis_for_name(name) {
+                for permission in checker.apis_for_name(&name) {
                     if from_apis.contains(&permission) {
                         continue;
                     }
@@ -487,35 +491,6 @@ impl<'input> BinInfo<'input> {
         Ok(())
     }
 
-    /// Returns names present either in `symbol` or in the debug info for `symbol`. Generally the
-    /// former is fully qualified, while the latter contains generics, so we need both.
-    fn names_from_symbol<'symbol>(
-        &self,
-        symbol: &Symbol<'symbol>,
-    ) -> Result<Vec<(Name<'symbol>, NameSource<'symbol>)>> {
-        let mut names: Vec<_> = symbol
-            .names()?
-            .into_iter()
-            .map(|name| (name, NameSource::Symbol(symbol.clone())))
-            .collect();
-        if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
-            if let Some(debug_name) = target_symbol_debug.name {
-                let debug_name_arc: Arc<str> = Arc::from(debug_name);
-                // This is O(n^2) in the number of names, but we expect N to be in the range 1..3
-                // and rarely more than 5, so using a hashmap or similar seems like overkill.
-                for name in crate::names::split_names(debug_name) {
-                    if !names.iter().any(|(n, _)| n == &name) {
-                        names.push((
-                            name.to_heap(),
-                            NameSource::DebugName(debug_name_arc.clone()),
-                        ));
-                    }
-                }
-            }
-        }
-        Ok(names)
-    }
-
     fn find_location(&self, offset: u64) -> Result<Option<SourceLocation>> {
         use addr2line::Location;
 
@@ -535,6 +510,50 @@ impl<'input> BinInfo<'input> {
             return Ok(None);
         };
         Ok(Some(SourceLocation::new(Path::new(file), line, column)))
+    }
+}
+
+impl<'input> BinInfo<'input> {
+    /// Returns names present either in `symbol` or in the debug info for `symbol`. Generally the
+    /// former is fully qualified, while the latter contains generics, so we need both.
+    fn names_from_symbol<'ret>(
+        &'ret self,
+        symbol: &'ret Symbol,
+    ) -> Result<SymbolNamesIterator<'ret>> {
+        let mut debug_name_state = None;
+        if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
+            if let Some(debug_name) = target_symbol_debug.name {
+                debug_name_state = Some((
+                    Arc::from(debug_name),
+                    NamesIterator::new(NonMangledIterator::new(debug_name)),
+                ));
+            }
+        }
+        Ok(SymbolNamesIterator {
+            symbol,
+            symbol_it: symbol.names()?,
+            debug_name_state,
+        })
+    }
+}
+
+struct SymbolNamesIterator<'data> {
+    symbol: &'data Symbol<'data>,
+    symbol_it: NamesIterator<'data, DemangleIterator<'data>>,
+    debug_name_state: Option<(Arc<str>, NamesIterator<'data, NonMangledIterator<'data>>)>,
+}
+
+impl<'data> SymbolNamesIterator<'data> {
+    fn next_name(&mut self) -> Result<Option<(Name<'data>, NameSource<'data>)>> {
+        if let Some(name) = self.symbol_it.next_name()? {
+            return Ok(Some((name, NameSource::Symbol(self.symbol.clone()))));
+        }
+        if let Some(state) = self.debug_name_state.as_mut() {
+            if let Some(name) = state.1.next_name()? {
+                return Ok(Some((name, NameSource::DebugName(state.0.clone()))));
+            }
+        }
+        Ok(None)
     }
 }
 

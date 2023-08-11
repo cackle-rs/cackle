@@ -522,7 +522,7 @@ mod tests {
                 vec![ApiUsage {
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
                     from: Symbol::borrowed(&[]),
-                    to: crate::names::split_names("foo:bar").pop().unwrap(),
+                    to: crate::names::split_simple("foo::bar"),
                     to_symbol: Symbol::borrowed(&[]),
                     to_source: NameSource::Symbol(Symbol::borrowed(b"foo::bar")),
                     debug_data: None,

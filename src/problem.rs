@@ -583,7 +583,7 @@ mod tests {
         ApiUsage {
             source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
             from: Symbol::borrowed(from.as_bytes()).to_heap(),
-            to: crate::names::split_names("foo:bar").pop().unwrap(),
+            to: crate::names::split_simple("foo:bar"),
             to_source: NameSource::Symbol(to_symbol.clone()),
             to_symbol,
             debug_data: None,

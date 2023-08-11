@@ -1,6 +1,5 @@
 use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
-use crate::demangle::NonMangledIterator;
 use anyhow::anyhow;
 use anyhow::Result;
 use std::fmt::Debug;
@@ -33,31 +32,6 @@ impl<'data> Name<'data> {
 ///   ["alloc", "string", "String"],
 ///   ["std", "fmt", "Debug", "fmt"],
 /// ]
-pub(crate) fn split_names(composite: &str) -> Vec<Name> {
-    let mut names: Vec<Name> = Vec::new();
-    // The following unwrap should always succeed, since NonMangledIterator never produces
-    // DemangleToken::UnsupportedEscape, which is the only failure mode for collect_names.
-    collect_names(NonMangledIterator::new(composite), &mut names).unwrap();
-    names
-}
-
-pub(crate) fn collect_names<'data, I: Clone + Iterator<Item = DemangleToken<'data>>>(
-    it: I,
-    out: &mut Vec<Name<'data>>,
-) -> Result<()> {
-    let mut name_parts = Vec::new();
-    for token in NamesIterator::new(it) {
-        match token {
-            NameToken::Part(part) => name_parts.push(Utf8Bytes::Borrowed(part)),
-            NameToken::EndName => out.push(Name {
-                parts: std::mem::take(&mut name_parts),
-            }),
-            NameToken::Error(error) => return Err(error),
-        }
-    }
-    Ok(())
-}
-
 pub(crate) struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>> {
     it: I,
     state: NamesIteratorState<I>,
@@ -65,14 +39,30 @@ pub(crate) struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>>
     as_final: Option<&'data str>,
 }
 
-impl<'data, I: Iterator<Item = DemangleToken<'data>>> NamesIterator<'data, I> {
-    fn new(it: I) -> Self {
+impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> NamesIterator<'data, I> {
+    pub(crate) fn new(it: I) -> Self {
         Self {
             it,
             state: NamesIteratorState::Inactive,
             brace_depth: 0,
             as_final: None,
         }
+    }
+
+    pub(crate) fn next_name(&mut self) -> Result<Option<Name<'data>>> {
+        let mut parts = Vec::new();
+        for token in self.by_ref() {
+            match token {
+                NameToken::Part(part) => {
+                    parts.push(Utf8Bytes::Borrowed(part));
+                }
+                NameToken::EndName => {
+                    return Ok(Some(Name { parts }));
+                }
+                NameToken::Error(error) => return Err(error),
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -237,21 +227,27 @@ pub(crate) fn split_simple(value: &str) -> Name {
 
 #[cfg(test)]
 mod tests {
+    use crate::demangle::NonMangledIterator;
+
     use super::*;
 
-    fn borrow<'a>(input: &'a [Name]) -> Vec<Vec<&'a str>> {
-        input
-            .iter()
-            .map(|name| name.parts.iter().map(|s| s.data()).collect())
-            .collect()
+    fn get_name_vecs(input: &str) -> Vec<Vec<&str>> {
+        let mut out = Vec::new();
+        let mut name_parts = Vec::new();
+        for token in NamesIterator::new(NonMangledIterator::new(input)) {
+            match token {
+                NameToken::Part(part) => name_parts.push(part),
+                NameToken::EndName => out.push(std::mem::take(&mut name_parts)),
+                NameToken::Error(error) => panic!("{error}"),
+            }
+        }
+        out
     }
 
     #[test]
     fn test_split_with_closure() {
         assert_eq!(
-            borrow(&split_names(
-                "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"
-            )),
+            get_name_vecs("core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"),
             vec![
                 vec!["core", "ptr", "drop_in_place"],
                 vec!["std", "rt", "lang_start"],
@@ -262,9 +258,7 @@ mod tests {
     #[test]
     fn test_split_as() {
         assert_eq!(
-            borrow(&split_names(
-                "<alloc::string::String as core::fmt::Debug>::fmt"
-            )),
+            get_name_vecs("<alloc::string::String as core::fmt::Debug>::fmt"),
             vec![
                 vec!["alloc", "string", "String"],
                 vec!["core", "fmt", "Debug", "fmt"],
@@ -275,9 +269,7 @@ mod tests {
     #[test]
     fn test_split_with_comma() {
         assert_eq!(
-            borrow(&split_names(
-                "HashMap<std::string::String, std::path::PathBuf>"
-            )),
+            get_name_vecs("HashMap<std::string::String, std::path::PathBuf>"),
             vec![
                 vec!["HashMap"],
                 vec!["std", "string", "String"],
@@ -289,7 +281,7 @@ mod tests {
     #[test]
     fn test_split_mut_ref() {
         assert_eq!(
-            borrow(&split_names("Vec<&mut std::string::String>")),
+            get_name_vecs("Vec<&mut std::string::String>"),
             vec![vec!["Vec"], vec!["std", "string", "String"],]
         );
     }

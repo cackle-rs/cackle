@@ -1,8 +1,7 @@
 use crate::cowarc::Bytes;
 use crate::demangle::DemangleIterator;
 use crate::demangle::DemangleToken;
-use crate::names::Name;
-use anyhow::Context;
+use crate::names::NamesIterator;
 use anyhow::Result;
 use rustc_demangle::demangle;
 use std::fmt::Debug;
@@ -41,14 +40,8 @@ impl<'data> Symbol<'data> {
     }
 
     /// Splits the name of this symbol into names. See `crate::names::split_names` for details.
-    pub(crate) fn names(&self) -> Result<Vec<Name<'data>>> {
-        Ok(match &self.bytes {
-            Bytes::Heap(bytes) => names_from_bytes(bytes)?
-                .into_iter()
-                .map(|n| n.to_heap())
-                .collect(),
-            Bytes::Borrowed(bytes) => names_from_bytes(bytes)?,
-        })
+    pub(crate) fn names(&self) -> Result<NamesIterator<DemangleIterator>> {
+        Ok(NamesIterator::new(DemangleIterator::new(self.to_str()?)))
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -76,21 +69,6 @@ impl<'data> Symbol<'data> {
             None
         }
     }
-}
-
-fn names_from_bytes(bytes: &[u8]) -> Result<Vec<Name>> {
-    let mut all_names = Vec::new();
-    crate::names::collect_names(
-        DemangleIterator::new(std::str::from_utf8(bytes)?),
-        &mut all_names,
-    )
-    .with_context(|| {
-        format!(
-            "Failed to get names from: {}",
-            String::from_utf8_lossy(bytes)
-        )
-    })?;
-    Ok(all_names)
 }
 
 impl<'data> Display for Symbol<'data> {
@@ -122,20 +100,28 @@ impl<'data> Debug for Symbol<'data> {
 
 #[cfg(test)]
 mod tests {
+    use crate::names::NameToken;
+
     use super::*;
 
-    fn borrow<'a>(input: &'a [Name]) -> Vec<Vec<&'a str>> {
-        input
-            .iter()
-            .map(|name| name.parts.iter().map(|s| s.data()).collect())
-            .collect()
+    fn get_name_vecs<'a>(input: NamesIterator<'a, DemangleIterator<'a>>) -> Vec<Vec<&'a str>> {
+        let mut out = Vec::new();
+        let mut name_parts = Vec::new();
+        for token in input {
+            match token {
+                NameToken::Part(part) => name_parts.push(part),
+                NameToken::EndName => out.push(std::mem::take(&mut name_parts)),
+                NameToken::Error(error) => panic!("{error}"),
+            }
+        }
+        out
     }
 
     #[test]
     fn test_names() {
         let symbol = Symbol::borrowed(b"_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE");
         assert_eq!(
-            borrow(&symbol.names().unwrap()),
+            get_name_vecs(symbol.names().unwrap()),
             vec![
                 vec!["core", "ptr", "drop_in_place"],
                 vec!["std", "rt", "lang_start"],
@@ -146,7 +132,7 @@ mod tests {
         b"_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
     );
         assert_eq!(
-            borrow(&symbol.names().unwrap()),
+            get_name_vecs(symbol.names().unwrap()),
             vec![
                 vec!["alloc", "string", "String"],
                 vec!["core", "fmt", "Debug", "fmt"]
@@ -161,7 +147,7 @@ mod tests {
     fn test_names_literal_number() {
         let symbol = Symbol::borrowed(b"_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E");
         assert_eq!(
-            borrow(&symbol.names().unwrap()),
+            get_name_vecs(symbol.names().unwrap()),
             vec![
                 vec!["proc_macro2", "Span"],
                 vec!["syn", "span", "IntoSpans", "into_spans"],
