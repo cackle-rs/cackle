@@ -5,13 +5,13 @@
 #![cfg_attr(not(feature = "ui"), allow(dead_code))]
 
 mod build_script_checker;
-mod bytes;
 mod checker;
 mod colour;
 mod config;
 #[cfg(feature = "ui")]
 mod config_editor;
 mod config_validation;
+mod cowarc;
 mod crate_index;
 mod demangle;
 mod deps;
@@ -32,7 +32,6 @@ mod symbol_graph;
 mod timing;
 mod ui;
 mod unsafe_checker;
-pub(crate) mod utf8;
 
 use anyhow::anyhow;
 use anyhow::bail;

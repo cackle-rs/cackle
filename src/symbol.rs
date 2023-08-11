@@ -1,8 +1,8 @@
-use crate::bytes::Bytes;
+use crate::cowarc::Bytes;
+use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleIterator;
 use crate::demangle::DemangleToken;
 use crate::names::Name;
-use crate::utf8::Utf8Bytes;
 use anyhow::Result;
 use rustc_demangle::demangle;
 use std::fmt::Debug;
@@ -19,7 +19,7 @@ pub(crate) struct Symbol<'data> {
 impl<'data> Symbol<'data> {
     pub(crate) fn borrowed(data: &[u8]) -> Symbol {
         Symbol {
-            bytes: Bytes::borrowed(data),
+            bytes: Bytes::Borrowed(data),
         }
     }
 
@@ -115,13 +115,13 @@ fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>)
     let mut as_state = None;
     for token in it {
         match token {
-            DemangleToken::Text(text) => parts.push(Utf8Bytes::borrowed(text)),
+            DemangleToken::Text(text) => parts.push(Utf8Bytes::Borrowed(text)),
             DemangleToken::Escape(esc) => {
                 match esc.symbol() {
-                    Some('}') if parts == [Utf8Bytes::borrowed("closure")] => {
+                    Some('}') if parts == [Utf8Bytes::Borrowed("closure")] => {
                         parts.clear();
                     }
-                    Some(' ') if parts == [Utf8Bytes::borrowed("as")] => {
+                    Some(' ') if parts == [Utf8Bytes::Borrowed("as")] => {
                         parts.clear();
                         as_state = Some(AsState {
                             parts: None,

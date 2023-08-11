@@ -424,7 +424,7 @@ mod tests {
 
     use super::*;
     use crate::config::testing::parse;
-    use crate::utf8::Utf8Bytes;
+    use crate::cowarc::Utf8Bytes;
 
     // Wraps a type T and makes it implement Debug by deferring to the Display implementation of T.
     struct DebugAsDisplay<T: Display>(T);

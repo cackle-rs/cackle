@@ -1,4 +1,4 @@
-use crate::utf8::Utf8Bytes;
+use crate::cowarc::Utf8Bytes;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -43,7 +43,7 @@ pub(crate) fn split_names(composite: &str) -> Vec<Name> {
             .unwrap_or(input.len());
         let part = &input[..end_word];
         if !part.is_empty() && part != "mut" {
-            parts.push(Utf8Bytes::borrowed(part));
+            parts.push(Utf8Bytes::Borrowed(part));
         }
         input = &input[end_word..];
         if let Some(rest) = input.strip_prefix(" as ") {
