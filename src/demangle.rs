@@ -21,6 +21,12 @@ pub(crate) struct DemangleIterator<'data> {
     inner: Option<&'data str>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct NonMangledIterator<'data> {
+    data: &'data str,
+}
+
+/// An iterator that processes a mangled string and provides demangled tokens.
 impl<'data> DemangleIterator<'data> {
     pub(crate) fn new(data: &'data str) -> Self {
         if let Some(rest) = data.strip_prefix("_ZN").and_then(|d| d.strip_suffix('E')) {
@@ -34,6 +40,14 @@ impl<'data> DemangleIterator<'data> {
                 inner: None,
             }
         }
+    }
+}
+
+/// An iterator that processes a non-mangled string and provides the same tokens as
+/// `DemangleIterator`.
+impl<'data> NonMangledIterator<'data> {
+    pub(crate) fn new(data: &'data str) -> Self {
+        Self { data }
     }
 }
 
@@ -110,31 +124,64 @@ impl<'data> Iterator for DemangleIterator<'data> {
     }
 }
 
+impl<'data> Iterator for NonMangledIterator<'data> {
+    type Item = DemangleToken<'data>;
+
+    fn next(&mut self) -> Option<DemangleToken<'data>> {
+        while let Some(rest) = self.data.strip_prefix(':') {
+            self.data = rest;
+        }
+        if self.data.is_empty() {
+            return None;
+        }
+        let end = self
+            .data
+            .chars()
+            .position(|ch| "<>[](){};&*:, ".contains(ch))
+            .unwrap_or(self.data.len());
+        if end == 0 {
+            let ch = self.data.chars().next().unwrap();
+            self.data = &self.data[1..];
+            return Some(DemangleToken::Char(ch));
+        }
+        let (text, rest) = self.data.split_at(end);
+        self.data = rest;
+        Some(DemangleToken::Text(text))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[track_caller]
     fn check(mangled: &str, expected: &[&str]) {
-        fn collect_parts(mut it: DemangleIterator, out: &mut Vec<String>) {
-            loop {
-                let prev_it = it;
-                let Some(part) = it.next() else { break };
-                match part {
-                    DemangleToken::Text("") => {
-                        panic!("Invalid empty text token from iterator: {prev_it:?}");
-                    }
-                    DemangleToken::Text(text) => out.push(text.to_owned()),
-                    DemangleToken::Char(ch) => out.push(ch.to_string()),
-                    DemangleToken::UnsupportedEscape(esc) => out.push(esc.to_owned()),
+        fn token_to_string(token: DemangleToken) -> String {
+            match token {
+                DemangleToken::Text("") => {
+                    panic!("Invalid empty text token from iterator");
                 }
+                DemangleToken::Text(text) => text.to_owned(),
+                DemangleToken::Char(ch) => ch.to_string(),
+                DemangleToken::UnsupportedEscape(esc) => esc.to_owned(),
             }
         }
 
-        let it = DemangleIterator::new(mangled);
-        let mut out = Vec::new();
-        collect_parts(it, &mut out);
-        assert_eq!(out, expected);
+        let actual: Vec<String> = DemangleIterator::new(mangled)
+            .map(token_to_string)
+            .collect();
+        assert_eq!(actual, expected);
+
+        if expected.is_empty() {
+            return;
+        }
+
+        // Check consistency with rustc-demangle.
+        let demangled = rustc_demangle::demangle(mangled).to_string();
+        let tokens: Vec<_> = NonMangledIterator::new(&demangled)
+            .map(token_to_string)
+            .collect();
+        assert_eq!(tokens, expected);
     }
 
     #[test]

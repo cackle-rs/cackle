@@ -1,9 +1,7 @@
 use crate::cowarc::Bytes;
-use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleIterator;
 use crate::demangle::DemangleToken;
 use crate::names::Name;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use rustc_demangle::demangle;
@@ -99,7 +97,7 @@ impl<'data> Symbol<'data> {
 
 fn names_from_bytes(bytes: &[u8]) -> Result<Vec<Name>> {
     let mut all_names = Vec::new();
-    collect_names(
+    crate::names::collect_names(
         DemangleIterator::new(std::str::from_utf8(bytes)?),
         &mut all_names,
     )
@@ -110,73 +108,6 @@ fn names_from_bytes(bytes: &[u8]) -> Result<Vec<Name>> {
         )
     })?;
     Ok(all_names)
-}
-
-#[derive(Debug)]
-struct AsState<'a> {
-    parts: Option<Vec<Utf8Bytes<'a>>>,
-    gt_depth: i32,
-}
-
-fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>) -> Result<()> {
-    let mut parts = Vec::new();
-    let mut as_state = None;
-    for token in it {
-        match token {
-            DemangleToken::Text(text) => parts.push(Utf8Bytes::Borrowed(text)),
-            DemangleToken::Char(ch) => {
-                match ch {
-                    '}' if parts == [Utf8Bytes::Borrowed("closure")] => {
-                        parts.clear();
-                    }
-                    ' ' if parts == [Utf8Bytes::Borrowed("as")] => {
-                        parts.clear();
-                        as_state = Some(AsState {
-                            parts: None,
-                            gt_depth: 1,
-                        });
-                    }
-                    '<' => {
-                        if let Some(s) = as_state.as_mut() {
-                            s.gt_depth += 1;
-                        }
-                    }
-                    '>' => {
-                        if let Some(s) = as_state.as_mut() {
-                            s.gt_depth -= 1;
-                        }
-                    }
-                    _ => {}
-                }
-                if let Some(s) = as_state.as_mut() {
-                    if !parts.is_empty() && s.parts.is_none() {
-                        s.parts = Some(std::mem::take(&mut parts));
-                    }
-                    if s.gt_depth == 0 {
-                        if let Some(p) = s.parts.take() {
-                            parts = p;
-                            continue;
-                        }
-                        as_state = None;
-                    }
-                }
-                if !parts.is_empty() {
-                    let name = Name {
-                        parts: std::mem::take(&mut parts),
-                    };
-                    // Ignore names where all parts are just integers.
-                    if !name.parts.iter().all(|p| p.parse::<i64>().is_ok()) {
-                        out.push(name)
-                    }
-                }
-            }
-            DemangleToken::UnsupportedEscape(esc) => bail!("Unsupported escape `{esc}`"),
-        }
-    }
-    if !parts.is_empty() {
-        out.push(Name { parts })
-    }
-    Ok(())
 }
 
 impl<'data> Display for Symbol<'data> {

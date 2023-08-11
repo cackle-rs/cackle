@@ -1,4 +1,8 @@
 use crate::cowarc::Utf8Bytes;
+use crate::demangle::DemangleToken;
+use crate::demangle::NonMangledIterator;
+use anyhow::bail;
+use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
 
@@ -30,47 +34,85 @@ impl<'data> Name<'data> {
 ///   ["std", "fmt", "Debug", "fmt"],
 /// ]
 pub(crate) fn split_names(composite: &str) -> Vec<Name> {
-    let mut input = composite;
-    let mut all_names: Vec<Name> = Vec::new();
+    let mut names: Vec<Name> = Vec::new();
+    // The following unwrap should always succeed, since NonMangledIterator never produces
+    // DemangleToken::UnsupportedEscape, which is the only failure mode for collect_names.
+    collect_names(NonMangledIterator::new(composite), &mut names).unwrap();
+    names
+}
+
+pub(crate) fn collect_names<'data, I: Iterator<Item = DemangleToken<'data>>>(
+    it: I,
+    out: &mut Vec<Name<'data>>,
+) -> Result<()> {
     let mut parts = Vec::new();
-    // True if we encountered " as ". When we subsequently encounter '>', we'll ignore it so
-    // that the subsequent name part gets added to whatever part came after the " as ".
-    let mut as_active = false;
-    loop {
-        let end_word = input
-            .char_indices()
-            .find_map(|(pos, ch)| "():&<>, ".contains(ch).then_some(pos))
-            .unwrap_or(input.len());
-        let part = &input[..end_word];
-        if !part.is_empty() && part != "mut" {
-            parts.push(Utf8Bytes::Borrowed(part));
-        }
-        input = &input[end_word..];
-        if let Some(rest) = input.strip_prefix(" as ") {
-            all_names.push(Name {
-                parts: std::mem::take(&mut parts),
-            });
-            input = rest;
-            as_active = true;
-        } else if let Some(ch) = input.chars().next() {
-            if "()<>,".contains(ch) {
-                if as_active {
-                    as_active = false;
-                } else if !parts.is_empty() {
-                    all_names.push(Name {
-                        parts: std::mem::take(&mut parts),
-                    });
+    let mut as_state = None;
+    for token in it {
+        match token {
+            DemangleToken::Text(text) => {
+                if text != "mut" {
+                    parts.push(Utf8Bytes::Borrowed(text))
                 }
             }
-            input = &input[1..];
-        } else {
-            break;
+            DemangleToken::Char(ch) => {
+                match ch {
+                    '}' if parts == [Utf8Bytes::Borrowed("closure")] => {
+                        parts.clear();
+                    }
+                    ' ' if parts == [Utf8Bytes::Borrowed("as")] => {
+                        parts.clear();
+                        as_state = Some(AsState {
+                            parts: None,
+                            gt_depth: 1,
+                        });
+                    }
+                    '<' => {
+                        if let Some(s) = as_state.as_mut() {
+                            s.gt_depth += 1;
+                        }
+                    }
+                    '>' => {
+                        if let Some(s) = as_state.as_mut() {
+                            s.gt_depth -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(s) = as_state.as_mut() {
+                    if !parts.is_empty() && s.parts.is_none() {
+                        s.parts = Some(std::mem::take(&mut parts));
+                    }
+                    if s.gt_depth == 0 {
+                        if let Some(p) = s.parts.take() {
+                            parts = p;
+                            continue;
+                        }
+                        as_state = None;
+                    }
+                }
+                if !parts.is_empty() {
+                    let name = Name {
+                        parts: std::mem::take(&mut parts),
+                    };
+                    // Ignore names where all parts are just integers.
+                    if !name.parts.iter().all(|p| p.parse::<i64>().is_ok()) {
+                        out.push(name)
+                    }
+                }
+            }
+            DemangleToken::UnsupportedEscape(esc) => bail!("Unsupported escape `{esc}`"),
         }
     }
     if !parts.is_empty() {
-        all_names.push(Name { parts });
+        out.push(Name { parts })
     }
-    all_names
+    Ok(())
+}
+
+#[derive(Debug)]
+struct AsState<'a> {
+    parts: Option<Vec<Utf8Bytes<'a>>>,
+    gt_depth: i32,
 }
 
 impl<'data> Display for Name<'data> {
@@ -112,7 +154,6 @@ mod tests {
             vec![
                 vec!["core", "ptr", "drop_in_place"],
                 vec!["std", "rt", "lang_start"],
-                vec!["{{closure}}"],
             ]
         );
     }
