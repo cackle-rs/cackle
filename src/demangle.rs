@@ -4,14 +4,16 @@
 //! avoiding heap allocation. This demangler was built experimentally based on observed mangled
 //! symbols. We almost certainly get stuff wrong.
 
+use anyhow::anyhow;
+use anyhow::bail;
+use anyhow::Result;
+
 #[derive(Debug)]
 pub(crate) enum DemangleToken<'data> {
     Text(&'data str),
-    Escape(Escape<'data>),
+    Char(char),
+    UnsupportedEscape(&'data str),
 }
-
-#[derive(Debug)]
-pub(crate) struct Escape<'data>(&'data str);
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct DemangleIterator<'data> {
@@ -35,19 +37,21 @@ impl<'data> DemangleIterator<'data> {
     }
 }
 
-impl<'data> Escape<'data> {
-    pub(crate) fn symbol(&self) -> Option<char> {
-        match self.0 {
-            "LT" => Some('<'),
-            "GT" => Some('>'),
-            "LP" => Some('('),
-            "RP" => Some(')'),
-            esc => {
-                if let Some(hex) = esc.strip_prefix('u') {
-                    return std::char::from_u32(u32::from_str_radix(hex, 16).ok()?);
-                }
-                None
+fn symbol(esc: &str) -> Result<char> {
+    match esc {
+        "LT" => Ok('<'),
+        "GT" => Ok('>'),
+        "LP" => Ok('('),
+        "RP" => Ok(')'),
+        "C" => Ok(','),
+        "BP" => Ok('*'),
+        "RF" => Ok('&'),
+        esc => {
+            if let Some(hex) = esc.strip_prefix('u') {
+                return std::char::from_u32(u32::from_str_radix(hex, 16)?)
+                    .ok_or_else(|| anyhow!("Invalid char"));
             }
+            bail!("Unsupported demangle escape `{esc}`");
         }
     }
 }
@@ -66,7 +70,10 @@ impl<'data> Iterator for DemangleIterator<'data> {
             if let Some(rest) = data.strip_prefix('$') {
                 if let Some(end_escape) = rest.find('$') {
                     *data = &rest[end_escape + 1..];
-                    return Some(DemangleToken::Escape(Escape(&rest[..end_escape])));
+                    if let Ok(ch) = symbol(&rest[..end_escape]) {
+                        return Some(DemangleToken::Char(ch));
+                    }
+                    return Some(DemangleToken::UnsupportedEscape(&rest[..end_escape]));
                 }
             }
             let len = data.len();
@@ -107,7 +114,8 @@ impl<'data> Iterator for DemangleIterator<'data> {
 mod tests {
     use super::*;
 
-    fn parts(mangled: &str) -> Vec<String> {
+    #[track_caller]
+    fn check(mangled: &str, expected: &[&str]) {
         fn collect_parts(mut it: DemangleIterator, out: &mut Vec<String>) {
             loop {
                 let prev_it = it;
@@ -117,13 +125,8 @@ mod tests {
                         panic!("Invalid empty text token from iterator: {prev_it:?}");
                     }
                     DemangleToken::Text(text) => out.push(text.to_owned()),
-                    DemangleToken::Escape(escape) => {
-                        if let Some(sym) = escape.symbol() {
-                            out.push(sym.to_string())
-                        } else {
-                            out.push(escape.0.to_owned())
-                        }
-                    }
+                    DemangleToken::Char(ch) => out.push(ch.to_string()),
+                    DemangleToken::UnsupportedEscape(esc) => out.push(esc.to_owned()),
                 }
             }
         }
@@ -131,51 +134,105 @@ mod tests {
         let it = DemangleIterator::new(mangled);
         let mut out = Vec::new();
         collect_parts(it, &mut out);
-        out
+        assert_eq!(out, expected);
     }
 
     #[test]
     fn test_non_mangled() {
-        assert!(parts("").is_empty());
-        assert!(parts("foo").is_empty());
+        check("", &[]);
+        check("foo", &[]);
     }
 
     #[test]
     fn test_invalid() {
-        assert!(parts("_Z10").is_empty());
+        check("_Z10", &[]);
     }
 
     #[test]
     fn test_simple() {
-        assert_eq!(
-            parts("_ZN3std2fs5write17h0f72782372833d23E"),
-            vec!["std", "fs", "write", "h0f72782372833d23"]
+        check(
+            "_ZN3std2fs5write17h0f72782372833d23E",
+            &["std", "fs", "write", "h0f72782372833d23"],
         );
     }
 
     #[test]
     fn test_nested() {
-        assert_eq!(
-            parts("_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE"),
-            vec!["<", "alloc", "string", "String", " ", "as", " ", "core", "fmt", "Debug", ">", "fmt", "h3b29bd412ff2951f"]
+        check("_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
+            &["<", "alloc", "string", "String", " ", "as", " ", "core", "fmt", "Debug", ">", "fmt", "h3b29bd412ff2951f"]
         );
     }
 
     #[test]
     fn test_generics() {
-        assert_eq!(
-            parts("_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE"),
-            vec!["core", "ptr", "drop_in_place", "<", "std", "rt", "lang_start", "<", "(", ")", ">",
+        check("_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE",
+            &["core", "ptr", "drop_in_place", "<", "std", "rt", "lang_start", "<", "(", ")", ">",
                 "{", "{", "closure", "}", "}", ">", "h0bb7e9fe967fc41c"]
         );
     }
 
     #[test]
     fn test_literal_number() {
-        assert_eq!(
-            parts("_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E"),
-            vec!["<", "proc_macro2", "Span", " ", "as", " ", "syn", "span", "IntoSpans", "<",
+        check("_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E",
+            &["<", "proc_macro2", "Span", " ", "as", " ", "syn", "span", "IntoSpans", "<",
                 "[", "proc_macro2", "Span", ";", " ", "1", "]", ">", ">", "into_spans", "h8cc941d826bfc6f7"]
+        );
+    }
+
+    #[test]
+    fn test_other() {
+        check(
+            "_ZN5alloc5boxed16Box$LT$T$C$A$GT$11from_raw_in17he8866793064ad1a4E",
+            &[
+                "alloc",
+                "boxed",
+                "Box",
+                "<",
+                "T",
+                ",",
+                "A",
+                ">",
+                "from_raw_in",
+                "he8866793064ad1a4",
+            ],
+        );
+        check(
+            "_ZN4core3ptr7mut_ptr31_$LT$impl$u20$$BP$mut$u20$T$GT$17wrapping_byte_sub17hc0db533e028f9792E",
+            &[
+                "core",
+                "ptr",
+                "mut_ptr",
+                "<",
+                "impl",
+                " ",
+                "*",
+                "mut",
+                " ",
+                "T",
+                ">",
+                "wrapping_byte_sub",
+                "hc0db533e028f9792",
+            ],
+        );
+        check(
+            "_ZN55_$LT$$RF$T$u20$as$u20$core..convert..AsRef$LT$U$GT$$GT$6as_ref17hc407bb9d235949dfE",
+            &[
+                "<",
+                "&",
+                "T",
+                " ",
+                "as",
+                " ",
+                "core",
+                "convert",
+                "AsRef",
+                "<",
+                "U",
+                ">",
+                ">",
+                "as_ref",
+                "hc407bb9d235949df",
+            ],
         );
     }
 }

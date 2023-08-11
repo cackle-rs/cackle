@@ -3,6 +3,8 @@ use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleIterator;
 use crate::demangle::DemangleToken;
 use crate::names::Name;
+use anyhow::bail;
+use anyhow::Context;
 use anyhow::Result;
 use rustc_demangle::demangle;
 use std::fmt::Debug;
@@ -100,7 +102,13 @@ fn names_from_bytes(bytes: &[u8]) -> Result<Vec<Name>> {
     collect_names(
         DemangleIterator::new(std::str::from_utf8(bytes)?),
         &mut all_names,
-    );
+    )
+    .with_context(|| {
+        format!(
+            "Failed to get names from: {}",
+            String::from_utf8_lossy(bytes)
+        )
+    })?;
     Ok(all_names)
 }
 
@@ -110,30 +118,30 @@ struct AsState<'a> {
     gt_depth: i32,
 }
 
-fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>) {
+fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>) -> Result<()> {
     let mut parts = Vec::new();
     let mut as_state = None;
     for token in it {
         match token {
             DemangleToken::Text(text) => parts.push(Utf8Bytes::Borrowed(text)),
-            DemangleToken::Escape(esc) => {
-                match esc.symbol() {
-                    Some('}') if parts == [Utf8Bytes::Borrowed("closure")] => {
+            DemangleToken::Char(ch) => {
+                match ch {
+                    '}' if parts == [Utf8Bytes::Borrowed("closure")] => {
                         parts.clear();
                     }
-                    Some(' ') if parts == [Utf8Bytes::Borrowed("as")] => {
+                    ' ' if parts == [Utf8Bytes::Borrowed("as")] => {
                         parts.clear();
                         as_state = Some(AsState {
                             parts: None,
                             gt_depth: 1,
                         });
                     }
-                    Some('<') => {
+                    '<' => {
                         if let Some(s) = as_state.as_mut() {
                             s.gt_depth += 1;
                         }
                     }
-                    Some('>') => {
+                    '>' => {
                         if let Some(s) = as_state.as_mut() {
                             s.gt_depth -= 1;
                         }
@@ -162,11 +170,13 @@ fn collect_names<'data>(it: DemangleIterator<'data>, out: &mut Vec<Name<'data>>)
                     }
                 }
             }
+            DemangleToken::UnsupportedEscape(esc) => bail!("Unsupported escape `{esc}`"),
         }
     }
     if !parts.is_empty() {
         out.push(Name { parts })
     }
+    Ok(())
 }
 
 impl<'data> Display for Symbol<'data> {
