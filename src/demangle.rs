@@ -90,11 +90,10 @@ impl<'data> Iterator for DemangleIterator<'data> {
                     return Some(DemangleToken::UnsupportedEscape(&rest[..end_escape]));
                 }
             }
-            let len = data.len();
             let end = data
-                .find('.')
-                .unwrap_or(len)
-                .min(data.find('$').unwrap_or(len));
+                .bytes()
+                .position(|b| b == b'.' || b == b'$')
+                .unwrap_or(data.len());
             let text = &data[..end];
             *data = &data[end..];
             return Some(DemangleToken::Text(text));
