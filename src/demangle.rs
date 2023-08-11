@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DemangleToken<'data> {
     Text(&'data str),
     Char(char),

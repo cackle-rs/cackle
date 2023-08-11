@@ -1,7 +1,7 @@
 use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
 use crate::demangle::NonMangledIterator;
-use anyhow::bail;
+use anyhow::anyhow;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -41,78 +41,171 @@ pub(crate) fn split_names(composite: &str) -> Vec<Name> {
     names
 }
 
-pub(crate) fn collect_names<'data, I: Iterator<Item = DemangleToken<'data>>>(
+pub(crate) fn collect_names<'data, I: Clone + Iterator<Item = DemangleToken<'data>>>(
     it: I,
     out: &mut Vec<Name<'data>>,
 ) -> Result<()> {
-    let mut parts = Vec::new();
-    let mut as_state = None;
-    for token in it {
+    let mut name_parts = Vec::new();
+    for token in NamesIterator::new(it) {
         match token {
-            DemangleToken::Text(text) => {
-                if text != "mut" {
-                    parts.push(Utf8Bytes::Borrowed(text))
-                }
-            }
-            DemangleToken::Char(ch) => {
-                match ch {
-                    '}' if parts == [Utf8Bytes::Borrowed("closure")] => {
-                        parts.clear();
-                    }
-                    ' ' if parts == [Utf8Bytes::Borrowed("as")] => {
-                        parts.clear();
-                        as_state = Some(AsState {
-                            parts: None,
-                            gt_depth: 1,
-                        });
-                    }
-                    '<' => {
-                        if let Some(s) = as_state.as_mut() {
-                            s.gt_depth += 1;
-                        }
-                    }
-                    '>' => {
-                        if let Some(s) = as_state.as_mut() {
-                            s.gt_depth -= 1;
-                        }
-                    }
-                    _ => {}
-                }
-                if let Some(s) = as_state.as_mut() {
-                    if !parts.is_empty() && s.parts.is_none() {
-                        s.parts = Some(std::mem::take(&mut parts));
-                    }
-                    if s.gt_depth == 0 {
-                        if let Some(p) = s.parts.take() {
-                            parts = p;
-                            continue;
-                        }
-                        as_state = None;
-                    }
-                }
-                if !parts.is_empty() {
-                    let name = Name {
-                        parts: std::mem::take(&mut parts),
-                    };
-                    // Ignore names where all parts are just integers.
-                    if !name.parts.iter().all(|p| p.parse::<i64>().is_ok()) {
-                        out.push(name)
-                    }
-                }
-            }
-            DemangleToken::UnsupportedEscape(esc) => bail!("Unsupported escape `{esc}`"),
+            NameToken::Part(part) => name_parts.push(Utf8Bytes::Borrowed(part)),
+            NameToken::EndName => out.push(Name {
+                parts: std::mem::take(&mut name_parts),
+            }),
+            NameToken::Error(error) => return Err(error),
         }
-    }
-    if !parts.is_empty() {
-        out.push(Name { parts })
     }
     Ok(())
 }
 
+struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>> {
+    it: I,
+    state: NamesIteratorState<I>,
+    brace_depth: i32,
+    as_final: Option<&'data str>,
+}
+
+impl<'data, I: Iterator<Item = DemangleToken<'data>>> NamesIterator<'data, I> {
+    fn new(it: I) -> Self {
+        Self {
+            it,
+            state: NamesIteratorState::Inactive,
+            brace_depth: 0,
+            as_final: None,
+        }
+    }
+}
+
+enum NameToken<'data> {
+    Part(&'data str),
+    EndName,
+    Error(anyhow::Error),
+}
+
+impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator for NamesIterator<'data, I> {
+    type Item = NameToken<'data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(token) = self.it.next() {
+            match token {
+                DemangleToken::Text(text) => {
+                    if text == "mut" {
+                        continue;
+                    }
+                    if self.brace_depth > 0 && text == "closure" {
+                        continue;
+                    }
+                    // Ignore numbers.
+                    if text.parse::<i64>().is_ok() {
+                        continue;
+                    }
+                    if text == "as" {
+                        let mut look_ahead = self.it.clone();
+                        if look_ahead.next() == Some(DemangleToken::Char(' ')) {
+                            self.it = look_ahead;
+                            self.state = NamesIteratorState::AsPrefix;
+                            continue;
+                        }
+                    }
+                    if self.as_final == Some(text)
+                        && self
+                            .as_final
+                            .map(|t| t.as_ptr() as usize == text.as_ptr() as usize)
+                            .unwrap_or(false)
+                    {
+                        // This text was already output as the final part of an as-name. Ignore it.
+                        continue;
+                    }
+                    match &self.state {
+                        NamesIteratorState::Inactive => {
+                            self.state = NamesIteratorState::OutputtingName;
+                        }
+                        NamesIteratorState::AsSkip { .. } => {
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    return Some(NameToken::Part(text));
+                }
+                DemangleToken::Char(ch) => {
+                    if let NamesIteratorState::AsPrefix = &self.state {
+                        self.state = NamesIteratorState::AsSkip {
+                            gt_depth: 1,
+                            return_point: self.it.clone(),
+                        };
+                    }
+                    match ch {
+                        '{' => self.brace_depth += 1,
+                        '}' => self.brace_depth -= 1,
+                        '<' => {
+                            if let NamesIteratorState::AsSkip { gt_depth, .. } = &mut self.state {
+                                *gt_depth += 1;
+                            }
+                        }
+                        '>' => {
+                            if let NamesIteratorState::AsSkip { gt_depth, .. } = &mut self.state {
+                                *gt_depth -= 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                    match &self.state {
+                        NamesIteratorState::OutputtingName => {
+                            self.state = NamesIteratorState::Inactive;
+                            return Some(NameToken::EndName);
+                        }
+                        NamesIteratorState::AsSkip {
+                            gt_depth,
+                            return_point,
+                        } => {
+                            if *gt_depth == 0 {
+                                match self.it.next() {
+                                    Some(DemangleToken::Text(text)) => {
+                                        self.it = return_point.clone();
+                                        self.as_final = Some(text);
+                                        self.state = NamesIteratorState::OutputtingName;
+                                        return Some(NameToken::Part(text));
+                                    }
+                                    other => {
+                                        return Some(NameToken::Error(anyhow!(
+                                            "Expected text after '>', got {other:?}"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                DemangleToken::UnsupportedEscape(esc) => {
+                    return Some(NameToken::Error(anyhow!("Unsupported escape `{esc}`")));
+                }
+            }
+        }
+        if matches!(&self.state, NamesIteratorState::OutputtingName) {
+            self.state = NamesIteratorState::Inactive;
+            return Some(NameToken::EndName);
+        }
+        None
+    }
+}
+
 #[derive(Debug)]
-struct AsState<'a> {
-    parts: Option<Vec<Utf8Bytes<'a>>>,
-    gt_depth: i32,
+enum NamesIteratorState<I> {
+    /// We're not outputting a anme and no 'as' token has been encountered yet.
+    Inactive,
+    /// We've output at least one part of a name.
+    OutputtingName,
+    /// Reading prefix. We're reading up until a name-terminator. e.g. in `<Foo as bar::Baz>::baz`,
+    /// we're somewhere in the `bar::Baz` part.
+    AsPrefix,
+    /// We've stopped reading the prefix and we're waiting until the '>' depth reaches zero.
+    AsSkip {
+        /// The number of '>' symbols we need before we read the final part.
+        gt_depth: i32,
+        /// An iterator pointing to where we'll come back to once we've finished with the as-name.
+        return_point: I,
+    },
 }
 
 impl<'data> Display for Name<'data> {

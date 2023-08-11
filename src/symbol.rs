@@ -181,8 +181,8 @@ mod tests {
             borrow(&symbol.names().unwrap()),
             vec![
                 vec!["proc_macro2", "Span"],
-                vec!["proc_macro2", "Span"],
                 vec!["syn", "span", "IntoSpans", "into_spans"],
+                vec!["proc_macro2", "Span"],
             ]
         );
     }
