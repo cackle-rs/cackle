@@ -12,7 +12,6 @@ use crate::checker::Checker;
 use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::crate_index::CrateSel;
-use crate::demangle::DemangleIterator;
 use crate::demangle::NonMangledIterator;
 use crate::location::SourceLocation;
 use crate::names::Name;
@@ -28,6 +27,7 @@ use anyhow::Context;
 use anyhow::Result;
 use ar::Archive;
 use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
@@ -276,52 +276,52 @@ impl<'input> ApiUsageCollector<'input> {
         trace!("{from_symbol} -> {target_symbol}");
 
         let mut from_apis = HashSet::new();
-        let mut from_symbol_names = self.bin.names_from_symbol(from_symbol)?;
-        while let Some((name, _)) = from_symbol_names.next_name()? {
-            from_apis.extend(checker.apis_for_name(&name).iter());
-        }
-        let mut target_symbol_names = self.bin.names_from_symbol(target_symbol)?;
+        self.bin
+            .names_and_apis_do(from_symbol, checker, |_, _, apis| {
+                from_apis.extend(apis.iter());
+            })?;
         let crate_names = checker.crate_names_from_source_path(location.filename())?;
-        while let Some((name, name_source)) = target_symbol_names.next_name()? {
-            for crate_sel in crate_names.as_ref() {
-                let crate_name = CrateName::from(crate_sel);
-                // If a package references another symbol within the same package,
-                // ignore it.
-                if name
-                    .parts
-                    .first()
-                    .map(|name_start| crate_name.as_ref() == &**name_start)
-                    .unwrap_or(false)
-                {
-                    continue;
-                }
-                for permission in checker.apis_for_name(&name) {
-                    if from_apis.contains(&permission) {
+        self.bin
+            .names_and_apis_do(target_symbol, checker, |name, name_source, apis| {
+                for crate_sel in crate_names.as_ref() {
+                    let crate_name = CrateName::from(crate_sel);
+                    // If a package references another symbol within the same package,
+                    // ignore it.
+                    if name
+                        .parts
+                        .first()
+                        .map(|name_start| crate_name.as_ref() == &**name_start)
+                        .unwrap_or(false)
+                    {
                         continue;
                     }
-                    let mut usages = BTreeMap::new();
-                    usages.insert(
-                        permission.clone(),
-                        vec![ApiUsage {
-                            source_location: location.clone(),
-                            from: from_symbol.to_heap(),
-                            to: name.to_heap(),
-                            to_symbol: target_symbol.to_heap(),
-                            to_source: name_source.to_owned(),
-                            debug_data: debug_data.cloned(),
-                        }],
-                    );
-                    let api_usage = ApiUsages {
-                        crate_sel: crate_sel.clone(),
-                        usages,
-                    };
-                    self.new_api_usages
-                        .entry(api_usage.deduplication_key())
-                        .or_default()
-                        .push(api_usage);
+                    for permission in apis {
+                        if from_apis.contains(&permission) {
+                            continue;
+                        }
+                        let mut usages = BTreeMap::new();
+                        usages.insert(
+                            permission.clone(),
+                            vec![ApiUsage {
+                                source_location: location.clone(),
+                                from: from_symbol.to_heap(),
+                                to: name.to_heap(),
+                                to_symbol: target_symbol.to_heap(),
+                                to_source: name_source.to_owned(),
+                                debug_data: debug_data.cloned(),
+                            }],
+                        );
+                        let api_usage = ApiUsages {
+                            crate_sel: crate_sel.clone(),
+                            usages,
+                        };
+                        self.new_api_usages
+                            .entry(api_usage.deduplication_key())
+                            .or_default()
+                            .push(api_usage);
+                    }
                 }
-            }
-        }
+            })?;
         Ok(())
     }
 
@@ -514,46 +514,31 @@ impl<'input> BinInfo<'input> {
 }
 
 impl<'input> BinInfo<'input> {
-    /// Returns names present either in `symbol` or in the debug info for `symbol`. Generally the
-    /// former is fully qualified, while the latter contains generics, so we need both.
-    fn names_from_symbol<'ret>(
-        &'ret self,
-        symbol: &'ret Symbol,
-    ) -> Result<SymbolNamesIterator<'ret>> {
-        let mut debug_name_state = None;
+    /// Runs `callback` for each name in `symbol` or in the name obtained for the debug information
+    /// for `symbol`. Also supplies information about the name source and a set of APIs that match
+    /// the name.
+    fn names_and_apis_do<'checker>(
+        &self,
+        symbol: &Symbol,
+        checker: &'checker Checker,
+        mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>),
+    ) -> Result<()> {
         if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
             if let Some(debug_name) = target_symbol_debug.name {
-                debug_name_state = Some((
-                    Arc::from(debug_name),
-                    NamesIterator::new(NonMangledIterator::new(debug_name)),
-                ));
+                let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
+                let debug_name: Arc<str> = Arc::from(debug_name);
+                while let Some(name) = it.next_name()? {
+                    let apis = checker.apis_for_name(&name);
+                    (callback)(name, NameSource::DebugName(debug_name.clone()), apis);
+                }
             }
         }
-        Ok(SymbolNamesIterator {
-            symbol,
-            symbol_it: symbol.names()?,
-            debug_name_state,
-        })
-    }
-}
-
-struct SymbolNamesIterator<'data> {
-    symbol: &'data Symbol<'data>,
-    symbol_it: NamesIterator<'data, DemangleIterator<'data>>,
-    debug_name_state: Option<(Arc<str>, NamesIterator<'data, NonMangledIterator<'data>>)>,
-}
-
-impl<'data> SymbolNamesIterator<'data> {
-    fn next_name(&mut self) -> Result<Option<(Name<'data>, NameSource<'data>)>> {
-        if let Some(name) = self.symbol_it.next_name()? {
-            return Ok(Some((name, NameSource::Symbol(self.symbol.clone()))));
+        let mut symbol_it = symbol.names()?;
+        while let Some(name) = symbol_it.next_name()? {
+            let apis = checker.apis_for_name(&name);
+            (callback)(name, NameSource::Symbol(symbol.clone()), apis);
         }
-        if let Some(state) = self.debug_name_state.as_mut() {
-            if let Some(name) = state.1.next_name()? {
-                return Ok(Some((name, NameSource::DebugName(state.0.clone()))));
-            }
-        }
-        Ok(None)
+        Ok(())
     }
 }
 
