@@ -18,6 +18,10 @@ impl<'data> Name<'data> {
             parts: self.parts.iter().map(|p| p.to_heap()).collect(),
         }
     }
+
+    pub(crate) fn parts(&self) -> impl Iterator<Item = &str> {
+        self.parts.iter().map(|p| p.as_ref())
+    }
 }
 
 /// Splits a composite name into names. Each name is further split on "::". For example:

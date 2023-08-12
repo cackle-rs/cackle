@@ -34,11 +34,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 
+mod api_map;
+
 pub(crate) struct Checker {
     /// For each name, the set of permissions active for that name and all names that have this name
     /// as a prefix.
-    permissions_by_prefix: FxHashMap<Name<'static>, FxHashSet<PermissionName>>,
-    empty_permissions: FxHashSet<PermissionName>,
+    permissions_by_prefix: api_map::ApiMap,
     proc_macros: FxHashSet<PackageId>,
     pub(crate) crate_infos: FxHashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
@@ -90,7 +91,6 @@ impl Checker {
         let timings = TimingCollector::new(args.print_timing);
         Self {
             permissions_by_prefix: Default::default(),
-            empty_permissions: Default::default(),
             crate_infos: Default::default(),
             config_path,
             config: Default::default(),
@@ -135,28 +135,27 @@ impl Checker {
         for api in config.apis.values() {
             for path in api.include.iter().chain(api.exclude.iter()) {
                 self.permissions_by_prefix
-                    .entry(crate::names::split_simple(&path.prefix).to_heap())
-                    .or_default();
+                    .create_entry(crate::names::split_simple(&path.prefix).parts())
             }
         }
         for (perm_name, api) in &config.apis {
             for path in &api.include {
                 let name = &crate::names::split_simple(&path.prefix);
-                for (prefix, permissions) in &mut self.permissions_by_prefix {
-                    if prefix.parts.starts_with(&name.parts) {
+                self.permissions_by_prefix
+                    .mut_tree(name.parts())
+                    .update_subtree(&|permissions| {
                         permissions.insert(perm_name.clone());
-                    }
-                }
+                    });
             }
         }
         for (perm_name, api) in &config.apis {
             for path in &api.exclude {
                 let name = &crate::names::split_simple(&path.prefix);
-                for (prefix, permissions) in &mut self.permissions_by_prefix {
-                    if prefix.parts.starts_with(&name.parts) {
+                self.permissions_by_prefix
+                    .mut_tree(name.parts())
+                    .update_subtree(&|permissions| {
                         permissions.remove(perm_name);
-                    }
-                }
+                    });
             }
         }
         for (crate_name, crate_config) in &config.packages {
@@ -314,24 +313,8 @@ impl Checker {
 
     /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
     /// might return the APIs `{"net"}`.
-    ///
-    /// A note on the lifetimes here. In theory, the returned reference should be valid for 'this,
-    /// however due to some sort of variance issue / limitation, the lifetime 'data gets involved,
-    /// even though it's tied to the key of the hashmap, not the value. See rust issues #103289 and
-    /// #89265.
-    pub(crate) fn apis_for_name<'ret, 'this: 'ret, 'data: 'ret>(
-        &'this self,
-        name: &Name<'data>,
-    ) -> &'ret FxHashSet<PermissionName> {
-        let mut name = name.clone();
-        loop {
-            if let Some(permissions) = self.permissions_by_prefix.get(&name) {
-                return permissions;
-            }
-            if name.parts.pop().is_none() {
-                return &self.empty_permissions;
-            }
-        }
+    pub(crate) fn apis_for_name(&self, name: &Name) -> &FxHashSet<PermissionName> {
+        self.permissions_by_prefix.get(name.parts())
     }
 
     pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
