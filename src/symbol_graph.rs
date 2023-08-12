@@ -527,16 +527,28 @@ impl<'input> BinInfo<'input> {
             if let Some(debug_name) = target_symbol_debug.name {
                 let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
                 let debug_name: Arc<str> = Arc::from(debug_name);
-                while let Some(name) = it.next_name()? {
-                    let apis = checker.apis_for_name(&name);
-                    (callback)(name, NameSource::DebugName(debug_name.clone()), apis);
+                while let Some((parts, name)) = it.next_name()? {
+                    let apis = checker.apis_for_name_iterator(parts);
+                    if !apis.is_empty() {
+                        (callback)(
+                            name.create_name()?,
+                            NameSource::DebugName(debug_name.clone()),
+                            apis,
+                        );
+                    }
                 }
             }
         }
         let mut symbol_it = symbol.names()?;
-        while let Some(name) = symbol_it.next_name()? {
-            let apis = checker.apis_for_name(&name);
-            (callback)(name, NameSource::Symbol(symbol.clone()), apis);
+        while let Some((parts, name)) = symbol_it.next_name()? {
+            let apis = checker.apis_for_name_iterator(parts);
+            if !apis.is_empty() {
+                (callback)(
+                    name.create_name()?,
+                    NameSource::Symbol(symbol.clone()),
+                    apis,
+                );
+            }
         }
         Ok(())
     }

@@ -1,6 +1,7 @@
 use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -37,36 +38,118 @@ impl<'data> Name<'data> {
 ///   ["std", "fmt", "Debug", "fmt"],
 /// ]
 pub(crate) struct NamesIterator<'data, I: Iterator<Item = DemangleToken<'data>>> {
+    current: NamesIteratorPos<'data, I>,
+    error: Option<anyhow::Error>,
+}
+
+#[derive(Clone)]
+pub(crate) struct NamesIteratorPos<'data, I: Iterator<Item = DemangleToken<'data>>> {
     it: I,
     state: NamesIteratorState<I>,
     brace_depth: i32,
     as_final: Option<&'data str>,
+    ended: bool,
 }
 
 impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> NamesIterator<'data, I> {
     pub(crate) fn new(it: I) -> Self {
         Self {
-            it,
-            state: NamesIteratorState::Inactive,
-            brace_depth: 0,
-            as_final: None,
+            current: NamesIteratorPos {
+                it,
+                state: NamesIteratorState::Inactive,
+                brace_depth: 0,
+                as_final: None,
+                ended: false,
+            },
+            error: None,
         }
     }
 
-    pub(crate) fn next_name(&mut self) -> Result<Option<Name<'data>>> {
+    /// Returns:
+    ///  0: An iterator through the parts of the next name.
+    ///  1: A token that can, if needed be used to produce a full copy of that name after the fact.
+    ///
+    /// The last returned name will be empty.
+    pub(crate) fn next_name(
+        &mut self,
+    ) -> Result<Option<(NamePartsIterator<'_, 'data, I>, LazyName<'data, I>)>> {
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
+        if self.current.ended {
+            return Ok(None);
+        }
+        let name = LazyName {
+            it: self.current.clone(),
+        };
+        Ok(Some((
+            NamePartsIterator {
+                it: self,
+                ended: false,
+            },
+            name,
+        )))
+    }
+}
+
+pub(crate) struct LazyName<'data, I: Iterator<Item = DemangleToken<'data>>> {
+    it: NamesIteratorPos<'data, I>,
+}
+
+impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> LazyName<'data, I> {
+    pub(crate) fn create_name(self) -> Result<Name<'data>> {
         let mut parts = Vec::new();
-        for token in self.by_ref() {
+        for token in self.it {
             match token {
                 NameToken::Part(part) => {
                     parts.push(Utf8Bytes::Borrowed(part));
                 }
                 NameToken::EndName => {
-                    return Ok(Some(Name { parts }));
+                    return Ok(Name { parts });
                 }
                 NameToken::Error(error) => return Err(error),
             }
         }
-        Ok(None)
+        bail!("Reached end of `create_name`");
+    }
+}
+
+/// Iterates over the parts of a name, where the source of that name is a `NamesIterator`. Handles
+/// incomplete iteration by advancing to the next name.
+pub(crate) struct NamePartsIterator<'it, 'data, I: Clone + Iterator<Item = DemangleToken<'data>>> {
+    it: &'it mut NamesIterator<'data, I>,
+    ended: bool,
+}
+
+impl<'it, 'data, I> Iterator for NamePartsIterator<'it, 'data, I>
+where
+    I: Clone + Iterator<Item = DemangleToken<'data>>,
+{
+    type Item = &'data str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ended {
+            return None;
+        }
+        match self.it.current.next()? {
+            NameToken::Part(text) => return Some(text),
+            NameToken::EndName => {
+                self.ended = true;
+            }
+            NameToken::Error(error) => self.it.error = Some(error),
+        }
+        None
+    }
+}
+
+impl<'it, 'data, I> Drop for NamePartsIterator<'it, 'data, I>
+where
+    I: Clone + Iterator<Item = DemangleToken<'data>>,
+{
+    fn drop(&mut self) {
+        // Make sure that we've consumed to the end before we're dropped, otherwise the next call to
+        // `next_name` will get the remainder of the name for this iterator.
+        while self.next().is_some() {}
     }
 }
 
@@ -76,7 +159,9 @@ pub(crate) enum NameToken<'data> {
     Error(anyhow::Error),
 }
 
-impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator for NamesIterator<'data, I> {
+impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
+    for NamesIteratorPos<'data, I>
+{
     type Item = NameToken<'data>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -188,11 +273,12 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator for Names
             self.state = NamesIteratorState::Inactive;
             return Some(NameToken::EndName);
         }
+        self.ended = true;
         None
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum NamesIteratorState<I> {
     /// We're not outputting a anme and no 'as' token has been encountered yet.
     Inactive,
@@ -238,7 +324,7 @@ mod tests {
     fn get_name_vecs(input: &str) -> Vec<Vec<&str>> {
         let mut out = Vec::new();
         let mut name_parts = Vec::new();
-        for token in NamesIterator::new(NonMangledIterator::new(input)) {
+        for token in NamesIterator::new(NonMangledIterator::new(input)).current {
             match token {
                 NameToken::Part(part) => name_parts.push(part),
                 NameToken::EndName => out.push(std::mem::take(&mut name_parts)),

@@ -313,8 +313,11 @@ impl Checker {
 
     /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
     /// might return the APIs `{"net"}`.
-    pub(crate) fn apis_for_name(&self, name: &Name) -> &FxHashSet<PermissionName> {
-        self.permissions_by_prefix.get(name.parts())
+    pub(crate) fn apis_for_name_iterator<'a>(
+        &self,
+        key_it: impl Iterator<Item = &'a str>,
+    ) -> &FxHashSet<PermissionName> {
+        self.permissions_by_prefix.get(key_it)
     }
 
     pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
@@ -401,13 +404,11 @@ pub(crate) fn is_in_rust_std(source_path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::config::testing::parse;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::fmt::Display;
-
-    use super::*;
-    use crate::config::testing::parse;
-    use crate::cowarc::Utf8Bytes;
 
     // Wraps a type T and makes it implement Debug by deferring to the Display implementation of T.
     struct DebugAsDisplay<T: Display>(T);
@@ -433,8 +434,7 @@ mod tests {
         let mut checker = checker_for_testing();
         checker.update_config(parse(config).unwrap());
 
-        let parts: Vec<Utf8Bytes> = path.iter().map(|s| Utf8Bytes::Borrowed(s)).collect();
-        let apis = checker.apis_for_name(&Name { parts });
+        let apis = checker.apis_for_name_iterator(path.iter().cloned());
         let mut api_names: Vec<_> = apis.iter().map(AsRef::as_ref).collect();
         api_names.sort();
         assert_eq!(api_names, expected);
@@ -485,13 +485,7 @@ mod tests {
 
         let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
         let permissions = checker
-            .apis_for_name(&Name {
-                parts: vec![
-                    Utf8Bytes::Borrowed("std"),
-                    Utf8Bytes::Borrowed("fs"),
-                    Utf8Bytes::Borrowed("read_to_string"),
-                ],
-            })
+            .apis_for_name_iterator(["std", "fs", "read_to_string"].into_iter())
             .clone();
         assert_eq!(permissions.len(), 1);
         assert_eq!(

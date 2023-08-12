@@ -100,18 +100,14 @@ impl<'data> Debug for Symbol<'data> {
 
 #[cfg(test)]
 mod tests {
-    use crate::names::NameToken;
-
     use super::*;
 
-    fn get_name_vecs<'a>(input: NamesIterator<'a, DemangleIterator<'a>>) -> Vec<Vec<&'a str>> {
+    fn get_name_vecs<'a>(mut input: NamesIterator<'a, DemangleIterator<'a>>) -> Vec<Vec<&'a str>> {
         let mut out = Vec::new();
-        let mut name_parts = Vec::new();
-        for token in input {
-            match token {
-                NameToken::Part(part) => name_parts.push(part),
-                NameToken::EndName => out.push(std::mem::take(&mut name_parts)),
-                NameToken::Error(error) => panic!("{error}"),
+        while let Some((parts, _)) = input.next_name().unwrap() {
+            let parts: Vec<_> = parts.collect();
+            if !parts.is_empty() {
+                out.push(parts);
             }
         }
         out
