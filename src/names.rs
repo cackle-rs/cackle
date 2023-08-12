@@ -198,7 +198,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                     // Rust mangled names end with ::h{some hash}. We don't need this, so drop it.
                     if text.len() == 17
                         && text.starts_with('h')
-                        && u64::from_str_radix(&text[1..], 16).is_ok()
+                        && text[1..].bytes().all(|b| b.is_ascii_hexdigit())
                         && self.it.clone().next().is_none()
                     {
                         continue;
