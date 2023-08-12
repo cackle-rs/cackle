@@ -155,12 +155,20 @@ impl<'data> Iterator for NonMangledIterator<'data> {
         }
         let end = self
             .data
-            .chars()
-            .position(|ch| IS_PART_SEPARATOR.get(ch as usize).cloned().unwrap_or(false))
+            .char_indices()
+            .find_map(|(index, ch)| {
+                IS_PART_SEPARATOR
+                    .get(ch as usize)
+                    .cloned()
+                    // We currently treat all multi-byte characters as separators for consistency
+                    // with our demangler.
+                    .unwrap_or(true)
+                    .then_some(index)
+            })
             .unwrap_or(self.data.len());
         if end == 0 {
             let ch = self.data.chars().next().unwrap();
-            self.data = &self.data[1..];
+            self.data = &self.data[ch.len_utf8()..];
             return Some(DemangleToken::Char(ch));
         }
         let (text, rest) = self.data.split_at(end);
@@ -242,6 +250,25 @@ mod tests {
         check("_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E",
             &["<", "proc_macro2", "Span", " ", "as", " ", "syn", "span", "IntoSpans", "<",
                 "[", "proc_macro2", "Span", ";", " ", "1", "]", ">", ">", "into_spans", "h8cc941d826bfc6f7"]
+        );
+    }
+
+    #[test]
+    fn test_multibyte_character() {
+        // Probably ideally we'd split with "cackle_こけこっこ" as a single part. For now, we just
+        // make sure that we don't crash.
+        check(
+            "_ZN2u142cackle_$u3053$$u3051$$u3053$$u3063$$u3053$17h188ecf9f6da65514E",
+            &[
+                "u1",
+                "cackle_",
+                "こ",
+                "け",
+                "こ",
+                "っ",
+                "こ",
+                "h188ecf9f6da65514",
+            ],
         );
     }
 
