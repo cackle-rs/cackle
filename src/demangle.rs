@@ -123,6 +123,26 @@ impl<'data> Iterator for DemangleIterator<'data> {
     }
 }
 
+/// A lookup table for determining whether a character should end a token.
+const IS_PART_SEPARATOR: [bool; 128] = {
+    let mut result = [false; 128];
+    result[b'<' as usize] = true;
+    result[b'>' as usize] = true;
+    result[b'[' as usize] = true;
+    result[b']' as usize] = true;
+    result[b'(' as usize] = true;
+    result[b')' as usize] = true;
+    result[b'{' as usize] = true;
+    result[b'}' as usize] = true;
+    result[b';' as usize] = true;
+    result[b'&' as usize] = true;
+    result[b'*' as usize] = true;
+    result[b':' as usize] = true;
+    result[b',' as usize] = true;
+    result[b' ' as usize] = true;
+    result
+};
+
 impl<'data> Iterator for NonMangledIterator<'data> {
     type Item = DemangleToken<'data>;
 
@@ -136,7 +156,7 @@ impl<'data> Iterator for NonMangledIterator<'data> {
         let end = self
             .data
             .chars()
-            .position(|ch| "<>[](){};&*:, ".contains(ch))
+            .position(|ch| IS_PART_SEPARATOR.get(ch as usize).cloned().unwrap_or(false))
             .unwrap_or(self.data.len());
         if end == 0 {
             let ch = self.data.chars().next().unwrap();
