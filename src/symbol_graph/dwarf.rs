@@ -1,5 +1,6 @@
 use crate::location::SourceLocation;
 use crate::symbol::Symbol;
+use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -14,8 +15,6 @@ use gimli::Unit;
 use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Default)]
 pub(crate) struct DebugArtifacts<'input> {
@@ -39,7 +38,24 @@ pub(crate) struct SymbolDebugInfo<'input> {
 pub(crate) struct InlinedFunction<'input> {
     pub(crate) from_symbol: Symbol<'input>,
     pub(crate) to_symbol: Symbol<'input>,
-    pub(crate) location: SourceLocation,
+    call_location: CallLocation<'input>,
+}
+
+impl<'input> InlinedFunction<'input> {
+    pub(crate) fn location(&self) -> Result<SourceLocation> {
+        let line = self
+            .call_location
+            .line
+            .ok_or_else(|| anyhow!("Inlined call without line numbers are not supported"))?;
+        let mut path = self.call_location.compdir.to_owned();
+        if let Some(dir) = self.call_location.directory {
+            path.push(dir);
+        }
+        if let Some(filename) = self.call_location.filename {
+            path.push(filename);
+        }
+        Ok(SourceLocation::new(path, line, self.call_location.column))
+    }
 }
 
 impl<'input> DebugArtifacts<'input> {
@@ -72,11 +88,20 @@ impl<'input> DwarfScanner<'input> {
                     frames.pop();
                     continue;
                 };
-                let mut inline_scanner = InlinedFunctionScanner::default();
+                let mut inline_scanner = InlinedFunctionScanner {
+                    symbol: None,
+                    call_location: CallLocation {
+                        compdir,
+                        directory: None,
+                        filename: None,
+                        line: None,
+                        column: None,
+                    },
+                };
                 let mut symbol_scanner = SymbolDebugInfoScanner::default();
                 for spec in abbrev.attributes() {
                     let attr = entries.read_attribute(*spec)?;
-                    inline_scanner.handle_attribute(attr, &unit, dwarf, line_program, compdir)?;
+                    inline_scanner.handle_attribute(attr, &unit, dwarf, line_program)?;
                     symbol_scanner.handle_attribute(attr)?;
                 }
                 let symbol = inline_scanner.symbol.clone();
@@ -227,12 +252,18 @@ struct FrameState<'input> {
     symbol: Option<Symbol<'input>>,
 }
 
-#[derive(Default)]
 struct InlinedFunctionScanner<'input> {
     symbol: Option<Symbol<'input>>,
-    call_file: Option<PathBuf>,
-    call_line: Option<u32>,
-    call_column: Option<u32>,
+    call_location: CallLocation<'input>,
+}
+
+struct CallLocation<'input> {
+    // TODO: Do we need both compdir and directory?
+    compdir: &'input Path,
+    directory: Option<&'input OsStr>,
+    filename: Option<&'input OsStr>,
+    line: Option<u32>,
+    column: Option<u32>,
 }
 
 impl<'input> InlinedFunctionScanner<'input> {
@@ -242,7 +273,6 @@ impl<'input> InlinedFunctionScanner<'input> {
         unit: &Unit<EndianSlice<'input, LittleEndian>>,
         dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
         line_program: &IncompleteLineProgram<EndianSlice<'input, LittleEndian>>,
-        compdir: &Path,
     ) -> Result<()> {
         match attr.name() {
             gimli::DW_AT_linkage_name => {
@@ -255,17 +285,14 @@ impl<'input> InlinedFunctionScanner<'input> {
             gimli::DW_AT_call_file => {
                 let (directory, filename) =
                     get_directory_and_filename(attr.value(), line_program.header(), dwarf, unit)?;
-                if let Some(directory) = directory {
-                    self.call_file = Some(compdir.join(directory).join(filename));
-                } else {
-                    self.call_file = Some(compdir.join(filename).to_owned());
-                }
+                self.call_location.directory = directory;
+                self.call_location.filename = Some(filename);
             }
             gimli::DW_AT_call_line => {
-                self.call_line = attr.udata_value().map(|v| v as u32);
+                self.call_location.line = attr.udata_value().map(|v| v as u32);
             }
             gimli::DW_AT_call_column => {
-                self.call_column = attr.udata_value().map(|v| v as u32);
+                self.call_location.column = attr.udata_value().map(|v| v as u32);
             }
             _ => (),
         }
@@ -279,20 +306,12 @@ impl<'input> InlinedFunctionScanner<'input> {
         let Some(symbol) = self.symbol else {
             return None;
         };
-        let Some(file) = self.call_file else {
-            return None;
-        };
-        let Some(line) = self.call_line else {
-            return None;
-        };
         for frame in frames.iter().rev() {
             if let Some(prev_sym) = frame.symbol.as_ref() {
-                let location =
-                    SourceLocation::new(Arc::from(file.as_path()), line, self.call_column);
                 return Some(InlinedFunction {
                     from_symbol: prev_sym.clone(),
                     to_symbol: symbol.clone(),
-                    location,
+                    call_location: self.call_location,
                 });
             }
         }

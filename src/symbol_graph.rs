@@ -13,6 +13,7 @@ use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::crate_index::CrateSel;
 use crate::demangle::NonMangledIterator;
+use crate::lazy::Lazy;
 use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::names::NamesIterator;
@@ -151,7 +152,14 @@ pub(crate) fn scan_objects(
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for f in debug_artifacts.inlined_functions {
-        collector.process_reference(&f.from_symbol, &f.to_symbol, checker, &f.location, None)?;
+        let mut lazy_location = crate::lazy::lazy(|_bin: &BinInfo<'_>| f.location());
+        collector.process_reference(
+            &f.from_symbol,
+            &f.to_symbol,
+            checker,
+            &mut lazy_location,
+            None,
+        )?;
     }
     let start = checker
         .timings
@@ -250,14 +258,14 @@ impl<'input> ApiUsageCollector<'input> {
             });
 
             for (offset, rel) in section.relocations() {
-                let location = self
-                    .bin
-                    .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
-                    .unwrap_or_else(|| fallback_source_location.clone());
-
                 let mut target_symbols = Vec::new();
                 let rel = &rel;
                 object_index.add_target_symbols(rel, &mut target_symbols, &mut HashSet::new())?;
+                let mut lazy_location = crate::lazy::lazy(|bin: &BinInfo<'input>| {
+                    Ok(bin
+                        .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
+                        .unwrap_or_else(|| fallback_source_location.clone()))
+                });
                 for target_symbol in target_symbols {
                     let from_symbol = &first_sym_info.symbol;
 
@@ -265,7 +273,7 @@ impl<'input> ApiUsageCollector<'input> {
                         from_symbol,
                         &target_symbol,
                         checker,
-                        &location,
+                        &mut lazy_location,
                         debug_data.as_ref(),
                     )?;
                 }
@@ -279,19 +287,29 @@ impl<'input> ApiUsageCollector<'input> {
         from_symbol: &Symbol,
         target_symbol: &Symbol,
         checker: &Checker,
-        location: &SourceLocation,
+        lazy_location: &mut impl Lazy<SourceLocation, BinInfo<'input>>,
         debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
         trace!("{from_symbol} -> {target_symbol}");
 
         let mut from_apis = HashSet::new();
         self.bin
-            .names_and_apis_do(from_symbol, checker, |_, _, apis| {
+            .names_and_apis_do(from_symbol, checker, |_, _, apis, _| {
                 from_apis.extend(apis.iter());
+                Ok(())
             })?;
-        let crate_names = checker.crate_names_from_source_path(location.filename())?;
+        let mut lazy_crate_names = None;
         self.bin
-            .names_and_apis_do(target_symbol, checker, |name, name_source, apis| {
+            .names_and_apis_do(target_symbol, checker, |name, name_source, apis, bin| {
+                // For the majority of references we expect no APIs to match. We defer computation
+                // of a source location and crate names until we know that an API matched.
+                let location = lazy_location.get(bin)?;
+                if lazy_crate_names.is_none() {
+                    lazy_crate_names =
+                        Some(checker.crate_names_from_source_path(location.filename())?);
+                }
+                let crate_names = lazy_crate_names.as_ref().unwrap();
+
                 for crate_sel in crate_names.as_ref() {
                     let crate_name = CrateName::from(crate_sel);
                     // If a package references another symbol within the same package,
@@ -330,6 +348,7 @@ impl<'input> ApiUsageCollector<'input> {
                             .push(api_usage);
                     }
                 }
+                Ok(())
             })?;
         Ok(())
     }
@@ -530,7 +549,12 @@ impl<'input> BinInfo<'input> {
         &mut self,
         symbol: &Symbol,
         checker: &'checker Checker,
-        mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>),
+        mut callback: impl FnMut(
+            Name,
+            NameSource,
+            &'checker FxHashSet<PermissionName>,
+            &BinInfo<'input>,
+        ) -> Result<()>,
     ) -> Result<()> {
         // If we've previously observed that this symbol has no APIs associated with it, then skip
         // it.
@@ -555,7 +579,8 @@ impl<'input> BinInfo<'input> {
                             name.create_name()?,
                             NameSource::DebugName(debug_name.clone()),
                             apis,
-                        );
+                            self,
+                        )?;
                     }
                 }
             }
@@ -569,7 +594,8 @@ impl<'input> BinInfo<'input> {
                     name.create_name()?,
                     NameSource::Symbol(symbol.clone()),
                     apis,
-                );
+                    self,
+                )?;
             }
         }
         if !got_apis {
