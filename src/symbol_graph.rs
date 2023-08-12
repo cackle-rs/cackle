@@ -72,6 +72,9 @@ struct BinInfo<'input> {
     filename: Arc<Path>,
     symbol_addresses: FxHashMap<Symbol<'input>, u64>,
     ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
+    /// Symbols that we've already determined have no APIs. This is an optimisation that lets us
+    /// skip these symbols when we see them again.
+    symbol_has_no_apis: FxHashMap<Symbol<'input>, bool>,
 
     /// Information about each symbol obtained from the debug info.
     symbol_debug_info: FxHashMap<Symbol<'input>, SymbolDebugInfo<'input>>,
@@ -128,6 +131,11 @@ pub(crate) fn scan_objects(
         .with_context(|| format!("Failed to process {}", bin_path.display()))?;
     let start = checker.timings.add_timing(start, "Build addr2line context");
 
+    let no_api_symbol_hashes = debug_artifacts
+        .symbol_debug_info
+        .keys()
+        .map(|symbol| (symbol.clone(), false))
+        .collect();
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
         bin: BinInfo {
@@ -135,6 +143,7 @@ pub(crate) fn scan_objects(
             symbol_addresses: Default::default(),
             ctx,
             symbol_debug_info: debug_artifacts.symbol_debug_info,
+            symbol_has_no_apis: no_api_symbol_hashes,
         },
         debug_enabled: checker.args.debug,
         new_api_usages: FxHashMap::default(),
@@ -518,11 +527,22 @@ impl<'input> BinInfo<'input> {
     /// for `symbol`. Also supplies information about the name source and a set of APIs that match
     /// the name.
     fn names_and_apis_do<'checker>(
-        &self,
+        &mut self,
         symbol: &Symbol,
         checker: &'checker Checker,
         mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>),
     ) -> Result<()> {
+        // If we've previously observed that this symbol has no APIs associated with it, then skip
+        // it.
+        if self
+            .symbol_has_no_apis
+            .get(symbol)
+            .cloned()
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+        let mut got_apis = false;
         if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
             if let Some(debug_name) = target_symbol_debug.name {
                 let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
@@ -530,6 +550,7 @@ impl<'input> BinInfo<'input> {
                 while let Some((parts, name)) = it.next_name()? {
                     let apis = checker.apis_for_name_iterator(parts);
                     if !apis.is_empty() {
+                        got_apis = true;
                         (callback)(
                             name.create_name()?,
                             NameSource::DebugName(debug_name.clone()),
@@ -543,11 +564,20 @@ impl<'input> BinInfo<'input> {
         while let Some((parts, name)) = symbol_it.next_name()? {
             let apis = checker.apis_for_name_iterator(parts);
             if !apis.is_empty() {
+                got_apis = true;
                 (callback)(
                     name.create_name()?,
                     NameSource::Symbol(symbol.clone()),
                     apis,
                 );
+            }
+        }
+        if !got_apis {
+            // The need to call `to_heap` here is just to get past an annoying variance issue.
+            // Fortunately it doesn't seem to affect performance significantly, so probably the
+            // optimiser is able to get rid of the allocation.
+            if let Some(x) = self.symbol_has_no_apis.get_mut(&symbol.to_heap()) {
+                *x = true;
             }
         }
         Ok(())
