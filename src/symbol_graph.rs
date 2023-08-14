@@ -151,12 +151,19 @@ pub(crate) fn scan_objects(
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for f in debug_artifacts.inlined_functions {
         let mut lazy_location = crate::lazy::lazy(|| f.location());
+        let debug_data = if checker.args.debug {
+            Some(UsageDebugData::Inlined(InlinedDebugData::from_offset(
+                f.low_pc, &ctx,
+            )?))
+        } else {
+            None
+        };
         collector.process_reference(
             &f.from_symbol,
             &f.to_symbol,
             checker,
             &mut lazy_location,
-            None,
+            debug_data.as_ref(),
         )?;
     }
     let start = checker
@@ -255,10 +262,12 @@ impl<'input> ApiUsageCollector<'input> {
                 continue;
             };
             let fallback_source_location = debug_info.source_location();
-            let debug_data = self.debug_enabled.then(|| UsageDebugData {
-                bin_path: self.bin.filename.clone(),
-                object_file_path: filename.clone(),
-                section_name: section_name.to_owned(),
+            let debug_data = self.debug_enabled.then(|| {
+                UsageDebugData::Relocation(RelocationDebugData {
+                    bin_path: self.bin.filename.clone(),
+                    object_file_path: filename.clone(),
+                    section_name: section_name.to_owned(),
+                })
             });
 
             for (offset, rel) in section.relocations() {
@@ -666,8 +675,38 @@ impl Filetype {
 /// Additional information that might be useful for debugging. Only available when --debug is
 /// passed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UsageDebugData {
+pub(crate) enum UsageDebugData {
+    Relocation(RelocationDebugData),
+    Inlined(InlinedDebugData),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RelocationDebugData {
     bin_path: Arc<Path>,
     object_file_path: ObjectFilePath,
     section_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InlinedDebugData {
+    frames: Vec<String>,
+    low_pc: Option<u64>,
+}
+
+impl InlinedDebugData {
+    fn from_offset(
+        low_pc: Option<u64>,
+        ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+    ) -> Result<InlinedDebugData> {
+        let mut frames = Vec::new();
+        if let Some(offset) = low_pc {
+            let mut frame_iter = ctx.find_frames(offset).skip_all_loads()?;
+            while let Some(frame) = frame_iter.next()? {
+                if let Some(function) = frame.function.as_ref() {
+                    frames.push(Symbol::borrowed(function.name.slice()).to_string());
+                }
+            }
+        }
+        Ok(InlinedDebugData { frames, low_pc })
+    }
 }

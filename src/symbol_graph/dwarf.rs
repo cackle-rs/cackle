@@ -39,6 +39,7 @@ pub(crate) struct InlinedFunction<'input> {
     pub(crate) from_symbol: Symbol<'input>,
     pub(crate) to_symbol: Symbol<'input>,
     call_location: CallLocation<'input>,
+    pub(crate) low_pc: Option<u64>,
 }
 
 impl<'input> InlinedFunction<'input> {
@@ -90,6 +91,7 @@ impl<'input> DwarfScanner<'input> {
                 };
                 let mut inline_scanner = InlinedFunctionScanner {
                     symbol: None,
+                    low_pc: None,
                     call_location: CallLocation {
                         compdir,
                         directory: None,
@@ -254,6 +256,7 @@ struct FrameState<'input> {
 
 struct InlinedFunctionScanner<'input> {
     symbol: Option<Symbol<'input>>,
+    low_pc: Option<u64>,
     call_location: CallLocation<'input>,
 }
 
@@ -294,6 +297,11 @@ impl<'input> InlinedFunctionScanner<'input> {
             gimli::DW_AT_call_column => {
                 self.call_location.column = attr.udata_value().map(|v| v as u32);
             }
+            gimli::DW_AT_low_pc => {
+                self.low_pc = dwarf
+                    .attr_address(unit, attr.value())
+                    .context("Unsupported DW_AT_low_pc")?;
+            }
             _ => (),
         }
         Ok(())
@@ -312,6 +320,7 @@ impl<'input> InlinedFunctionScanner<'input> {
                     from_symbol: prev_sym.clone(),
                     to_symbol: symbol.clone(),
                     call_location: self.call_location,
+                    low_pc: self.low_pc,
                 });
             }
         }
