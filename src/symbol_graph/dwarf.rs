@@ -314,6 +314,10 @@ impl<'input> InlinedFunctionScanner<'input> {
         let Some(symbol) = self.symbol else {
             return None;
         };
+        // Functions with DW_AT_low_pc=0 have been optimised out so can be ignored.
+        if self.low_pc == Some(0) {
+            return None;
+        }
         for frame in frames.iter().rev() {
             if let Some(prev_sym) = frame.symbol.as_ref() {
                 return Some(InlinedFunction {
