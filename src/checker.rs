@@ -74,7 +74,7 @@ pub(crate) struct CrateInfo {
 pub(crate) struct ApiUsage {
     pub(crate) source_location: SourceLocation,
     pub(crate) from: Symbol<'static>,
-    pub(crate) to: Name<'static>,
+    pub(crate) to: Name,
     pub(crate) to_symbol: Symbol<'static>,
     pub(crate) to_source: NameSource<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,

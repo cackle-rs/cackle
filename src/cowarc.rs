@@ -3,7 +3,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 pub(crate) type Bytes<'data> = CowArc<'data, [u8]>;
-pub(crate) type Utf8Bytes<'data> = CowArc<'data, str>;
 
 /// Provides a way to hold some data that is either borrowed, or on the heap. In this respect, it's
 /// a bit like a Cow, but uses reference counting when storing on the heap, so Clone is always O(1).
@@ -45,17 +44,6 @@ impl<'data, V: Clone> CowArc<'data, [V]> {
     /// Create an instance that is heap-allocated and reference counted and thus can be used beyond
     /// the lifetime 'data.
     pub(crate) fn to_heap(&self) -> CowArc<'static, [V]> {
-        CowArc::Heap(match self {
-            CowArc::Heap(data) => Arc::clone(data),
-            CowArc::Borrowed(data) => Arc::from(*data),
-        })
-    }
-}
-
-impl<'data> CowArc<'data, str> {
-    /// Create an instance that is heap-allocated and reference counted and thus can be used beyond
-    /// the lifetime 'data.
-    pub(crate) fn to_heap(&self) -> CowArc<'static, str> {
         CowArc::Heap(match self {
             CowArc::Heap(data) => Arc::clone(data),
             CowArc::Borrowed(data) => Arc::from(*data),

@@ -1,25 +1,19 @@
-use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::sync::Arc;
 
 /// A name of something. e.g. `std::path::Path`.
 #[derive(Eq, PartialEq, Hash, Clone)]
-pub(crate) struct Name<'data> {
+pub(crate) struct Name {
     /// The components of this name. e.g. ["std", "path", "Path"]
-    pub(crate) parts: Vec<Utf8Bytes<'data>>,
+    pub(crate) parts: Vec<Arc<str>>,
 }
 
-impl<'data> Name<'data> {
-    pub(crate) fn to_heap(&self) -> Name<'static> {
-        Name {
-            parts: self.parts.iter().map(|p| p.to_heap()).collect(),
-        }
-    }
-
+impl Name {
     pub(crate) fn parts(&self) -> impl Iterator<Item = &str> {
         self.parts.iter().map(|p| p.as_ref())
     }
@@ -97,12 +91,12 @@ pub(crate) struct LazyName<'data, I: Iterator<Item = DemangleToken<'data>>> {
 }
 
 impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> LazyName<'data, I> {
-    pub(crate) fn create_name(self) -> Result<Name<'data>> {
+    pub(crate) fn create_name(self) -> Result<Name> {
         let mut parts = Vec::new();
         for token in self.it {
             match token {
                 NameToken::Part(part) => {
-                    parts.push(Utf8Bytes::Borrowed(part));
+                    parts.push(Arc::from(part));
                 }
                 NameToken::EndName => {
                     return Ok(Name { parts });
@@ -296,14 +290,14 @@ enum NamesIteratorState<I> {
     },
 }
 
-impl<'data> Display for Name<'data> {
+impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parts: Vec<String> = self.parts.iter().map(|p| p.to_string()).collect();
         write!(f, "{}", parts.join("::"))
     }
 }
 
-impl<'data> Debug for Name<'data> {
+impl Debug for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Name({})", self)
     }
@@ -311,7 +305,7 @@ impl<'data> Debug for Name<'data> {
 
 pub(crate) fn split_simple(value: &str) -> Name {
     Name {
-        parts: value.split("::").map(Utf8Bytes::Borrowed).collect(),
+        parts: value.split("::").map(Arc::from).collect(),
     }
 }
 

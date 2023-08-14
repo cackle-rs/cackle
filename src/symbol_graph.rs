@@ -332,7 +332,7 @@ impl<'input> ApiUsageCollector<'input> {
                             vec![ApiUsage {
                                 source_location: location.clone(),
                                 from: from_symbol.to_heap(),
-                                to: name.to_heap(),
+                                to: name.clone(),
                                 to_symbol: target_symbol.to_heap(),
                                 to_source: name_source.to_owned(),
                                 debug_data: debug_data.cloned(),
