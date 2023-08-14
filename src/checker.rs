@@ -5,7 +5,6 @@ use crate::config::PermissionName;
 use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateSel;
-use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::Name;
@@ -40,7 +39,6 @@ pub(crate) struct Checker {
     /// For each name, the set of permissions active for that name and all names that have this name
     /// as a prefix.
     permissions_by_prefix: api_map::ApiMap,
-    proc_macros: FxHashSet<PackageId>,
     pub(crate) crate_infos: FxHashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
@@ -99,7 +97,6 @@ impl Checker {
             args,
             crate_index,
             path_to_crate: Default::default(),
-            proc_macros: Default::default(),
             timings,
         }
     }
@@ -174,7 +171,7 @@ impl Checker {
 
     fn base_problems(&self) -> ProblemList {
         let mut problems = ProblemList::default();
-        for pkg_id in &self.proc_macros {
+        for pkg_id in self.crate_index.proc_macros() {
             if !self
                 .config
                 .packages
@@ -305,10 +302,6 @@ impl Checker {
                     .package_id_for_path(source_path)
                     .map(|pkg_id| Cow::Owned(vec![CrateSel::Primary(pkg_id.clone())]))
             })
-    }
-
-    pub(crate) fn report_proc_macro(&mut self, pkg_id: &PackageId) {
-        self.proc_macros.insert(pkg_id.clone());
     }
 
     /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`

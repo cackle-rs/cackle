@@ -194,16 +194,13 @@ impl Cackle {
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
         let target_dir = root_path.join("target");
         let tmpdir = Arc::new(tempfile::TempDir::new()?);
-        let mut checker = Checker::new(
+        let checker = Checker::new(
             tmpdir.clone(),
             target_dir.clone(),
             args.clone(),
             crate_index.clone(),
             config_path.clone(),
         );
-        for crate_name in crate_index.proc_macros() {
-            checker.report_proc_macro(crate_name);
-        }
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
         let problem_store = crate::problem_store::create(event_sender.clone());
         let ui_join_handle = ui::start_ui(
