@@ -22,8 +22,7 @@ pub fn call_read_file() {
     read_file("tmp.txt");
 }
 
-/// Binds a TCP port. This function is not called from any of our test crates and our config for
-/// this crate says to ignore unused code, so this should not be considered.
+/// Binds a TCP port. This function is dead code, so this should not be considered.
 pub fn do_network_stuff() {
     std::net::TcpListener::bind("127.0.0.1:9876").unwrap();
 }
