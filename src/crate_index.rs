@@ -15,20 +15,21 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-type HashMap<K, V> = fxhash::FxHashMap<K, V>;
-
 #[derive(Default, Debug)]
 pub(crate) struct CrateIndex {
     pub(crate) manifest_path: PathBuf,
-    pub(crate) package_infos: HashMap<PackageId, PackageInfo>,
-    dir_to_name: HashMap<PathBuf, PackageId>,
-    pkg_name_to_ids: HashMap<String, Vec<PackageId>>,
+    pub(crate) package_infos: FxHashMap<PackageId, PackageInfo>,
+    dir_to_pkg_id: FxHashMap<PathBuf, PackageId>,
+    pkg_name_to_ids: FxHashMap<String, Vec<PackageId>>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PackageId {
     name: Arc<str>,
     version: Version,
+    /// Whether this is the only version of this package present in the dependency tree. This is
+    /// just used for display purposes. If the name isn't unique, then we display the version as
+    /// well.
     name_is_unique: bool,
 }
 
@@ -106,7 +107,7 @@ impl CrateIndex {
                     .or_default()
                     .push(pkg_id.clone());
                 mapping
-                    .dir_to_name
+                    .dir_to_pkg_id
                     .insert(dir.as_std_path().to_owned(), pkg_id.clone());
             }
         }
@@ -175,7 +176,7 @@ impl CrateIndex {
     /// the other source files in that package, so should only be used as a fallback.
     pub(crate) fn package_id_for_path(&self, mut path: &Path) -> Option<&PackageId> {
         loop {
-            if let Some(pkg_id) = self.dir_to_name.get(path) {
+            if let Some(pkg_id) = self.dir_to_pkg_id.get(path) {
                 return Some(pkg_id);
             }
             if let Some(parent) = path.parent() {
