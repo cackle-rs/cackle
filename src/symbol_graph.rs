@@ -265,15 +265,25 @@ impl<'input> ApiUsageCollector<'input> {
                 let mut target_symbols = Vec::new();
                 let rel = &rel;
                 object_index.add_target_symbols(rel, &mut target_symbols, &mut HashSet::new())?;
-                let mut lazy_location = crate::lazy::lazy(|| {
-                    Ok(
-                        find_location(ctx, symbol_address_in_bin + offset - first_sym_info.offset)?
-                            .unwrap_or_else(|| fallback_source_location.clone()),
-                    )
-                });
-                for target_symbol in target_symbols {
-                    let from_symbol = &first_sym_info.symbol;
 
+                // Use debug info to determine the function that the reference originated from.
+                let offset_in_bin = symbol_address_in_bin + offset - first_sym_info.offset;
+                let mut frames = ctx.find_frames(offset_in_bin).skip_all_loads()?;
+                let (frame_fn, frame_location) = frames
+                    .next()?
+                    .map(|frame| (frame.function, frame.location))
+                    .unwrap_or((None, None));
+                let mut lazy_location = crate::lazy::lazy(|| {
+                    Ok(frame_location
+                        .and_then(|l| l.try_into().ok())
+                        .unwrap_or_else(|| fallback_source_location.clone()))
+                });
+                let frame_symbol = frame_fn
+                    .as_ref()
+                    .map(|fn_name| Symbol::borrowed(&fn_name.name));
+
+                let from_symbol = frame_symbol.as_ref().unwrap_or(&first_sym_info.symbol);
+                for target_symbol in target_symbols {
                     self.process_reference(
                         from_symbol,
                         &target_symbol,
@@ -525,24 +535,19 @@ impl<'input> BinInfo<'input> {
     }
 }
 
-fn find_location(
-    ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
-    offset: u64,
-) -> Result<Option<SourceLocation>> {
-    use addr2line::Location;
-
-    let Some(location) = ctx.find_location(offset).context("find_location failed")? else {
-        return Ok(None);
-    };
-    let Location {
-        file: Some(file),
-        line: Some(line),
-        column,
-    } = location
-    else {
-        return Ok(None);
-    };
-    Ok(Some(SourceLocation::new(Path::new(file), line, column)))
+impl<'a> TryFrom<addr2line::Location<'a>> for SourceLocation {
+    type Error = ();
+    fn try_from(value: addr2line::Location) -> std::result::Result<Self, ()> {
+        let addr2line::Location {
+            file: Some(file),
+            line: Some(line),
+            column,
+        } = value
+        else {
+            return Err(());
+        };
+        Ok(SourceLocation::new(Path::new(file), line, column))
+    }
 }
 
 impl<'input> BinInfo<'input> {
