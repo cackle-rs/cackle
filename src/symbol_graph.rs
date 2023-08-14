@@ -72,7 +72,6 @@ struct ApiUsageCollector<'input> {
 struct BinInfo<'input> {
     filename: Arc<Path>,
     symbol_addresses: FxHashMap<Symbol<'input>, u64>,
-    ctx: addr2line::Context<EndianSlice<'input, LittleEndian>>,
     /// Symbols that we've already determined have no APIs. This is an optimisation that lets us
     /// skip these symbols when we see them again.
     symbol_has_no_apis: FxHashMap<Symbol<'input>, bool>,
@@ -142,7 +141,6 @@ pub(crate) fn scan_objects(
         bin: BinInfo {
             filename: Arc::from(bin_path),
             symbol_addresses: Default::default(),
-            ctx,
             symbol_debug_info: debug_artifacts.symbol_debug_info,
             symbol_has_no_apis: no_api_symbol_hashes,
         },
@@ -152,7 +150,7 @@ pub(crate) fn scan_objects(
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for f in debug_artifacts.inlined_functions {
-        let mut lazy_location = crate::lazy::lazy(|_bin: &BinInfo<'_>| f.location());
+        let mut lazy_location = crate::lazy::lazy(|| f.location());
         collector.process_reference(
             &f.from_symbol,
             &f.to_symbol,
@@ -168,7 +166,7 @@ pub(crate) fn scan_objects(
     let start = checker.timings.add_timing(start, "Find possible exports");
     for path in paths {
         collector
-            .process_file(path, checker)
+            .process_file(path, checker, &ctx)
             .with_context(|| format!("Failed to process `{}`", path.display()))?;
     }
     collector.emit_shortest_api_usages();
@@ -190,7 +188,12 @@ impl ScanOutputs {
 }
 
 impl<'input> ApiUsageCollector<'input> {
-    fn process_file(&mut self, filename: &Path, checker: &Checker) -> Result<()> {
+    fn process_file(
+        &mut self,
+        filename: &Path,
+        checker: &Checker,
+        ctx: &addr2line::Context<EndianSlice<'input, LittleEndian>>,
+    ) -> Result<()> {
         let mut buffer = Vec::new();
         match Filetype::from_filename(filename) {
             Filetype::Archive => {
@@ -202,7 +205,7 @@ impl<'input> ApiUsageCollector<'input> {
                     buffer.clear();
                     entry.read_to_end(&mut buffer)?;
                     let object_file_path = ObjectFilePath::in_archive(filename, &entry)?;
-                    self.process_object_file_bytes(&object_file_path, &buffer, checker)
+                    self.process_object_file_bytes(&object_file_path, &buffer, checker, ctx)
                         .with_context(|| format!("Failed to process {object_file_path}"))?;
                 }
             }
@@ -210,7 +213,7 @@ impl<'input> ApiUsageCollector<'input> {
                 let file_bytes = std::fs::read(filename)
                     .with_context(|| format!("Failed to read `{}`", filename.display()))?;
                 let object_file_path = ObjectFilePath::non_archive(filename);
-                self.process_object_file_bytes(&object_file_path, &file_bytes, checker)
+                self.process_object_file_bytes(&object_file_path, &file_bytes, checker, ctx)
                     .with_context(|| format!("Failed to process {object_file_path}"))?;
             }
         }
@@ -224,6 +227,7 @@ impl<'input> ApiUsageCollector<'input> {
         filename: &ObjectFilePath,
         file_bytes: &[u8],
         checker: &Checker,
+        ctx: &addr2line::Context<EndianSlice<'input, LittleEndian>>,
     ) -> Result<()> {
         debug!("Processing object file {}", filename);
 
@@ -261,10 +265,11 @@ impl<'input> ApiUsageCollector<'input> {
                 let mut target_symbols = Vec::new();
                 let rel = &rel;
                 object_index.add_target_symbols(rel, &mut target_symbols, &mut HashSet::new())?;
-                let mut lazy_location = crate::lazy::lazy(|bin: &BinInfo<'input>| {
-                    Ok(bin
-                        .find_location(symbol_address_in_bin + offset - first_sym_info.offset)?
-                        .unwrap_or_else(|| fallback_source_location.clone()))
+                let mut lazy_location = crate::lazy::lazy(|| {
+                    Ok(
+                        find_location(ctx, symbol_address_in_bin + offset - first_sym_info.offset)?
+                            .unwrap_or_else(|| fallback_source_location.clone()),
+                    )
                 });
                 for target_symbol in target_symbols {
                     let from_symbol = &first_sym_info.symbol;
@@ -287,23 +292,23 @@ impl<'input> ApiUsageCollector<'input> {
         from_symbol: &Symbol,
         target_symbol: &Symbol,
         checker: &Checker,
-        lazy_location: &mut impl Lazy<SourceLocation, BinInfo<'input>>,
+        lazy_location: &mut impl Lazy<SourceLocation>,
         debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
         trace!("{from_symbol} -> {target_symbol}");
 
         let mut from_apis = HashSet::new();
         self.bin
-            .names_and_apis_do(from_symbol, checker, |_, _, apis, _| {
+            .names_and_apis_do(from_symbol, checker, |_, _, apis| {
                 from_apis.extend(apis.iter());
                 Ok(())
             })?;
         let mut lazy_crate_names = None;
         self.bin
-            .names_and_apis_do(target_symbol, checker, |name, name_source, apis, bin| {
+            .names_and_apis_do(target_symbol, checker, |name, name_source, apis| {
                 // For the majority of references we expect no APIs to match. We defer computation
                 // of a source location and crate names until we know that an API matched.
-                let location = lazy_location.get(bin)?;
+                let location = lazy_location.get()?;
                 if lazy_crate_names.is_none() {
                     lazy_crate_names =
                         Some(checker.crate_names_from_source_path(location.filename())?);
@@ -518,27 +523,26 @@ impl<'input> BinInfo<'input> {
         }
         Ok(())
     }
+}
 
-    fn find_location(&self, offset: u64) -> Result<Option<SourceLocation>> {
-        use addr2line::Location;
+fn find_location(
+    ctx: &addr2line::Context<EndianSlice<LittleEndian>>,
+    offset: u64,
+) -> Result<Option<SourceLocation>> {
+    use addr2line::Location;
 
-        let Some(location) = self
-            .ctx
-            .find_location(offset)
-            .context("find_location failed")?
-        else {
-            return Ok(None);
-        };
-        let Location {
-            file: Some(file),
-            line: Some(line),
-            column,
-        } = location
-        else {
-            return Ok(None);
-        };
-        Ok(Some(SourceLocation::new(Path::new(file), line, column)))
-    }
+    let Some(location) = ctx.find_location(offset).context("find_location failed")? else {
+        return Ok(None);
+    };
+    let Location {
+        file: Some(file),
+        line: Some(line),
+        column,
+    } = location
+    else {
+        return Ok(None);
+    };
+    Ok(Some(SourceLocation::new(Path::new(file), line, column)))
 }
 
 impl<'input> BinInfo<'input> {
@@ -549,12 +553,7 @@ impl<'input> BinInfo<'input> {
         &mut self,
         symbol: &Symbol,
         checker: &'checker Checker,
-        mut callback: impl FnMut(
-            Name,
-            NameSource,
-            &'checker FxHashSet<PermissionName>,
-            &BinInfo<'input>,
-        ) -> Result<()>,
+        mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>) -> Result<()>,
     ) -> Result<()> {
         // If we've previously observed that this symbol has no APIs associated with it, then skip
         // it.
@@ -579,7 +578,6 @@ impl<'input> BinInfo<'input> {
                             name.create_name()?,
                             NameSource::DebugName(debug_name.clone()),
                             apis,
-                            self,
                         )?;
                     }
                 }
@@ -594,7 +592,6 @@ impl<'input> BinInfo<'input> {
                     name.create_name()?,
                     NameSource::Symbol(symbol.clone()),
                     apis,
-                    self,
                 )?;
             }
         }
