@@ -17,6 +17,8 @@ use crate::lazy::Lazy;
 use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::names::NamesIterator;
+use crate::names::SymbolAndName;
+use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsageGroupKey;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
@@ -159,8 +161,8 @@ pub(crate) fn scan_objects(
             None
         };
         collector.process_reference(
-            &f.from_symbol,
-            &f.to_symbol,
+            &f.from,
+            &f.to,
             checker,
             &mut lazy_location,
             debug_data.as_ref(),
@@ -292,10 +294,12 @@ impl<'input> ApiUsageCollector<'input> {
                     .map(|fn_name| Symbol::borrowed(&fn_name.name));
 
                 let from_symbol = frame_symbol.as_ref().unwrap_or(&first_sym_info.symbol);
+                let from = self.bin.get_symbol_and_name(from_symbol);
                 for target_symbol in target_symbols {
+                    let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
-                        from_symbol,
-                        &target_symbol,
+                        &from,
+                        &target,
                         checker,
                         &mut lazy_location,
                         debug_data.as_ref(),
@@ -308,23 +312,22 @@ impl<'input> ApiUsageCollector<'input> {
 
     fn process_reference(
         &mut self,
-        from_symbol: &Symbol,
-        target_symbol: &Symbol,
+        from: &SymbolAndName,
+        target: &SymbolAndName,
         checker: &Checker,
         lazy_location: &mut impl Lazy<SourceLocation>,
         debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
-        trace!("{from_symbol} -> {target_symbol}");
+        trace!("{from} -> {target}");
 
         let mut from_apis = HashSet::new();
-        self.bin
-            .names_and_apis_do(from_symbol, checker, |_, _, apis| {
-                from_apis.extend(apis.iter());
-                Ok(())
-            })?;
+        self.bin.names_and_apis_do(from, checker, |_, _, apis| {
+            from_apis.extend(apis.iter());
+            Ok(())
+        })?;
         let mut lazy_crate_names = None;
         self.bin
-            .names_and_apis_do(target_symbol, checker, |name, name_source, apis| {
+            .names_and_apis_do(target, checker, |name, name_source, apis| {
                 // For the majority of references we expect no APIs to match. We defer computation
                 // of a source location and crate names until we know that an API matched.
                 let location = lazy_location.get()?;
@@ -355,9 +358,9 @@ impl<'input> ApiUsageCollector<'input> {
                             permission.clone(),
                             vec![ApiUsage {
                                 source_location: location.clone(),
-                                from: from_symbol.to_heap(),
-                                to: name.clone(),
-                                to_symbol: target_symbol.to_heap(),
+                                from: from.symbol_or_debug_name()?,
+                                to: target.symbol_or_debug_name()?,
+                                to_name: name.clone(),
                                 to_source: name_source.to_owned(),
                                 debug_data: debug_data.cloned(),
                             }],
@@ -381,9 +384,13 @@ impl<'input> ApiUsageCollector<'input> {
         // New API usages are grouped by their deduplication key, which doesn't include the target
         // symbol. We then output only the API usage with the shortest target symbol.
         for api_usages in std::mem::take(&mut self.new_api_usages).into_values() {
-            if let Some(shortest_target_usage) = api_usages
-                .into_iter()
-                .min_by_key(|u| u.first_usage().unwrap().to_symbol.len())
+            if let Some(shortest_target_usage) =
+                api_usages
+                    .into_iter()
+                    .min_by_key(|u| match &u.first_usage().unwrap().to {
+                        SymbolOrDebugName::Symbol(sym) => sym.len(),
+                        SymbolOrDebugName::DebugName(debug_name) => debug_name.len(),
+                    })
             {
                 self.outputs.api_usages.push(shortest_target_usage);
             }
@@ -532,7 +539,7 @@ enum SymbolOrSection<'data> {
     Section(SectionIndex),
 }
 
-impl<'input> BinInfo<'input> {
+impl<'symbol, 'input: 'symbol> BinInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
         for symbol in obj.symbols() {
             self.symbol_addresses.insert(
@@ -541,6 +548,17 @@ impl<'input> BinInfo<'input> {
             );
         }
         Ok(())
+    }
+
+    fn get_symbol_and_name(&self, symbol: &Symbol<'symbol>) -> SymbolAndName<'symbol> {
+        let mut result = SymbolAndName {
+            symbol: Some(symbol.clone()),
+            ..SymbolAndName::default()
+        };
+        if let Some(symbol_debug) = self.symbol_debug_info.get(symbol) {
+            result.debug_name = symbol_debug.name
+        }
+        result
     }
 }
 
@@ -565,56 +583,60 @@ impl<'input> BinInfo<'input> {
     /// the name.
     fn names_and_apis_do<'checker>(
         &mut self,
-        symbol: &Symbol,
+        symbol_and_name: &SymbolAndName,
         checker: &'checker Checker,
         mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>) -> Result<()>,
     ) -> Result<()> {
         // If we've previously observed that this symbol has no APIs associated with it, then skip
         // it.
-        if self
-            .symbol_has_no_apis
-            .get(symbol)
+        if symbol_and_name
+            .symbol
+            .as_ref()
+            .and_then(|symbol| self.symbol_has_no_apis.get(symbol))
             .cloned()
             .unwrap_or(false)
         {
             return Ok(());
         }
         let mut got_apis = false;
-        if let Some(target_symbol_debug) = self.symbol_debug_info.get(symbol) {
-            if let Some(debug_name) = target_symbol_debug.name {
-                let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
-                let debug_name: Arc<str> = Arc::from(debug_name);
-                while let Some((parts, name)) = it.next_name()? {
-                    let apis = checker.apis_for_name_iterator(parts);
-                    if !apis.is_empty() {
-                        got_apis = true;
-                        (callback)(
-                            name.create_name()?,
-                            NameSource::DebugName(debug_name.clone()),
-                            apis,
-                        )?;
-                    }
+        if let Some(debug_name) = symbol_and_name.debug_name {
+            let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
+            let debug_name: Arc<str> = Arc::from(debug_name);
+            while let Some((parts, name)) = it
+                .next_name()
+                .with_context(|| format!("Failed to parse debug name `{debug_name}`"))?
+            {
+                let apis = checker.apis_for_name_iterator(parts);
+                if !apis.is_empty() {
+                    got_apis = true;
+                    (callback)(
+                        name.create_name()?,
+                        NameSource::DebugName(debug_name.clone()),
+                        apis,
+                    )?;
                 }
             }
         }
-        let mut symbol_it = symbol.names()?;
-        while let Some((parts, name)) = symbol_it.next_name()? {
-            let apis = checker.apis_for_name_iterator(parts);
-            if !apis.is_empty() {
-                got_apis = true;
-                (callback)(
-                    name.create_name()?,
-                    NameSource::Symbol(symbol.clone()),
-                    apis,
-                )?;
+        if let Some(symbol) = symbol_and_name.symbol.as_ref() {
+            let mut symbol_it = symbol.names()?;
+            while let Some((parts, name)) = symbol_it.next_name()? {
+                let apis = checker.apis_for_name_iterator(parts);
+                if !apis.is_empty() {
+                    got_apis = true;
+                    (callback)(
+                        name.create_name()?,
+                        NameSource::Symbol(symbol.clone()),
+                        apis,
+                    )?;
+                }
             }
-        }
-        if !got_apis {
-            // The need to call `to_heap` here is just to get past an annoying variance issue.
-            // Fortunately it doesn't seem to affect performance significantly, so probably the
-            // optimiser is able to get rid of the allocation.
-            if let Some(x) = self.symbol_has_no_apis.get_mut(&symbol.to_heap()) {
-                *x = true;
+            if !got_apis {
+                // The need to call `to_heap` here is just to get past an annoying variance issue.
+                // Fortunately it doesn't seem to affect performance significantly, so probably the
+                // optimiser is able to get rid of the allocation.
+                if let Some(x) = self.symbol_has_no_apis.get_mut(&symbol.to_heap()) {
+                    *x = true;
+                }
             }
         }
         Ok(())

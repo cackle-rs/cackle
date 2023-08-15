@@ -1,4 +1,5 @@
 use crate::demangle::DemangleToken;
+use crate::symbol::Symbol;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
@@ -11,6 +12,18 @@ use std::sync::Arc;
 pub(crate) struct Name {
     /// The components of this name. e.g. ["std", "path", "Path"]
     pub(crate) parts: Vec<Arc<str>>,
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct SymbolAndName<'input> {
+    pub(crate) symbol: Option<Symbol<'input>>,
+    pub(crate) debug_name: Option<&'input str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum SymbolOrDebugName {
+    Symbol(Symbol<'static>),
+    DebugName(Arc<str>),
 }
 
 impl Name {
@@ -165,7 +178,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                     if text == "mut" {
                         continue;
                     }
-                    if self.brace_depth > 0 && text == "closure" {
+                    if self.brace_depth > 0 {
                         continue;
                     }
                     // Ignore numbers.
@@ -247,10 +260,11 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                                         self.state = NamesIteratorState::OutputtingName;
                                         return Some(NameToken::Part(text));
                                     }
-                                    other => {
-                                        return Some(NameToken::Error(anyhow!(
-                                            "Expected text after '>', got {other:?}"
-                                        )));
+                                    _ => {
+                                        self.it = return_point.clone();
+                                        self.as_final = None;
+                                        self.state = NamesIteratorState::Inactive;
+                                        return Some(NameToken::EndName);
                                     }
                                 }
                             }
@@ -290,10 +304,44 @@ enum NamesIteratorState<I> {
     },
 }
 
+impl<'input> SymbolAndName<'input> {
+    pub(crate) fn symbol_or_debug_name(&self) -> Result<SymbolOrDebugName> {
+        if let Some(symbol) = self.symbol.as_ref() {
+            return Ok(SymbolOrDebugName::Symbol(symbol.to_heap()));
+        }
+        if let Some(debug_name) = self.debug_name {
+            return Ok(SymbolOrDebugName::DebugName(Arc::from(debug_name)));
+        }
+        bail!("Invalid SymbolAndName has neither");
+    }
+}
+
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parts: Vec<String> = self.parts.iter().map(|p| p.to_string()).collect();
         write!(f, "{}", parts.join("::"))
+    }
+}
+
+impl<'input> Display for SymbolAndName<'input> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(sym) = self.symbol.as_ref() {
+            std::fmt::Display::fmt(&sym, f)?;
+        } else if let Some(name) = self.debug_name {
+            std::fmt::Debug::fmt(&name, f)?;
+        } else {
+            write!(f, "<missing symbol and debug name>")?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for SymbolOrDebugName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymbolOrDebugName::Symbol(sym) => std::fmt::Display::fmt(&sym, f),
+            SymbolOrDebugName::DebugName(debug_name) => std::fmt::Display::fmt(&debug_name, f),
+        }
     }
 }
 
@@ -367,6 +415,17 @@ mod tests {
         assert_eq!(
             get_name_vecs("Vec<&mut std::string::String>"),
             vec![vec!["Vec"], vec!["std", "string", "String"],]
+        );
+    }
+
+    #[test]
+    fn test_split_vtable() {
+        assert_eq!(
+            get_name_vecs("<std::rt::lang_start::{closure_env#0}<()> as core::ops::function::Fn<()>>::{vtable}"),
+            vec![
+                vec!["std", "rt", "lang_start"],
+                vec!["core", "ops", "function", "Fn"]
+            ]
         );
     }
 }

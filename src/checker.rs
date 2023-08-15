@@ -8,6 +8,7 @@ use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::Name;
+use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
@@ -15,7 +16,6 @@ use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
-use crate::symbol::Symbol;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
 use crate::timing::TimingCollector;
@@ -71,9 +71,9 @@ pub(crate) struct CrateInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApiUsage {
     pub(crate) source_location: SourceLocation,
-    pub(crate) from: Symbol<'static>,
-    pub(crate) to: Name,
-    pub(crate) to_symbol: Symbol<'static>,
+    pub(crate) from: SymbolOrDebugName,
+    pub(crate) to: SymbolOrDebugName,
+    pub(crate) to_name: Name,
     pub(crate) to_source: NameSource<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
 }
@@ -399,6 +399,7 @@ pub(crate) fn is_in_rust_std(source_path: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::config::testing::parse;
+    use crate::symbol::Symbol;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::fmt::Display;
@@ -491,9 +492,9 @@ mod tests {
                 api,
                 vec![ApiUsage {
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
-                    from: Symbol::borrowed(&[]),
-                    to: crate::names::split_simple("foo::bar"),
-                    to_symbol: Symbol::borrowed(&[]),
+                    from: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
+                    to_name: crate::names::split_simple("foo::bar"),
+                    to: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
                     to_source: NameSource::Symbol(Symbol::borrowed(b"foo::bar")),
                     debug_data: None,
                 }],

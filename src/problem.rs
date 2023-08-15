@@ -12,6 +12,7 @@ use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
+use crate::names::SymbolOrDebugName;
 use crate::proxy::rpc::BuildScriptOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
@@ -440,7 +441,7 @@ fn display_usages(
             .or_default()
             .push(u);
     }
-    let mut by_from: BTreeMap<&Symbol, Vec<&ApiUsage>> = BTreeMap::new();
+    let mut by_from: BTreeMap<&SymbolOrDebugName, Vec<&ApiUsage>> = BTreeMap::new();
     for (filename, usages_for_location) in by_source_filename {
         writeln!(f, "    {}", filename.display())?;
         by_from.clear();
@@ -494,7 +495,7 @@ impl std::hash::Hash for ApiUsages {
 pub(crate) struct ApiUsageGroupKey {
     crate_sel: CrateSel,
     permission: PermissionName,
-    from_symbol: Symbol<'static>,
+    from: SymbolOrDebugName,
     source_location: SourceLocation,
 }
 
@@ -505,7 +506,7 @@ impl ApiUsages {
         ApiUsageGroupKey {
             crate_sel: self.crate_sel.clone(),
             permission: permission.clone(),
-            from_symbol: usage.from.clone(),
+            from: usage.from.clone(),
             source_location: usage.source_location.clone(),
         }
     }
@@ -524,6 +525,7 @@ mod tests {
     use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
     use crate::location::SourceLocation;
+    use crate::names::SymbolOrDebugName;
     use crate::symbol::Symbol;
     use crate::symbol_graph::NameSource;
     use std::collections::BTreeMap;
@@ -582,10 +584,10 @@ mod tests {
         let to_symbol = Symbol::borrowed(to.as_bytes()).to_heap();
         ApiUsage {
             source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
-            from: Symbol::borrowed(from.as_bytes()).to_heap(),
-            to: crate::names::split_simple("foo:bar"),
+            from: SymbolOrDebugName::Symbol(Symbol::borrowed(from.as_bytes()).to_heap()),
+            to: SymbolOrDebugName::Symbol(to_symbol.clone()),
+            to_name: crate::names::split_simple("foo:bar"),
             to_source: NameSource::Symbol(to_symbol.clone()),
-            to_symbol,
             debug_data: None,
         }
     }

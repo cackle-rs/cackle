@@ -1,4 +1,5 @@
 use crate::location::SourceLocation;
+use crate::names::SymbolAndName;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -36,18 +37,21 @@ pub(crate) struct SymbolDebugInfo<'input> {
 
 /// A reference pair resulting from one function being inlined into another.
 pub(crate) struct InlinedFunction<'input> {
-    pub(crate) from_symbol: Symbol<'input>,
-    pub(crate) to_symbol: Symbol<'input>,
+    pub(crate) from: SymbolAndName<'input>,
+    pub(crate) to: SymbolAndName<'input>,
     call_location: CallLocation<'input>,
     pub(crate) low_pc: Option<u64>,
 }
 
 impl<'input> InlinedFunction<'input> {
     pub(crate) fn location(&self) -> Result<SourceLocation> {
-        let line = self
-            .call_location
-            .line
-            .ok_or_else(|| anyhow!("Inlined call without line numbers are not supported"))?;
+        let line = self.call_location.line.ok_or_else(|| {
+            anyhow!(
+                "Inlined call without line numbers are not supported {} -> {}",
+                self.from,
+                self.to
+            )
+        })?;
         let mut path = self.call_location.compdir.to_owned();
         if let Some(dir) = self.call_location.directory {
             path.push(dir);
@@ -89,8 +93,9 @@ impl<'input> DwarfScanner<'input> {
                     frames.pop();
                     continue;
                 };
+                let tag = abbrev.tag();
                 let mut inline_scanner = InlinedFunctionScanner {
-                    symbol: None,
+                    names: Default::default(),
                     low_pc: None,
                     call_location: CallLocation {
                         compdir,
@@ -101,22 +106,33 @@ impl<'input> DwarfScanner<'input> {
                     },
                 };
                 let mut symbol_scanner = SymbolDebugInfoScanner::default();
-                for spec in abbrev.attributes() {
-                    let attr = entries.read_attribute(*spec)?;
-                    inline_scanner.handle_attribute(attr, &unit, dwarf, line_program)?;
-                    symbol_scanner.handle_attribute(attr)?;
-                }
-                let symbol = inline_scanner.symbol.clone();
-                if let Some(inlined_function) = inline_scanner.get_inlined_function(&frames) {
-                    self.out.inlined_functions.push(inlined_function);
-                }
-                if let Some((symbol, debug_info)) =
-                    symbol_scanner.get_debug_info(line_program.header(), dwarf, &unit, compdir)?
+                if tag == gimli::DW_TAG_subprogram
+                    || tag == gimli::DW_TAG_inlined_subroutine
+                    || tag == gimli::DW_TAG_lexical_block
+                    || tag == gimli::DW_TAG_variable
                 {
-                    self.out.symbol_debug_info.insert(symbol, debug_info);
+                    for spec in abbrev.attributes() {
+                        let attr = entries.read_attribute(*spec)?;
+                        inline_scanner.handle_attribute(attr, &unit, dwarf, line_program)?;
+                        symbol_scanner.handle_attribute(attr)?;
+                    }
+                    if let Some(inlined_function) = inline_scanner.get_inlined_function(&frames) {
+                        self.out.inlined_functions.push(inlined_function);
+                    }
+                    if let Some((symbol, debug_info)) = symbol_scanner.get_debug_info(
+                        line_program.header(),
+                        dwarf,
+                        &unit,
+                        compdir,
+                    )? {
+                        self.out.symbol_debug_info.insert(symbol, debug_info);
+                    }
+                } else {
+                    entries.skip_attributes(abbrev.attributes())?;
                 }
+                let symbol = inline_scanner.names.clone();
                 if abbrev.has_children() {
-                    frames.push(FrameState { symbol })
+                    frames.push(FrameState { names: symbol })
                 }
             }
         }
@@ -251,15 +267,16 @@ fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -
 }
 
 struct FrameState<'input> {
-    symbol: Option<Symbol<'input>>,
+    names: SymbolAndName<'input>,
 }
 
 struct InlinedFunctionScanner<'input> {
-    symbol: Option<Symbol<'input>>,
+    names: SymbolAndName<'input>,
     low_pc: Option<u64>,
     call_location: CallLocation<'input>,
 }
 
+#[derive(Clone)]
 struct CallLocation<'input> {
     // TODO: Do we need both compdir and directory?
     compdir: &'input Path,
@@ -279,11 +296,15 @@ impl<'input> InlinedFunctionScanner<'input> {
     ) -> Result<()> {
         match attr.name() {
             gimli::DW_AT_linkage_name => {
-                let linkage_name = dwarf.attr_string(unit, attr.raw_value())?;
-                self.symbol = Some(Symbol::borrowed(linkage_name.slice()));
+                let value = dwarf.attr_string(unit, attr.raw_value())?;
+                self.names.symbol = Some(Symbol::borrowed(value.slice()));
+            }
+            gimli::DW_AT_name => {
+                let value = dwarf.attr_string(unit, attr.raw_value())?;
+                self.names.debug_name = Some(value.to_string()?);
             }
             gimli::DW_AT_abstract_origin => {
-                self.symbol = get_symbol(attr, unit, dwarf)?;
+                self.names = get_symbol_and_name(attr, unit, dwarf, 10)?;
             }
             gimli::DW_AT_call_file => {
                 let (directory, filename) =
@@ -308,10 +329,10 @@ impl<'input> InlinedFunctionScanner<'input> {
     }
 
     fn get_inlined_function(
-        self,
+        &self,
         frames: &[FrameState<'input>],
     ) -> Option<InlinedFunction<'input>> {
-        let Some(symbol) = self.symbol else {
+        if self.names.debug_name.is_none() && self.names.symbol.is_none() {
             return None;
         };
         // Functions with DW_AT_low_pc=0 have been optimised out so can be ignored.
@@ -319,11 +340,11 @@ impl<'input> InlinedFunctionScanner<'input> {
             return None;
         }
         for frame in frames.iter().rev() {
-            if let Some(prev_sym) = frame.symbol.as_ref() {
+            if frame.names.symbol.is_some() || frame.names.debug_name.is_some() {
                 return Some(InlinedFunction {
-                    from_symbol: prev_sym.clone(),
-                    to_symbol: symbol.clone(),
-                    call_location: self.call_location,
+                    from: frame.names.clone(),
+                    to: self.names.clone(),
+                    call_location: self.call_location.clone(),
                     low_pc: self.low_pc,
                 });
             }
@@ -332,22 +353,39 @@ impl<'input> InlinedFunctionScanner<'input> {
     }
 }
 
-fn get_symbol<'input>(
+fn get_symbol_and_name<'input>(
     attr: gimli::Attribute<EndianSlice<'input, LittleEndian>>,
     unit: &gimli::Unit<EndianSlice<'input, LittleEndian>, usize>,
     dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-) -> Result<Option<Symbol<'input>>> {
+    max_depth: u32,
+) -> Result<SymbolAndName<'input>> {
+    let mut names = SymbolAndName::default();
     if let AttributeValue::UnitRef(offset) = attr.value() {
         let mut x = unit.entries_raw(Some(offset))?;
         if let Some(abbrev) = x.read_abbreviation()? {
             for spec in abbrev.attributes() {
                 let attr = x.read_attribute(*spec)?;
-                if let gimli::DW_AT_linkage_name = attr.name() {
-                    let linkage_name = dwarf.attr_string(unit, attr.raw_value())?;
-                    return Ok(Some(Symbol::borrowed(linkage_name.slice())));
+                match attr.name() {
+                    gimli::DW_AT_specification => {
+                        if max_depth == 0 {
+                            bail!("Recursion limit reached when resolving inlined functions");
+                        }
+                        return get_symbol_and_name(attr, unit, dwarf, max_depth - 1);
+                    }
+                    gimli::DW_AT_linkage_name => {
+                        let value = dwarf.attr_string(unit, attr.raw_value())?;
+                        names.symbol = Some(Symbol::borrowed(value.slice()));
+                    }
+                    gimli::DW_AT_name => {
+                        let value = dwarf.attr_string(unit, attr.raw_value())?;
+                        names.debug_name = Some(value.to_string()?);
+                    }
+                    _ => (),
                 }
             }
         }
+    } else {
+        bail!("Unsupported abstract_origin type: {:?}", attr.value());
     }
-    Ok(None)
+    Ok(names)
 }
