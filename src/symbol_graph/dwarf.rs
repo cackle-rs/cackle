@@ -323,6 +323,13 @@ impl<'input> InlinedFunctionScanner<'input> {
                     .attr_address(unit, attr.value())
                     .context("Unsupported DW_AT_low_pc")?;
             }
+            gimli::DW_AT_ranges => {
+                if let Some(ranges_offset) = dwarf.attr_ranges_offset(unit, attr.value())? {
+                    if let Some(first_range) = dwarf.ranges(unit, ranges_offset)?.next()? {
+                        self.low_pc = Some(first_range.begin);
+                    }
+                }
+            }
             _ => (),
         }
         Ok(())
@@ -334,10 +341,11 @@ impl<'input> InlinedFunctionScanner<'input> {
     ) -> Option<InlinedFunction<'input>> {
         if self.names.debug_name.is_none() && self.names.symbol.is_none() {
             return None;
-        };
-        // Functions with DW_AT_low_pc=0 have been optimised out so can be ignored.
-        if self.low_pc == Some(0) {
-            return None;
+        }
+        // Functions with DW_AT_low_pc=0 or 1, or absent have been optimised out so can be ignored.
+        match self.low_pc {
+            None | Some(0) | Some(1) => return None,
+            _ => {}
         }
         for frame in frames.iter().rev() {
             if frame.names.symbol.is_some() || frame.names.debug_name.is_some() {
