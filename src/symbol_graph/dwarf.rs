@@ -10,7 +10,6 @@ use gimli::Attribute;
 use gimli::AttributeValue;
 use gimli::Dwarf;
 use gimli::EndianSlice;
-use gimli::IncompleteLineProgram;
 use gimli::LittleEndian;
 use gimli::Unit;
 use std::ffi::OsStr;
@@ -76,21 +75,23 @@ impl<'input> DebugArtifacts<'input> {
 impl<'input> DwarfScanner<'input> {
     fn scan(&mut self, dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>) -> Result<()> {
         let mut units = dwarf.units();
-        let mut frames: Vec<FrameState> = Vec::new();
         while let Some(header) = units.next()? {
             let unit = dwarf.unit(header)?;
             let compdir = path_from_opt_slice(unit.comp_dir);
             if crate::checker::is_in_rust_std(compdir) {
                 continue;
             }
-            let Some(line_program) = &unit.line_program else {
-                continue;
+            let mut unit_state = UnitState {
+                dwarf,
+                unit,
+                frames: Vec::new(),
+                compdir,
             };
-            let mut entries = unit.entries_raw(None)?;
+            let mut entries = unit_state.unit.entries_raw(None)?;
             while !entries.is_empty() {
                 let Some(abbrev) = entries.read_abbreviation()? else {
                     // A null entry indicates the end of nesting level.
-                    frames.pop();
+                    unit_state.frames.pop();
                     continue;
                 };
                 let tag = abbrev.tag();
@@ -113,30 +114,113 @@ impl<'input> DwarfScanner<'input> {
                 {
                     for spec in abbrev.attributes() {
                         let attr = entries.read_attribute(*spec)?;
-                        inline_scanner.handle_attribute(attr, &unit, dwarf, line_program)?;
+                        inline_scanner.handle_attribute(attr, &unit_state)?;
                         symbol_scanner.handle_attribute(attr)?;
                     }
-                    if let Some(inlined_function) = inline_scanner.get_inlined_function(&frames) {
+                    if let Some(inlined_function) =
+                        inline_scanner.get_inlined_function(&unit_state.frames)
+                    {
                         self.out.inlined_functions.push(inlined_function);
                     }
-                    if let Some((symbol, debug_info)) = symbol_scanner.get_debug_info(
-                        line_program.header(),
-                        dwarf,
-                        &unit,
-                        compdir,
-                    )? {
+                    if let Some((symbol, debug_info)) =
+                        symbol_scanner.get_debug_info(&unit_state)?
+                    {
                         self.out.symbol_debug_info.insert(symbol, debug_info);
                     }
                 } else {
                     entries.skip_attributes(abbrev.attributes())?;
                 }
-                let symbol = inline_scanner.names.clone();
                 if abbrev.has_children() {
-                    frames.push(FrameState { names: symbol })
+                    unit_state.frames.push(FrameState {
+                        names: inline_scanner.names,
+                    })
                 }
             }
         }
         Ok(())
+    }
+}
+
+struct UnitState<'input, 'dwarf> {
+    dwarf: &'dwarf Dwarf<EndianSlice<'input, LittleEndian>>,
+    frames: Vec<FrameState<'input>>,
+    unit: Unit<EndianSlice<'input, LittleEndian>, usize>,
+    compdir: &'input Path,
+}
+impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
+    fn attr_string(
+        &self,
+        attr: AttributeValue<EndianSlice<'input, LittleEndian>, usize>,
+    ) -> Result<gimli::EndianSlice<'input, LittleEndian>> {
+        Ok(self.dwarf.attr_string(&self.unit, attr)?)
+    }
+
+    fn get_directory_and_filename(
+        &self,
+        file_index: AttributeValue<EndianSlice<'input, LittleEndian>, usize>,
+    ) -> Result<(Option<&'input OsStr>, &'input OsStr), anyhow::Error> {
+        let header = self.line_program_header()?;
+        let gimli::AttributeValue::FileIndex(file_index) = file_index else {
+            bail!("Expected FileIndex");
+        };
+        let Some(file) = header.file(file_index) else {
+            bail!("Object file contained invalid file index {file_index}");
+        };
+        let directory = if let Some(directory) = file.directory(header) {
+            let directory = self.attr_string(directory)?;
+            Some(OsStr::from_bytes(directory.slice()))
+        } else {
+            None
+        };
+        let path_name = OsStr::from_bytes(self.attr_string(file.path_name())?.slice());
+        Ok((directory, path_name))
+    }
+
+    fn line_program_header(
+        &self,
+    ) -> Result<&gimli::LineProgramHeader<gimli::EndianSlice<'input, LittleEndian>>> {
+        let line_program = self
+            .unit
+            .line_program
+            .as_ref()
+            .ok_or_else(|| anyhow!("Missing line program"))?;
+        Ok(line_program.header())
+    }
+
+    fn get_symbol_and_name(
+        &self,
+        attr: gimli::Attribute<EndianSlice<'input, LittleEndian>>,
+        max_depth: u32,
+    ) -> Result<SymbolAndName<'input>> {
+        let mut names = SymbolAndName::default();
+        if let AttributeValue::UnitRef(offset) = attr.value() {
+            let mut x = self.unit.entries_raw(Some(offset))?;
+            if let Some(abbrev) = x.read_abbreviation()? {
+                for spec in abbrev.attributes() {
+                    let attr = x.read_attribute(*spec)?;
+                    match attr.name() {
+                        gimli::DW_AT_specification => {
+                            if max_depth == 0 {
+                                bail!("Recursion limit reached when resolving inlined functions");
+                            }
+                            return self.get_symbol_and_name(attr, max_depth - 1);
+                        }
+                        gimli::DW_AT_linkage_name => {
+                            let value = self.attr_string(attr.raw_value())?;
+                            names.symbol = Some(Symbol::borrowed(value.slice()));
+                        }
+                        gimli::DW_AT_name => {
+                            let value = self.attr_string(attr.raw_value())?;
+                            names.debug_name = Some(value.to_string()?);
+                        }
+                        _ => (),
+                    }
+                }
+            }
+        } else {
+            bail!("Unsupported abstract_origin type: {:?}", attr.value());
+        }
+        Ok(names)
     }
 }
 
@@ -190,12 +274,9 @@ impl<'input> SymbolDebugInfoScanner<'input> {
         Ok(())
     }
 
-    fn get_debug_info(
+    fn get_debug_info<'dwarf>(
         self,
-        header: &gimli::LineProgramHeader<EndianSlice<'input, LittleEndian>, usize>,
-        dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-        unit: &gimli::Unit<EndianSlice<'input, LittleEndian>, usize>,
-        compdir: &'input Path,
+        unit_state: &UnitState<'input, 'dwarf>,
     ) -> Result<Option<(Symbol<'input>, SymbolDebugInfo<'input>)>> {
         // When `linkage_name` and `name` would be the same (symbol is not mangled), then
         // `linkage_name` is omitted, so we use `name` as a fallback.
@@ -203,7 +284,7 @@ impl<'input> SymbolDebugInfoScanner<'input> {
 
         let name = self
             .name
-            .map(|attr| dwarf.attr_string(unit, attr))
+            .map(|attr| unit_state.attr_string(attr))
             .transpose()?
             .map(|n| n.to_string())
             .transpose()?;
@@ -218,17 +299,17 @@ impl<'input> SymbolDebugInfoScanner<'input> {
             return Ok(None);
         };
         let symbol = Symbol::borrowed(
-            dwarf
-                .attr_string(unit, linkage_name)
+            unit_state
+                .attr_string(linkage_name)
                 .context("symbol invalid")?
                 .slice(),
         );
-        let (directory, path_name) = get_directory_and_filename(file_index, header, dwarf, unit)?;
+        let (directory, path_name) = unit_state.get_directory_and_filename(file_index)?;
         Ok(Some((
             symbol,
             SymbolDebugInfo {
                 name,
-                compdir,
+                compdir: unit_state.compdir,
                 directory,
                 path_name,
                 line,
@@ -236,28 +317,6 @@ impl<'input> SymbolDebugInfoScanner<'input> {
             },
         )))
     }
-}
-
-fn get_directory_and_filename<'input>(
-    file_index: AttributeValue<EndianSlice<'input, LittleEndian>, usize>,
-    header: &gimli::LineProgramHeader<EndianSlice<'input, LittleEndian>, usize>,
-    dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-    unit: &gimli::Unit<EndianSlice<'input, LittleEndian>, usize>,
-) -> Result<(Option<&'input OsStr>, &'input OsStr), anyhow::Error> {
-    let gimli::AttributeValue::FileIndex(file_index) = file_index else {
-        bail!("Expected FileIndex");
-    };
-    let Some(file) = header.file(file_index) else {
-        bail!("Object file contained invalid file index {file_index}");
-    };
-    let directory = if let Some(directory) = file.directory(header) {
-        let directory = dwarf.attr_string(unit, directory)?;
-        Some(OsStr::from_bytes(directory.slice()))
-    } else {
-        None
-    };
-    let path_name = OsStr::from_bytes(dwarf.attr_string(unit, file.path_name())?.slice());
-    Ok((directory, path_name))
 }
 
 fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -> &Path {
@@ -287,28 +346,25 @@ struct CallLocation<'input> {
 }
 
 impl<'input> InlinedFunctionScanner<'input> {
-    fn handle_attribute(
+    fn handle_attribute<'dwarf>(
         &mut self,
         attr: Attribute<EndianSlice<'input, LittleEndian>>,
-        unit: &Unit<EndianSlice<'input, LittleEndian>>,
-        dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-        line_program: &IncompleteLineProgram<EndianSlice<'input, LittleEndian>>,
+        unit_state: &UnitState<'input, 'dwarf>,
     ) -> Result<()> {
         match attr.name() {
             gimli::DW_AT_linkage_name => {
-                let value = dwarf.attr_string(unit, attr.raw_value())?;
+                let value = unit_state.attr_string(attr.raw_value())?;
                 self.names.symbol = Some(Symbol::borrowed(value.slice()));
             }
             gimli::DW_AT_name => {
-                let value = dwarf.attr_string(unit, attr.raw_value())?;
+                let value = unit_state.attr_string(attr.raw_value())?;
                 self.names.debug_name = Some(value.to_string()?);
             }
             gimli::DW_AT_abstract_origin => {
-                self.names = get_symbol_and_name(attr, unit, dwarf, 10)?;
+                self.names = unit_state.get_symbol_and_name(attr, 10)?;
             }
             gimli::DW_AT_call_file => {
-                let (directory, filename) =
-                    get_directory_and_filename(attr.value(), line_program.header(), dwarf, unit)?;
+                let (directory, filename) = unit_state.get_directory_and_filename(attr.value())?;
                 self.call_location.directory = directory;
                 self.call_location.filename = Some(filename);
             }
@@ -319,13 +375,21 @@ impl<'input> InlinedFunctionScanner<'input> {
                 self.call_location.column = attr.udata_value().map(|v| v as u32);
             }
             gimli::DW_AT_low_pc => {
-                self.low_pc = dwarf
-                    .attr_address(unit, attr.value())
+                self.low_pc = unit_state
+                    .dwarf
+                    .attr_address(&unit_state.unit, attr.value())
                     .context("Unsupported DW_AT_low_pc")?;
             }
             gimli::DW_AT_ranges => {
-                if let Some(ranges_offset) = dwarf.attr_ranges_offset(unit, attr.value())? {
-                    if let Some(first_range) = dwarf.ranges(unit, ranges_offset)?.next()? {
+                if let Some(ranges_offset) = unit_state
+                    .dwarf
+                    .attr_ranges_offset(&unit_state.unit, attr.value())?
+                {
+                    if let Some(first_range) = unit_state
+                        .dwarf
+                        .ranges(&unit_state.unit, ranges_offset)?
+                        .next()?
+                    {
                         self.low_pc = Some(first_range.begin);
                     }
                 }
@@ -359,41 +423,4 @@ impl<'input> InlinedFunctionScanner<'input> {
         }
         None
     }
-}
-
-fn get_symbol_and_name<'input>(
-    attr: gimli::Attribute<EndianSlice<'input, LittleEndian>>,
-    unit: &gimli::Unit<EndianSlice<'input, LittleEndian>, usize>,
-    dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
-    max_depth: u32,
-) -> Result<SymbolAndName<'input>> {
-    let mut names = SymbolAndName::default();
-    if let AttributeValue::UnitRef(offset) = attr.value() {
-        let mut x = unit.entries_raw(Some(offset))?;
-        if let Some(abbrev) = x.read_abbreviation()? {
-            for spec in abbrev.attributes() {
-                let attr = x.read_attribute(*spec)?;
-                match attr.name() {
-                    gimli::DW_AT_specification => {
-                        if max_depth == 0 {
-                            bail!("Recursion limit reached when resolving inlined functions");
-                        }
-                        return get_symbol_and_name(attr, unit, dwarf, max_depth - 1);
-                    }
-                    gimli::DW_AT_linkage_name => {
-                        let value = dwarf.attr_string(unit, attr.raw_value())?;
-                        names.symbol = Some(Symbol::borrowed(value.slice()));
-                    }
-                    gimli::DW_AT_name => {
-                        let value = dwarf.attr_string(unit, attr.raw_value())?;
-                        names.debug_name = Some(value.to_string()?);
-                    }
-                    _ => (),
-                }
-            }
-        }
-    } else {
-        bail!("Unsupported abstract_origin type: {:?}", attr.value());
-    }
-    Ok(names)
 }
