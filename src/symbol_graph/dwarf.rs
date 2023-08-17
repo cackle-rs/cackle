@@ -1,4 +1,6 @@
 use crate::location::SourceLocation;
+use crate::names::DebugName;
+use crate::names::Namespace;
 use crate::names::SymbolAndName;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
@@ -12,6 +14,7 @@ use gimli::Dwarf;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
 use gimli::Unit;
+use gimli::UnitOffset;
 use std::ffi::OsStr;
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
@@ -31,7 +34,7 @@ pub(crate) struct SymbolDebugInfo<'input> {
     // The name of what this symbol refers to. This is sometimes, but not always the demangled
     // version of the symbol. In particular, when generics are involved, the symbol often doesn't
     // include them, but this does.
-    pub(crate) name: Option<&'input str>,
+    pub(crate) name: Option<DebugName<'input>>,
 }
 
 /// A reference pair resulting from one function being inlined into another.
@@ -81,12 +84,15 @@ impl<'input> DwarfScanner<'input> {
             if crate::checker::is_in_rust_std(compdir) {
                 continue;
             }
+
             let mut unit_state = UnitState {
+                subprogram_namespaces: get_subprogram_namespaces(&unit, dwarf)?,
                 dwarf,
                 unit,
                 frames: Vec::new(),
                 compdir,
             };
+
             let mut entries = unit_state.unit.entries_raw(None)?;
             while !entries.is_empty() {
                 let Some(abbrev) = entries.read_abbreviation()? else {
@@ -107,6 +113,7 @@ impl<'input> DwarfScanner<'input> {
                     },
                 };
                 let mut symbol_scanner = SymbolDebugInfoScanner::default();
+                let mut namespace = None;
                 if tag == gimli::DW_TAG_subprogram
                     || tag == gimli::DW_TAG_inlined_subroutine
                     || tag == gimli::DW_TAG_lexical_block
@@ -122,17 +129,22 @@ impl<'input> DwarfScanner<'input> {
                     {
                         self.out.inlined_functions.push(inlined_function);
                     }
-                    if let Some((symbol, debug_info)) =
-                        symbol_scanner.get_debug_info(&unit_state)?
-                    {
-                        self.out.symbol_debug_info.insert(symbol, debug_info);
+                    if tag == gimli::DW_TAG_subprogram || tag == gimli::DW_TAG_variable {
+                        if let Some((symbol, debug_info)) =
+                            symbol_scanner.get_debug_info(&unit_state)?
+                        {
+                            self.out.symbol_debug_info.insert(symbol, debug_info);
+                        }
                     }
+                } else if tag == gimli::DW_TAG_namespace || tag == gimli::DW_TAG_structure_type {
+                    namespace = unit_state.scan_namespace(&mut entries, abbrev.attributes())?;
                 } else {
                     entries.skip_attributes(abbrev.attributes())?;
                 }
                 if abbrev.has_children() {
                     unit_state.frames.push(FrameState {
                         names: inline_scanner.names,
+                        namespace,
                     })
                 }
             }
@@ -141,11 +153,68 @@ impl<'input> DwarfScanner<'input> {
     }
 }
 
+/// Parses the DWARF unit and returns a map from offset of each subprogram within the unit to the
+/// namespace that subprogram is contained within. We need to do this in a separate pass, since when
+/// we encounter inlined functions, they can reference a subprogram that we haven't yet seen and
+/// from the offset, we can determine information about the subprogram's attributes, but not about
+/// the namespace in which it's contained.
+fn get_subprogram_namespaces(
+    unit: &Unit<EndianSlice<LittleEndian>, usize>,
+    dwarf: &Dwarf<EndianSlice<LittleEndian>>,
+) -> Result<FxHashMap<UnitOffset, Namespace>> {
+    let mut subprogram_namespaces: FxHashMap<UnitOffset, Namespace> = Default::default();
+    let mut stack: Vec<Option<Namespace>> = Vec::new();
+    let mut entries = unit.entries_raw(None)?;
+    while !entries.is_empty() {
+        let unit_offset = entries.next_offset();
+        let Some(abbrev) = entries.read_abbreviation()? else {
+            stack.pop();
+            continue;
+        };
+        let mut namespace = None;
+        match abbrev.tag() {
+            gimli::DW_TAG_namespace | gimli::DW_TAG_structure_type => {
+                let mut name = None;
+                for spec in abbrev.attributes() {
+                    let attr = entries.read_attribute(*spec)?;
+                    if attr.name() == gimli::DW_AT_name {
+                        name = Some(dwarf.attr_string(unit, attr.value())?);
+                    }
+                }
+                let name = name
+                    .ok_or_else(|| anyhow!("Namespace missing name attribute"))?
+                    .to_string()
+                    .context("Namespace has non-UTF-8 name")?;
+                namespace = Some(
+                    if let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
+                        parent_namespace.plus(name)
+                    } else {
+                        Namespace::empty().plus(name)
+                    },
+                );
+            }
+            _ => {
+                if abbrev.tag() == gimli::DW_TAG_subprogram {
+                    if let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
+                        subprogram_namespaces.insert(unit_offset, parent_namespace.clone());
+                    }
+                }
+                entries.skip_attributes(abbrev.attributes())?;
+            }
+        }
+        if abbrev.has_children() {
+            stack.push(namespace);
+        }
+    }
+    Ok(subprogram_namespaces)
+}
+
 struct UnitState<'input, 'dwarf> {
     dwarf: &'dwarf Dwarf<EndianSlice<'input, LittleEndian>>,
     frames: Vec<FrameState<'input>>,
     unit: Unit<EndianSlice<'input, LittleEndian>, usize>,
     compdir: &'input Path,
+    subprogram_namespaces: FxHashMap<UnitOffset, Namespace>,
 }
 impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
     fn attr_string(
@@ -210,8 +279,14 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
                             names.symbol = Some(Symbol::borrowed(value.slice()));
                         }
                         gimli::DW_AT_name => {
-                            let value = self.attr_string(attr.raw_value())?;
-                            names.debug_name = Some(value.to_string()?);
+                            let value = self.attr_string(attr.raw_value())?.to_string()?;
+                            names.debug_name = Some(DebugName::new(
+                                self.subprogram_namespaces
+                                    .get(&offset)
+                                    .cloned()
+                                    .unwrap_or_else(Namespace::empty),
+                                value,
+                            ));
                         }
                         _ => (),
                     }
@@ -221,6 +296,41 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
             bail!("Unsupported abstract_origin type: {:?}", attr.value());
         }
         Ok(names)
+    }
+
+    fn scan_namespace(
+        &self,
+        entries: &mut gimli::EntriesRaw<EndianSlice<'input, LittleEndian>>,
+        attributes: &[gimli::AttributeSpecification],
+    ) -> Result<Option<Namespace>> {
+        let mut name = None;
+        for spec in attributes {
+            let attr = entries.read_attribute(*spec)?;
+            if attr.name() == gimli::DW_AT_name {
+                name = Some(self.attr_string(attr.value())?);
+            }
+        }
+        let name = name
+            .ok_or_else(|| anyhow!("Namespace missing name attribute"))?
+            .to_string()
+            .context("Namespace has non-UTF-8 name")?;
+        Ok(Some(
+            self.frames
+                .last()
+                .and_then(|f| f.namespace.as_ref())
+                .map(|parent_namespace| parent_namespace.plus(name))
+                .unwrap_or_else(|| Namespace::top_level(name)),
+        ))
+    }
+
+    /// Returns the current namespace or the empty namespace if we're not the direct child of a
+    /// namespace.
+    fn namespace(&self) -> Namespace {
+        self.frames
+            .last()
+            .and_then(|f| f.namespace.as_ref())
+            .cloned()
+            .unwrap_or_else(Namespace::empty)
     }
 }
 
@@ -308,7 +418,7 @@ impl<'input> SymbolDebugInfoScanner<'input> {
         Ok(Some((
             symbol,
             SymbolDebugInfo {
-                name,
+                name: name.map(|n| DebugName::new(unit_state.namespace(), n)),
                 compdir: unit_state.compdir,
                 directory,
                 path_name,
@@ -327,6 +437,7 @@ fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -
 
 struct FrameState<'input> {
     names: SymbolAndName<'input>,
+    namespace: Option<Namespace>,
 }
 
 struct InlinedFunctionScanner<'input> {
@@ -358,7 +469,8 @@ impl<'input> InlinedFunctionScanner<'input> {
             }
             gimli::DW_AT_name => {
                 let value = unit_state.attr_string(attr.raw_value())?;
-                self.names.debug_name = Some(value.to_string()?);
+                self.names.debug_name =
+                    Some(DebugName::new(unit_state.namespace(), value.to_string()?));
             }
             gimli::DW_AT_abstract_origin => {
                 self.names = unit_state.get_symbol_and_name(attr, 10)?;

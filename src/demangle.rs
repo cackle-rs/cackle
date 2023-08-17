@@ -23,6 +23,7 @@ pub(crate) struct DemangleIterator<'data> {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct NonMangledIterator<'data> {
+    namespace: &'data [Box<str>],
     data: &'data str,
 }
 
@@ -46,8 +47,8 @@ impl<'data> DemangleIterator<'data> {
 /// An iterator that processes a non-mangled string and provides the same tokens as
 /// `DemangleIterator`.
 impl<'data> NonMangledIterator<'data> {
-    pub(crate) fn new(data: &'data str) -> Self {
-        Self { data }
+    pub(crate) fn new(namespace: &'data [Box<str>], data: &'data str) -> Self {
+        Self { namespace, data }
     }
 }
 
@@ -147,6 +148,11 @@ impl<'data> Iterator for NonMangledIterator<'data> {
     type Item = DemangleToken<'data>;
 
     fn next(&mut self) -> Option<DemangleToken<'data>> {
+        if !self.namespace.is_empty() {
+            let token = self.namespace[0].as_ref();
+            self.namespace = &self.namespace[1..];
+            return Some(DemangleToken::Text(token));
+        }
         while let Some(rest) = self.data.strip_prefix(':') {
             self.data = rest;
         }
@@ -205,7 +211,7 @@ mod tests {
 
         // Check consistency with rustc-demangle.
         let demangled = rustc_demangle::demangle(mangled).to_string();
-        let tokens: Vec<_> = NonMangledIterator::new(&demangled)
+        let tokens: Vec<_> = NonMangledIterator::new(&[], &demangled)
             .map(token_to_string)
             .collect();
         assert_eq!(tokens, expected);

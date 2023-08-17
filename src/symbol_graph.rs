@@ -15,6 +15,7 @@ use crate::crate_index::CrateSel;
 use crate::demangle::NonMangledIterator;
 use crate::lazy::Lazy;
 use crate::location::SourceLocation;
+use crate::names::DebugName;
 use crate::names::Name;
 use crate::names::NamesIterator;
 use crate::names::SymbolAndName;
@@ -389,7 +390,7 @@ impl<'input> ApiUsageCollector<'input> {
                     .into_iter()
                     .min_by_key(|u| match &u.first_usage().unwrap().to {
                         SymbolOrDebugName::Symbol(sym) => sym.len(),
-                        SymbolOrDebugName::DebugName(debug_name) => debug_name.len(),
+                        SymbolOrDebugName::DebugName(debug_name) => debug_name.name.len(),
                     })
             {
                 self.outputs.api_usages.push(shortest_target_usage);
@@ -556,7 +557,7 @@ impl<'symbol, 'input: 'symbol> BinInfo<'input> {
             ..SymbolAndName::default()
         };
         if let Some(symbol_debug) = self.symbol_debug_info.get(symbol) {
-            result.debug_name = symbol_debug.name
+            result.debug_name = symbol_debug.name.clone()
         }
         result
     }
@@ -599,9 +600,11 @@ impl<'input> BinInfo<'input> {
             return Ok(());
         }
         let mut got_apis = false;
-        if let Some(debug_name) = symbol_and_name.debug_name {
-            let mut it = NamesIterator::new(NonMangledIterator::new(debug_name));
-            let debug_name: Arc<str> = Arc::from(debug_name);
+        if let Some(debug_name) = symbol_and_name.debug_name.as_ref() {
+            let mut it = NamesIterator::new(NonMangledIterator::new(
+                &debug_name.namespace.parts,
+                debug_name.name.as_ref(),
+            ));
             while let Some((parts, name)) = it
                 .next_name()
                 .with_context(|| format!("Failed to parse debug name `{debug_name}`"))?
@@ -611,7 +614,7 @@ impl<'input> BinInfo<'input> {
                     got_apis = true;
                     (callback)(
                         name.create_name()?,
-                        NameSource::DebugName(debug_name.clone()),
+                        NameSource::DebugName(debug_name.to_heap()),
                         apis,
                     )?;
                 }
@@ -646,7 +649,7 @@ impl<'input> BinInfo<'input> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NameSource<'symbol> {
     Symbol(Symbol<'symbol>),
-    DebugName(Arc<str>),
+    DebugName(DebugName<'static>),
 }
 
 impl<'symbol> NameSource<'symbol> {

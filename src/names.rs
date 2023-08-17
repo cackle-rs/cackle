@@ -1,3 +1,4 @@
+use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
@@ -14,21 +15,62 @@ pub(crate) struct Name {
     pub(crate) parts: Vec<Arc<str>>,
 }
 
+/// A name obtained from debug info.
+#[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord)]
+pub(crate) struct DebugName<'input> {
+    pub(crate) namespace: Namespace,
+    pub(crate) name: Utf8Bytes<'input>,
+}
+
+#[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord)]
+pub(crate) struct Namespace {
+    pub(crate) parts: Arc<[Box<str>]>,
+}
+
 #[derive(Default, Clone)]
 pub(crate) struct SymbolAndName<'input> {
     pub(crate) symbol: Option<Symbol<'input>>,
-    pub(crate) debug_name: Option<&'input str>,
+    pub(crate) debug_name: Option<DebugName<'input>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum SymbolOrDebugName {
     Symbol(Symbol<'static>),
-    DebugName(Arc<str>),
+    DebugName(DebugName<'static>),
 }
 
 impl Name {
     pub(crate) fn parts(&self) -> impl Iterator<Item = &str> {
         self.parts.iter().map(|p| p.as_ref())
+    }
+}
+
+impl Namespace {
+    pub(crate) fn empty() -> Self {
+        Self {
+            parts: Arc::new([]),
+        }
+    }
+
+    pub(crate) fn top_level(name: &str) -> Self {
+        Self {
+            parts: Arc::new([Box::from(name)]),
+        }
+    }
+
+    pub(crate) fn plus(&self, name: &str) -> Self {
+        Self {
+            parts: self
+                .parts
+                .iter()
+                .cloned()
+                .chain(std::iter::once(Box::from(name)))
+                .collect(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.parts.is_empty()
     }
 }
 
@@ -286,6 +328,22 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
     }
 }
 
+impl<'input> DebugName<'input> {
+    pub(crate) fn to_heap(&self) -> DebugName<'static> {
+        DebugName {
+            namespace: self.namespace.clone(),
+            name: self.name.to_heap(),
+        }
+    }
+
+    pub(crate) fn new(namespace: Namespace, name: &str) -> DebugName {
+        DebugName {
+            namespace,
+            name: Utf8Bytes::Borrowed(name),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum NamesIteratorState<I> {
     /// We're not outputting a anme and no 'as' token has been encountered yet.
@@ -306,11 +364,11 @@ enum NamesIteratorState<I> {
 
 impl<'input> SymbolAndName<'input> {
     pub(crate) fn symbol_or_debug_name(&self) -> Result<SymbolOrDebugName> {
+        if let Some(debug_name) = self.debug_name.as_ref() {
+            return Ok(SymbolOrDebugName::DebugName(debug_name.to_heap()));
+        }
         if let Some(symbol) = self.symbol.as_ref() {
             return Ok(SymbolOrDebugName::Symbol(symbol.to_heap()));
-        }
-        if let Some(debug_name) = self.debug_name {
-            return Ok(SymbolOrDebugName::DebugName(Arc::from(debug_name)));
         }
         bail!("Invalid SymbolAndName has neither");
     }
@@ -325,22 +383,51 @@ impl Display for Name {
 
 impl<'input> Display for SymbolAndName<'input> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(name) = self.debug_name.as_ref() {
+            Display::fmt(&name, f)?;
+        }
         if let Some(sym) = self.symbol.as_ref() {
-            std::fmt::Display::fmt(&sym, f)?;
-        } else if let Some(name) = self.debug_name {
-            std::fmt::Debug::fmt(&name, f)?;
-        } else {
+            Display::fmt("[", f)?;
+            Display::fmt(&sym, f)?;
+            Display::fmt("]", f)?
+        }
+        if self.debug_name.is_none() && self.symbol.is_none() {
             write!(f, "<missing symbol and debug name>")?;
         }
         Ok(())
     }
 }
 
+impl Display for Namespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for p in &self.parts[..] {
+            if first {
+                first = false;
+            } else {
+                write!(f, "::")?;
+            }
+            Display::fmt(&p, f)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'input> Display for DebugName<'input> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.namespace, f)?;
+        if !self.namespace.is_empty() {
+            Display::fmt(&"::", f)?;
+        }
+        Display::fmt(&*self.name, f)
+    }
+}
+
 impl Display for SymbolOrDebugName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SymbolOrDebugName::Symbol(sym) => std::fmt::Display::fmt(&sym, f),
-            SymbolOrDebugName::DebugName(debug_name) => std::fmt::Display::fmt(&debug_name, f),
+            SymbolOrDebugName::Symbol(sym) => Display::fmt(&sym, f),
+            SymbolOrDebugName::DebugName(debug_name) => Display::fmt(&debug_name, f),
         }
     }
 }
@@ -363,69 +450,85 @@ mod tests {
 
     use super::*;
 
-    fn get_name_vecs(input: &str) -> Vec<Vec<&str>> {
+    #[track_caller]
+    fn check(namespace: &[&str], input: &str, expected: &[&[&str]]) {
         let mut out = Vec::new();
         let mut name_parts = Vec::new();
-        for token in NamesIterator::new(NonMangledIterator::new(input)).current {
+        let namespace: Vec<Box<str>> = namespace.iter().map(|s| Box::from(*s)).collect();
+        for token in NamesIterator::new(NonMangledIterator::new(&namespace, input)).current {
             match token {
                 NameToken::Part(part) => name_parts.push(part),
                 NameToken::EndName => out.push(std::mem::take(&mut name_parts)),
                 NameToken::Error(error) => panic!("{error}"),
             }
         }
-        out
+        assert_eq!(out, expected);
     }
 
     #[test]
     fn test_split_with_closure() {
-        assert_eq!(
-            get_name_vecs("core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>"),
-            vec![
-                vec!["core", "ptr", "drop_in_place"],
-                vec!["std", "rt", "lang_start"],
-            ]
+        check(
+            &[],
+            "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>",
+            &[
+                &["core", "ptr", "drop_in_place"],
+                &["std", "rt", "lang_start"],
+            ],
         );
     }
 
     #[test]
     fn test_split_as() {
-        assert_eq!(
-            get_name_vecs("<alloc::string::String as core::fmt::Debug>::fmt"),
-            vec![
-                vec!["alloc", "string", "String"],
-                vec!["core", "fmt", "Debug", "fmt"],
-            ]
+        check(
+            &[],
+            "<alloc::string::String as core::fmt::Debug>::fmt",
+            &[
+                &["alloc", "string", "String"],
+                &["core", "fmt", "Debug", "fmt"],
+            ],
         );
     }
 
     #[test]
     fn test_split_with_comma() {
-        assert_eq!(
-            get_name_vecs("HashMap<std::string::String, std::path::PathBuf>"),
-            vec![
-                vec!["HashMap"],
-                vec!["std", "string", "String"],
-                vec!["std", "path", "PathBuf"],
-            ]
+        check(
+            &["std", "collections"],
+            "HashMap<std::string::String, std::path::PathBuf>",
+            &[
+                &["std", "collections", "HashMap"],
+                &["std", "string", "String"],
+                &["std", "path", "PathBuf"],
+            ],
         );
     }
 
     #[test]
     fn test_split_mut_ref() {
-        assert_eq!(
-            get_name_vecs("Vec<&mut std::string::String>"),
-            vec![vec!["Vec"], vec!["std", "string", "String"],]
+        check(
+            &["std", "vec"],
+            "Vec<&mut std::string::String>",
+            &[&["std", "vec", "Vec"], &["std", "string", "String"]],
         );
     }
 
     #[test]
     fn test_split_vtable() {
-        assert_eq!(
-            get_name_vecs("<std::rt::lang_start::{closure_env#0}<()> as core::ops::function::Fn<()>>::{vtable}"),
-            vec![
-                vec!["std", "rt", "lang_start"],
-                vec!["core", "ops", "function", "Fn"]
-            ]
+        check(
+            &[],
+            "<std::rt::lang_start::{closure_env#0}<()> as core::ops::function::Fn<()>>::{vtable}",
+            &[
+                &["std", "rt", "lang_start"],
+                &["core", "ops", "function", "Fn"],
+            ],
         );
+    }
+
+    #[test]
+    fn test_debug_name_display() {
+        let name = DebugName::new(
+            Namespace::empty().plus("std").plus("collections"),
+            "HashMap<String, u32>",
+        );
+        assert_eq!(name.to_string(), "std::collections::HashMap<String, u32>");
     }
 }
