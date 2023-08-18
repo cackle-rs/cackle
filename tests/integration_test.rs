@@ -20,6 +20,7 @@ fn integration_test() -> Result<()> {
     }
     let status = command
         .arg("--fail-on-warnings")
+        .arg("--save-requests")
         .arg("--path")
         .arg(crate_root().join("test_crates"))
         .arg("check")
