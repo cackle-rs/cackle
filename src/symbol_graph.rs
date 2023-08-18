@@ -632,8 +632,7 @@ impl<'input> BinInfo<'input> {
                     )?;
                 }
             }
-        }
-        if let Some(symbol) = symbol_and_name.symbol.as_ref() {
+        } else if let Some(symbol) = symbol_and_name.symbol.as_ref() {
             let mut symbol_it = symbol.names()?;
             while let Some((parts, name)) = symbol_it.next_name()? {
                 let apis = checker.apis_for_name_iterator(parts);
@@ -646,6 +645,8 @@ impl<'input> BinInfo<'input> {
                     )?;
                 }
             }
+        }
+        if let Some(symbol) = symbol_and_name.symbol.as_ref() {
             if !got_apis {
                 // The need to call `to_heap` here is just to get past an annoying variance issue.
                 // Fortunately it doesn't seem to affect performance significantly, so probably the
