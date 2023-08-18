@@ -145,6 +145,7 @@ impl<'input> DwarfScanner<'input> {
                     unit_state.frames.push(FrameState {
                         names: inline_scanner.names,
                         namespace,
+                        call_location: inline_scanner.call_location,
                     })
                 }
             }
@@ -438,6 +439,7 @@ fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -
 struct FrameState<'input> {
     names: SymbolAndName<'input>,
     namespace: Option<Namespace>,
+    call_location: CallLocation<'input>,
 }
 
 struct InlinedFunctionScanner<'input> {
@@ -523,12 +525,23 @@ impl<'input> InlinedFunctionScanner<'input> {
             None | Some(0) | Some(1) => return None,
             _ => {}
         }
+        let mut call_location = &self.call_location;
         for frame in frames.iter().rev() {
             if frame.names.symbol.is_some() || frame.names.debug_name.is_some() {
+                if frame
+                    .names
+                    .symbol
+                    .as_ref()
+                    .map(|s| s.is_look_through())
+                    .unwrap_or(false)
+                {
+                    call_location = &frame.call_location;
+                    continue;
+                }
                 return Some(InlinedFunction {
                     from: frame.names.clone(),
                     to: self.names.clone(),
-                    call_location: self.call_location.clone(),
+                    call_location: call_location.clone(),
                     low_pc: self.low_pc,
                 });
             }

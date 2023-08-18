@@ -75,11 +75,14 @@ impl<'data> Symbol<'data> {
     /// originating from whatever referenced the look-through symbol. So for example, if
     /// foo->core::ops::function::Fn->std::env::var, then we'll consider `foo` as referencing
     /// `std::env::var`.
-    pub(crate) fn is_look_through(&self) -> Result<bool> {
-        let mut tokens = DemangleIterator::new(self.to_str()?);
-        Ok(["core", "ops", "function"]
+    pub(crate) fn is_look_through(&self) -> bool {
+        let Ok(data) = self.to_str() else {
+            return false;
+        };
+        let mut tokens = DemangleIterator::new(data);
+        ["core", "ops", "function"]
             .iter()
-            .all(|p| tokens.next() == Some(DemangleToken::Text(p))))
+            .all(|p| tokens.next() == Some(DemangleToken::Text(p)))
     }
 }
 

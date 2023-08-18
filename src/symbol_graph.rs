@@ -284,7 +284,7 @@ impl<'input> ApiUsageCollector<'input> {
                 // Use debug info to determine the function that the reference originated from.
                 let offset_in_bin = symbol_address_in_bin + offset - first_sym_info.offset;
                 let mut frames = ctx.find_frames(offset_in_bin).skip_all_loads()?;
-                let (frame_fn, frame_location) = frames
+                let (frame_fn_name, frame_location) = frames
                     .next()?
                     .map(|frame| (frame.function, frame.location))
                     .unwrap_or((None, None));
@@ -293,7 +293,7 @@ impl<'input> ApiUsageCollector<'input> {
                         .and_then(|l| l.try_into().ok())
                         .unwrap_or_else(|| fallback_source_location.clone()))
                 });
-                let frame_symbol = frame_fn
+                let frame_symbol = frame_fn_name
                     .as_ref()
                     .map(|fn_name| Symbol::borrowed(&fn_name.name));
 
@@ -556,7 +556,7 @@ impl<'symbol, 'input: 'symbol> BinInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
         for sym in obj.symbols() {
             let symbol = &Symbol::borrowed(sym.name_bytes()?);
-            if !symbol.is_look_through()? {
+            if !symbol.is_look_through() {
                 self.symbol_addresses
                     .insert(symbol.to_heap(), sym.address());
             }
