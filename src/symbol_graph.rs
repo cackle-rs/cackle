@@ -19,7 +19,6 @@ use crate::names::DebugName;
 use crate::names::Name;
 use crate::names::NamesIterator;
 use crate::names::SymbolAndName;
-use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsageGroupKey;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
@@ -392,9 +391,9 @@ impl<'input> ApiUsageCollector<'input> {
             if let Some(shortest_target_usage) =
                 api_usages
                     .into_iter()
-                    .min_by_key(|u| match &u.first_usage().unwrap().to {
-                        SymbolOrDebugName::Symbol(sym) => sym.len(),
-                        SymbolOrDebugName::DebugName(debug_name) => debug_name.name.len(),
+                    .min_by_key(|u| match &u.first_usage().unwrap().to_source {
+                        NameSource::Symbol(sym) => sym.len(),
+                        NameSource::DebugName(debug_name) => debug_name.name.len(),
                     })
             {
                 self.outputs.api_usages.push(shortest_target_usage);
