@@ -511,7 +511,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
-                    return Ok(SymbolOrSection::Symbol(Symbol::borrowed(name).to_heap()));
+                    return Ok(SymbolOrSection::Symbol(Symbol::borrowed(name)));
                 }
                 symbol.section_index().ok_or_else(|| {
                     anyhow!("Relocation target has empty name an no section index")
