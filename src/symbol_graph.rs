@@ -44,7 +44,6 @@ use object::RelocationTarget;
 use object::SectionIndex;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
@@ -276,7 +275,11 @@ impl<'input> ApiUsageCollector<'input> {
             for (offset, rel) in section.relocations() {
                 let mut target_symbols = Vec::new();
                 let rel = &rel;
-                object_index.add_target_symbols(rel, &mut target_symbols, &mut HashSet::new())?;
+                object_index.add_target_symbols(
+                    rel,
+                    &mut target_symbols,
+                    &mut FxHashSet::default(),
+                )?;
 
                 // Use debug info to determine the function that the reference originated from.
                 let offset_in_bin = symbol_address_in_bin + offset - first_sym_info.offset;
@@ -321,7 +324,7 @@ impl<'input> ApiUsageCollector<'input> {
     ) -> Result<(), anyhow::Error> {
         trace!("{from} -> {target}");
 
-        let mut from_apis = HashSet::new();
+        let mut from_apis = FxHashSet::default();
         self.bin.names_and_apis_do(from, checker, |_, _, apis| {
             from_apis.extend(apis.iter());
             Ok(())
@@ -405,7 +408,7 @@ impl<'input> ApiUsageCollector<'input> {
             .keys()
             .map(|n| (n.name.as_ref(), n))
             .collect();
-        let mut found = HashSet::new();
+        let mut found = FxHashSet::default();
         for (symbol, debug_info) in &self.bin.symbol_debug_info {
             let Some(module_name) = symbol.module_name() else {
                 continue;
@@ -478,7 +481,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
         &self,
         rel: &object::Relocation,
         symbols_out: &mut Vec<Symbol<'data>>,
-        visited: &mut HashSet<SectionIndex>,
+        visited: &mut FxHashSet<SectionIndex>,
     ) -> Result<()> {
         match self.get_symbol_or_section(rel.target())? {
             SymbolOrSection::Symbol(symbol) => {
@@ -514,7 +517,6 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                     anyhow!("Relocation target has empty name an no section index")
                 })?
             }
-            RelocationTarget::Section(_) => todo!(),
             _ => bail!("Unsupported relocation kind {target_in:?}"),
         };
         let section_info = &self
