@@ -152,6 +152,11 @@ allow_unsafe = true
 [pkg.syn]
 allow_unsafe = true
 
+[pkg.syn.build]
+allow_apis = [
+    "process",
+]
+
 [pkg.utf8parse]
 allow_unsafe = true
 
@@ -316,4 +321,13 @@ allow_apis = [
 [pkg.tempfile]
 allow_apis = [
     "fs",
+]
+
+[pkg.thiserror-core-impl]
+allow_proc_macro = true
+
+[pkg.thiserror-core.build]
+allow_apis = [
+    "fs",
+    "process",
 ]
