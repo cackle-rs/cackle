@@ -279,6 +279,7 @@ impl<'input> ApiUsageCollector<'input> {
                     rel,
                     &mut target_symbols,
                     &mut FxHashSet::default(),
+                    &self.bin.symbol_addresses,
                 )?;
 
                 // Use debug info to determine the function that the reference originated from.
@@ -482,8 +483,9 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
         rel: &object::Relocation,
         symbols_out: &mut Vec<Symbol<'data>>,
         visited: &mut FxHashSet<SectionIndex>,
+        bin_symbols: &FxHashMap<Symbol, u64>,
     ) -> Result<()> {
-        match self.get_symbol_or_section(rel.target())? {
+        match self.get_symbol_or_section(rel.target(), bin_symbols)? {
             SymbolOrSection::Symbol(symbol) => {
                 symbols_out.push(symbol);
             }
@@ -494,7 +496,7 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 }
                 let section = self.obj.section_by_index(section_index)?;
                 for (_, rel) in section.relocations() {
-                    self.add_target_symbols(&rel, symbols_out, visited)?;
+                    self.add_target_symbols(&rel, symbols_out, visited, bin_symbols)?;
                 }
             }
         }
@@ -503,7 +505,11 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
 
     /// Returns either symbol or the section index for a relocation target, giving preference to the
     /// symbol.
-    fn get_symbol_or_section(&self, target_in: RelocationTarget) -> Result<SymbolOrSection<'data>> {
+    fn get_symbol_or_section(
+        &self,
+        target_in: RelocationTarget,
+        bin_symbols: &FxHashMap<Symbol, u64>,
+    ) -> Result<SymbolOrSection<'data>> {
         let section_index = match target_in {
             RelocationTarget::Symbol(symbol_index) => {
                 let Ok(symbol) = self.obj.symbol_by_index(symbol_index) else {
@@ -511,7 +517,10 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
-                    return Ok(SymbolOrSection::Symbol(Symbol::borrowed(name)));
+                    let symbol = Symbol::borrowed(name);
+                    if bin_symbols.contains_key(&symbol) {
+                        return Ok(SymbolOrSection::Symbol(symbol));
+                    }
                 }
                 symbol.section_index().ok_or_else(|| {
                     anyhow!("Relocation target has empty name an no section index")
@@ -524,7 +533,9 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .get(section_index.0)
             .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?;
         if let Some(first_symbol_info) = section_info.first_symbol.as_ref() {
-            return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
+            if bin_symbols.contains_key(&first_symbol_info.symbol) {
+                return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
+            }
         }
         Ok(SymbolOrSection::Section(section_index))
     }
