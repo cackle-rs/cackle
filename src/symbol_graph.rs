@@ -516,13 +516,13 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
                 };
                 let name = symbol.name_bytes().unwrap_or_default();
                 if !name.is_empty() {
-                    let symbol = Symbol::borrowed(name);
-                    if bin_symbols.contains_key(&symbol) {
-                        return Ok(SymbolOrSection::Symbol(symbol));
+                    let sym = Symbol::borrowed(name);
+                    if bin_symbols.contains_key(&sym) || symbol.section_index().is_none() {
+                        return Ok(SymbolOrSection::Symbol(sym));
                     }
                 }
                 symbol.section_index().ok_or_else(|| {
-                    anyhow!("Relocation target has empty name an no section index")
+                    anyhow!("Relocation target has empty name and no section index")
                 })?
             }
             _ => bail!("Unsupported relocation kind {target_in:?}"),
@@ -554,11 +554,12 @@ enum SymbolOrSection<'data> {
 
 impl<'symbol, 'input: 'symbol> BinInfo<'input> {
     fn load_symbols(&mut self, obj: &object::File) -> Result<()> {
-        for symbol in obj.symbols() {
-            self.symbol_addresses.insert(
-                Symbol::borrowed(symbol.name_bytes()?).to_heap(),
-                symbol.address(),
-            );
+        for sym in obj.symbols() {
+            let symbol = &Symbol::borrowed(sym.name_bytes()?);
+            if !symbol.is_look_through()? {
+                self.symbol_addresses
+                    .insert(symbol.to_heap(), sym.address());
+            }
         }
         Ok(())
     }

@@ -69,6 +69,18 @@ impl<'data> Symbol<'data> {
             None
         }
     }
+
+    /// Returns whether this symbol is one that we should "look through". Such symbols are ones
+    /// where we pretend they don't exist and treat any outgoing references from the symbol as
+    /// originating from whatever referenced the look-through symbol. So for example, if
+    /// foo->core::ops::function::Fn->std::env::var, then we'll consider `foo` as referencing
+    /// `std::env::var`.
+    pub(crate) fn is_look_through(&self) -> Result<bool> {
+        let mut tokens = DemangleIterator::new(self.to_str()?);
+        Ok(["core", "ops", "function"]
+            .iter()
+            .all(|p| tokens.next() == Some(DemangleToken::Text(p))))
+    }
 }
 
 impl<'data> Display for Symbol<'data> {
