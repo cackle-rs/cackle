@@ -144,5 +144,10 @@ allow_apis = [
     "fs",
 ]
 
+[pkg.crab9]
+allow_apis = [
+    "fs",
+]
+
 [pkg.crab1.build.sandbox]
 allow_network = true
