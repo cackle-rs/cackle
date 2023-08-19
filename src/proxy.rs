@@ -114,19 +114,26 @@ pub(crate) fn invoke_cargo_build(
     // then they might still be set in our subprocesses, which might then get confused and think
     // they're proxying the build of "cackle" itself.
     command.env_remove("CARGO_PKG_NAME");
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let capture_output = args.should_capture_cargo_output();
+    if capture_output {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
     let mut cargo_process = command
         .spawn()
         .with_context(|| format!("Failed to run {command:?}"))?;
 
-    let stdout_thread = start_output_collecting_thread(
-        "cargo-stdout-reader",
-        cargo_process.stdout.take().unwrap(),
-    )?;
-    let stderr_thread = start_output_collecting_thread(
-        "cargo-stderr-reader",
-        cargo_process.stderr.take().unwrap(),
-    )?;
+    let mut stdout_thread = None;
+    let mut stderr_thread = None;
+    if capture_output {
+        stdout_thread = Some(start_output_collecting_thread(
+            "cargo-stdout-reader",
+            cargo_process.stdout.take().unwrap(),
+        )?);
+        stderr_thread = Some(start_output_collecting_thread(
+            "cargo-stderr-reader",
+            cargo_process.stderr.take().unwrap(),
+        )?);
+    }
 
     listener
         .set_nonblocking(true)
@@ -135,8 +142,14 @@ pub(crate) fn invoke_cargo_build(
     loop {
         if let Some(status) = cargo_process.try_wait()? {
             // The following unwrap will only panic if an output collecting thread panicked.
-            let stdout = stdout_thread.join().unwrap();
-            let stderr = stderr_thread.join().unwrap();
+            let stdout = stdout_thread
+                .take()
+                .map(|thread| thread.join().unwrap())
+                .unwrap_or_default();
+            let stderr = stderr_thread
+                .take()
+                .map(|thread| thread.join().unwrap())
+                .unwrap_or_default();
             drop(listener);
             // Deleting the socket is best-effort only, so we don't report an error if we can't.
             let _ = std::fs::remove_file(&ipc_path);

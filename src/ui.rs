@@ -84,6 +84,10 @@ pub(crate) fn start_ui(
 }
 
 impl Args {
+    pub(crate) fn should_capture_cargo_output(&self) -> bool {
+        !matches!(self.ui_kind(), Kind::None)
+    }
+
     fn ui_kind(&self) -> Kind {
         match &self.command {
             Command::Check => Kind::None,
