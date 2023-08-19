@@ -3,7 +3,9 @@ use proc_macro::TokenStream;
 
 #[proc_macro]
 pub fn create_write_to_file(_item: TokenStream) -> TokenStream {
-    println!("{:?}", std::env::var("PWD"));
+    if std::env::var("PWD").as_deref() == Ok("/foo/bar") {
+        println!("This seems unlikely");
+    }
     r#"fn write_to_file(path: &str, text: &str) {
         std::fs::write(path, text).unwrap();
     }"#
