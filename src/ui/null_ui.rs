@@ -33,10 +33,16 @@ impl super::UserInterface for NullUi {
                     pstore.group_by_crate();
                     let mut has_errors = false;
                     for (_, problem) in pstore.deduplicated_into_iter() {
-                        let severity = if self.args.fail_on_warnings {
-                            Severity::Error
-                        } else {
-                            problem.severity()
+                        let mut severity = problem.severity();
+                        if matches!(self.args.command, crate::Command::Cargo(..))
+                            && severity == Severity::Warning
+                        {
+                            // When running `cackle cargo x`, not everything will be analysed, so
+                            // unused warnings are expected. As such, we supress all warnings.
+                            continue;
+                        }
+                        if self.args.fail_on_warnings {
+                            severity = Severity::Error
                         };
                         match severity {
                             Severity::Warning => {

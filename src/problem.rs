@@ -201,7 +201,7 @@ impl<'a> IntoIterator for &'a ProblemList {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Severity {
     Warning,
     Error,

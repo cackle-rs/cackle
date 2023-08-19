@@ -48,6 +48,7 @@ use outcome::ExitCode;
 use outcome::Outcome;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
+use proxy::cargo::CargoOptions;
 use proxy::rpc::Request;
 use std::path::Path;
 use std::path::PathBuf;
@@ -136,11 +137,16 @@ enum Command {
     /// Non-interactive check of configuration.
     #[default]
     Check,
+
     /// Interactive check of configuration.
     #[cfg(feature = "ui")]
     Ui(ui::UiArgs),
+
     /// Print summary of permissions used.
     Summary(SummaryOptions),
+
+    /// Run an arbitrary cargo command, analysing whatever gets built.
+    Cargo(CargoOptions),
 }
 
 fn main() -> Result<()> {
@@ -182,7 +188,7 @@ impl Cackle {
             .canonicalize()
             .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-        if !args.replay_requests {
+        if !args.replay_requests && !matches!(args.command, Command::Cargo(..)) {
             proxy::clean(&root_path, &args)?;
         }
 
@@ -255,7 +261,10 @@ impl Cackle {
         if self.args.print_timing {
             checker.print_timing();
         }
-        if exit_code == outcome::SUCCESS && !self.args.quiet {
+        if exit_code == outcome::SUCCESS
+            && !self.args.quiet
+            && !matches!(self.args.command, Command::Cargo(..))
+        {
             println!(
                 "Completed successfully for configuration {}",
                 self.config_path.display()
