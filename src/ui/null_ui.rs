@@ -7,15 +7,20 @@ use crate::Args;
 use anyhow::Result;
 use colored::Colorize;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
 pub(crate) struct NullUi {
     args: Arc<Args>,
+    abort_sender: Sender<()>,
 }
 
 impl NullUi {
-    pub(crate) fn new(args: &Arc<Args>) -> Self {
-        Self { args: args.clone() }
+    pub(crate) fn new(args: &Arc<Args>, abort_sender: Sender<()>) -> Self {
+        Self {
+            args: args.clone(),
+            abort_sender,
+        }
     }
 }
 
@@ -49,7 +54,14 @@ impl super::UserInterface for NullUi {
                                 println!("{} {problem:#}", "WARNING:".yellow())
                             }
                             Severity::Error => {
-                                has_errors = true;
+                                if !has_errors {
+                                    has_errors = true;
+                                    // Kill cargo process then wait a bit for any terminal output to
+                                    // settle before we start reporting errors.
+                                    let _ = self.abort_sender.send(());
+                                    std::thread::sleep(std::time::Duration::from_millis(20));
+                                    println!();
+                                }
                                 println!("{} {problem:#}", "ERROR:".red())
                             }
                         }
@@ -80,7 +92,8 @@ impl super::UserInterface for NullUi {
 fn test_null_ui_with_warning() {
     use crate::problem::Problem::UnusedPackageConfig;
 
-    let mut ui = NullUi::new(&Arc::new(Args::default()));
+    let (abort_sender, _abort_recv) = std::sync::mpsc::channel();
+    let mut ui = NullUi::new(&Arc::new(Args::default()), abort_sender);
     let (event_send, event_recv) = std::sync::mpsc::channel();
     let mut problem_store = crate::problem_store::create(event_send.clone());
     let join_handle = std::thread::spawn({
