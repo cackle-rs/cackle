@@ -19,10 +19,11 @@ jobs:
         include:
           # 32-bit target
           - target: i686-unknown-linux-gnu
-            deps: sudo apt update && sudo apt install gcc-multilib
+            deps: sudo apt update && sudo apt install bubblewrap gcc-multilib
 
           # 64-bit target
           - target: x86_64-unknown-linux-gnu
+            deps: sudo apt update && sudo apt install bubblewrap
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
