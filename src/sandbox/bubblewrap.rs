@@ -45,6 +45,9 @@ impl Sandbox for Bubblewrap {
     }
 
     fn ro_bind(&mut self, dir: &Path) {
+        if !dir.exists() {
+            return;
+        }
         self.arg("--ro-bind");
         self.arg(dir);
         self.arg(dir);
