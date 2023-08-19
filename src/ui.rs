@@ -74,10 +74,6 @@ pub(crate) fn start_ui(
             )?)
         }
     };
-    #[cfg(not(feature = "ui"))]
-    {
-        drop((config_path, abort_sender, crate_index));
-    }
     Ok(std::thread::Builder::new()
         .name("UI".to_owned())
         .spawn(move || ui.run(problem_store, event_receiver))?)
