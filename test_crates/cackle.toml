@@ -163,5 +163,11 @@ allow_build_instructions = [
     "cargo:rustc-link-*",
 ]
 
+[pkg.crab11]
+allow_apis = [
+    "fs",
+]
+sandbox.kind = "Disabled"
+
 [pkg.crab1.build.sandbox]
 allow_network = true

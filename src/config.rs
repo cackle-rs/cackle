@@ -1,4 +1,3 @@
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
@@ -307,13 +306,6 @@ impl Config {
             .get(crate_name)
             .map(|crate_config| crate_config.allow_unsafe)
             .unwrap_or(false)
-    }
-
-    pub(crate) fn sandbox_config_for_build_script(
-        &self,
-        build_script_id: &BuildScriptId,
-    ) -> SandboxConfig {
-        self.sandbox_config_for_package(&CrateName::from(build_script_id))
     }
 
     /// Returns the configuration for `package_name`, inheriting options from the default sandbox

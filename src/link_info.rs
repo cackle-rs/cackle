@@ -13,6 +13,7 @@ pub(crate) struct LinkInfo {
     pub(crate) crate_sel: CrateSel,
     pub(crate) object_paths: Vec<PathBuf>,
     pub(crate) output_file: PathBuf,
+    is_shared: bool,
 }
 
 impl LinkInfo {
@@ -27,6 +28,7 @@ impl LinkInfo {
             crate_sel,
             object_paths,
             output_file: get_output_file()?,
+            is_shared: get_is_shared(),
         })
     }
 
@@ -39,8 +41,9 @@ impl LinkInfo {
             .collect()
     }
 
-    pub(crate) fn is_build_script(&self) -> bool {
-        matches!(self.crate_sel, CrateSel::BuildScript(_))
+    /// Returns whether the output of the linker is an executable (not a shared object).
+    pub(crate) fn is_executable(&self) -> bool {
+        !self.is_shared
     }
 }
 
@@ -54,6 +57,10 @@ fn get_output_file() -> Result<PathBuf> {
         }
     }
     bail!("Failed to find output file in linker command line");
+}
+
+fn get_is_shared() -> bool {
+    std::env::args().any(|arg| arg == "-shared")
 }
 
 fn has_supported_extension(path: &Path) -> bool {

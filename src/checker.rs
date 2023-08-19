@@ -198,7 +198,7 @@ impl Checker {
             rpc::Request::LinkerInvoked(link_info) => {
                 self.check_linker_invocation(link_info, check_state)
             }
-            rpc::Request::BuildScriptComplete(output) => self.check_build_script_output(output),
+            rpc::Request::BinExecutionComplete(output) => self.check_build_script_output(output),
             rpc::Request::RustcComplete(info) => {
                 self.record_crate_paths(info)?;
                 Ok(ProblemList::default())
@@ -251,7 +251,7 @@ impl Checker {
         Ok(problems)
     }
 
-    fn check_build_script_output(&self, output: &rpc::BuildScriptOutput) -> Result<ProblemList> {
+    fn check_build_script_output(&self, output: &rpc::BinExecutionOutput) -> Result<ProblemList> {
         build_script_checker::check(output, &self.config)
     }
 

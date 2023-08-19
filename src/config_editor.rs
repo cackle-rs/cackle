@@ -84,7 +84,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
-                let crate_name = CrateName::from(&failure.build_script_id);
+                let crate_name = CrateName::from(&failure.crate_sel);
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
                         crate_name: crate_name.clone(),
@@ -874,7 +874,7 @@ mod tests {
     use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
-    use crate::proxy::rpc::BuildScriptOutput;
+    use crate::proxy::rpc::BinExecutionOutput;
     use indoc::indoc;
     use std::path::Path;
     use std::path::PathBuf;
@@ -1026,12 +1026,13 @@ mod tests {
 
     #[test]
     fn build_script_failed() {
-        let failure = Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
-            output: BuildScriptOutput {
+        let crate_sel = CrateSel::BuildScript(build_script_id("crab1"));
+        let failure = Problem::BuildScriptFailed(crate::problem::BinExecutionFailed {
+            output: BinExecutionOutput {
                 exit_code: 1,
                 stdout: Vec::new(),
                 stderr: Vec::new(),
-                build_script_id: build_script_id("crab1"),
+                crate_sel: crate_sel.clone(),
                 sandbox_config: SandboxConfig {
                     kind: crate::config::SandboxKind::Bubblewrap,
                     extra_args: vec![],
@@ -1039,7 +1040,7 @@ mod tests {
                 },
                 build_script: PathBuf::new(),
             },
-            build_script_id: build_script_id("crab1"),
+            crate_sel,
         });
         check(
             "",

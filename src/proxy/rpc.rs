@@ -1,7 +1,6 @@
 //! Defines the communication protocol between the proxy subprocesses and the parent process.
 
 use crate::config::SandboxConfig;
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
@@ -54,9 +53,9 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn build_script_complete(&self, info: BuildScriptOutput) -> Result<Outcome> {
+    pub(crate) fn build_script_complete(&self, info: BinExecutionOutput) -> Result<Outcome> {
         let mut ipc = self.connect()?;
-        write_to_stream(&Request::BuildScriptComplete(info), &mut ipc)?;
+        write_to_stream(&Request::BinExecutionComplete(info), &mut ipc)?;
         read_from_stream(&mut ipc)
     }
 
@@ -84,17 +83,18 @@ pub(crate) enum Request {
     /// Advises that the specified crate failed to compile because it uses unsafe.
     CrateUsesUnsafe(UnsafeUsage),
     LinkerInvoked(LinkInfo),
-    BuildScriptComplete(BuildScriptOutput),
+    BinExecutionComplete(BinExecutionOutput),
     RustcStarted(CrateSel),
     RustcComplete(RustcOutput),
 }
 
+/// The output from running a binary such as a build script or a test.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
-pub(crate) struct BuildScriptOutput {
+pub(crate) struct BinExecutionOutput {
     pub(crate) exit_code: i32,
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
-    pub(crate) build_script_id: BuildScriptId,
+    pub(crate) crate_sel: CrateSel,
     pub(crate) sandbox_config: SandboxConfig,
     pub(crate) build_script: PathBuf,
 }

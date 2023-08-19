@@ -91,6 +91,7 @@ impl Args {
             Command::Ui(ui_args) => ui_args.ui,
             Command::Summary(..) => Kind::None,
             Command::Cargo(..) => Kind::None,
+            Command::ProxyBin(..) => Kind::None,
         }
     }
 }

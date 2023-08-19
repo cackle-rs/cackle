@@ -2,6 +2,7 @@
 //! to which crates, which are proc macros etc.
 
 use crate::config::CrateName;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use cargo_metadata::camino::Utf8PathBuf;
@@ -241,13 +242,6 @@ fn get_env(key: &str) -> Result<String> {
     std::env::var(key).with_context(|| format!("Failed to get environment variable {key}"))
 }
 
-impl BuildScriptId {
-    pub(crate) fn from_env() -> Result<Self> {
-        let pkg_id = PackageId::from_env()?;
-        Ok(BuildScriptId { pkg_id })
-    }
-}
-
 impl CrateSel {
     pub(crate) fn from_env() -> Result<Self> {
         let pkg_id = PackageId::from_env()?;
@@ -266,6 +260,22 @@ impl CrateSel {
             CrateSel::Primary(pkg_id) => pkg_id,
             CrateSel::BuildScript(build_script_id) => &build_script_id.pkg_id,
         }
+    }
+
+    pub(crate) fn selector_token(&self) -> &str {
+        match self {
+            CrateSel::Primary(_) => "primary",
+            CrateSel::BuildScript(_) => "build-script",
+        }
+    }
+
+    pub(crate) fn with_selector_token(&self, token: &str) -> Result<Self> {
+        let pkg_id = self.pkg_id().clone();
+        Ok(match token {
+            "primary" => CrateSel::Primary(pkg_id),
+            "build-script" => CrateSel::BuildScript(BuildScriptId { pkg_id }),
+            other => bail!("Invalid crate selector token `{other}`"),
+        })
     }
 }
 

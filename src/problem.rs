@@ -13,7 +13,7 @@ use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
 use crate::names::SymbolOrDebugName;
-use crate::proxy::rpc::BuildScriptOutput;
+use crate::proxy::rpc::BinExecutionOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
 use std::borrow::Cow;
@@ -38,7 +38,7 @@ pub(crate) enum Problem {
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
-    BuildScriptFailed(BuildScriptFailed),
+    BuildScriptFailed(BinExecutionFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(CrateName),
     UnusedAllowApi(UnusedAllowApi),
@@ -56,9 +56,9 @@ pub(crate) struct ErrorDetails {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct BuildScriptFailed {
-    pub(crate) build_script_id: BuildScriptId,
-    pub(crate) output: BuildScriptOutput,
+pub(crate) struct BinExecutionFailed {
+    pub(crate) crate_sel: CrateSel,
+    pub(crate) output: BinExecutionOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -269,7 +269,7 @@ impl Problem {
             Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
             Problem::DisallowedApiUsage(d) => Some(d.crate_sel.pkg_id()),
-            Problem::BuildScriptFailed(d) => Some(&d.build_script_id.pkg_id),
+            Problem::BuildScriptFailed(d) => Some(d.crate_sel.pkg_id()),
             Problem::DisallowedBuildInstruction(d) => Some(&d.build_script_id.pkg_id),
             Problem::UnusedPackageConfig(_) => None,
             Problem::UnusedAllowApi(_) => None,
@@ -413,13 +413,17 @@ impl Display for UnusedAllowApi {
     }
 }
 
-impl Display for BuildScriptFailed {
+impl Display for BinExecutionFailed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Build script for package `{}` failed",
-            self.output.build_script_id.pkg_id
-        )?;
+        match &self.output.crate_sel {
+            CrateSel::Primary(pkg_id) => {
+                write!(f, "Execution of binary for package `{pkg_id}` failed")?;
+            }
+            CrateSel::BuildScript(build_script_id) => {
+                let pkg_id = &build_script_id.pkg_id;
+                write!(f, "Build script for package `{pkg_id}` failed")?;
+            }
+        }
         if f.alternate() {
             write!(
                 f,

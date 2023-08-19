@@ -1,24 +1,29 @@
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::crate_index::BuildScriptId;
+use crate::crate_index::CrateSel;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
-use crate::proxy::rpc::BuildScriptOutput;
+use crate::proxy::rpc::BinExecutionOutput;
 use anyhow::Result;
 
-pub(crate) fn check(outputs: &BuildScriptOutput, config: &Config) -> Result<ProblemList> {
-    let build_script_id = &outputs.build_script_id;
+pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<ProblemList> {
+    let crate_sel = &outputs.crate_sel;
     if outputs.exit_code != 0 {
         return Ok(
-            Problem::BuildScriptFailed(crate::problem::BuildScriptFailed {
+            Problem::BuildScriptFailed(crate::problem::BinExecutionFailed {
                 output: outputs.clone(),
-                build_script_id: build_script_id.clone(),
+                crate_sel: crate_sel.clone(),
             })
             .into(),
         );
     }
-    let crate_name = CrateName::from(build_script_id);
+    let CrateSel::BuildScript(build_script_id) = crate_sel else {
+        // If it wasn't a build script that was run, then there's nothing else to check.
+        return Ok(ProblemList::default());
+    };
+    let crate_name = CrateName::from(crate_sel);
     let allow_build_instructions = config
         .packages
         .get(&crate_name)
@@ -85,20 +90,21 @@ mod tests {
     use crate::config;
     use crate::config::SandboxConfig;
     use crate::crate_index::testing::build_script_id;
+    use crate::crate_index::CrateSel;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
-    use crate::proxy::rpc::BuildScriptOutput;
+    use crate::proxy::rpc::BinExecutionOutput;
     use std::path::PathBuf;
 
     #[track_caller]
     fn check(stdout: &str, config_str: &str) -> ProblemList {
         let config = config::testing::parse(config_str).unwrap();
-        let outputs = BuildScriptOutput {
+        let outputs = BinExecutionOutput {
             exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
-            build_script_id: build_script_id("my_pkg"),
+            crate_sel: CrateSel::BuildScript(build_script_id("my_pkg")),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
         };

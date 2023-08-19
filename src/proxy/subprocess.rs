@@ -3,14 +3,13 @@
 
 use super::cackle_exe;
 use super::errors::get_disallowed_unsafe_locations;
-use super::rpc::BuildScriptOutput;
+use super::rpc::BinExecutionOutput;
 use super::rpc::RustcOutput;
 use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::Config;
 use crate::config::CrateName;
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
@@ -29,6 +28,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 
+pub(crate) const PROXY_BIN_ARG: &str = "proxy-bin";
+
 /// Checks if we're acting as a wrapper for rustc or the linker. If we are, then we do whatever work
 /// we need to do, then invoke the binary that we're wrapping and then exit - i.e. we don't return.
 /// If we're not wrapping a binary, then we just return.
@@ -40,11 +41,17 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     let rpc_client = RpcClient::new(socket_path.into());
 
     let mut args = std::env::args().peekable();
-    let binary_name = PathBuf::from(args.next().ok_or_else(|| anyhow!("Missing all args"))?);
+    // Skip binary name.
+    args.next();
     let exit_status;
-    if let Some(orig_build_script) = proxied_build_rs_bin_path(&binary_name) {
-        // We're wrapping a build script.
-        exit_status = proxy_build_script(orig_build_script, &rpc_client)?;
+    if args.peek().map(|a| a == PROXY_BIN_ARG).unwrap_or(false) {
+        // We're wrapping a binary.
+        args.next();
+        let (Some(selector_token), Some(orig_bin)) = (args.next(), args.next()) else {
+            bail!("Missing proxy-bin args");
+        };
+        let crate_sel = CrateSel::from_env()?.with_selector_token(&selector_token)?;
+        exit_status = proxy_binary(PathBuf::from(orig_bin), &crate_sel, &rpc_client)?;
     } else if is_path_to_rustc(args.peek()) {
         // We're wrapping rustc.
         exit_status = proxy_rustc(&rpc_client)?;
@@ -65,80 +72,85 @@ fn is_path_to_rustc(arg: Option<&String>) -> bool {
         .unwrap_or(false)
 }
 
-/// Renames the binary produced from build.rs and puts our binary in its place. This lets us wrap
-/// the build script.
-fn setup_build_script_wrapper(link_info: &mut LinkInfo) -> Result<()> {
-    let build_script_bin = &link_info.output_file;
-    let new_filename = orig_build_rs_bin_path(build_script_bin);
-    std::fs::rename(build_script_bin, &new_filename).with_context(|| {
-        format!(
-            "Failed to rename build.rs binary `{}`",
-            build_script_bin.display()
-        )
-    })?;
-    let cackle_exe = cackle_exe()?;
-    // Note, we use hard links rather than symbolic links because cargo apparently canonicalises the
-    // path to the build script binary when it runs it, so if we give it a symlink, we don't know
-    // what we're supposed to be proxying, we just see arg[0] as the path to cackle.
-    if std::fs::hard_link(&cackle_exe, build_script_bin).is_err() {
-        // If hard linking fails, e.g. because the cackle binary is on a different filesystem to
-        // where we're building, then fall back to copying.
-        std::fs::copy(&cackle_exe, build_script_bin).with_context(|| {
-            format!(
-                "Failed to copy {} to {}",
-                cackle_exe.display(),
-                build_script_bin.display()
-            )
-        })?;
+/// Renames an output binary and puts our binary in its place. This lets us wrap the binary when it
+/// gets executed.
+fn setup_bin_wrapper(link_info: &mut LinkInfo) -> Result<()> {
+    fn utf8(input: &Path) -> Result<&str> {
+        input
+            .to_str()
+            .ok_or_else(|| anyhow!("Path `{}` is not valid UTF-8", input.display()))
     }
+
+    let bin_path = &link_info.output_file;
+    let new_filename = orig_bin_path(bin_path);
+    // We could rename the file here, however copying avoids the need to chmod `bin_path` after we
+    // write it below.
+    std::fs::copy(bin_path, &new_filename)
+        .with_context(|| format!("Failed to rename binary `{}`", bin_path.display()))?;
+    let cackle_exe = cackle_exe()?;
+    let crate_sel = CrateSel::from_env()?;
+    std::fs::write(
+        bin_path,
+        format!(
+            "#!/bin/bash\n\"{}\" {} {} \"{}\" \"$@\" ",
+            utf8(&cackle_exe)?,
+            PROXY_BIN_ARG,
+            crate_sel.selector_token(),
+            utf8(&new_filename)?
+        ),
+    )?;
     link_info.output_file = new_filename;
     Ok(())
 }
 
-/// Determines if we're supposed to be running a build script and if we are, returns the path to the
-/// actual build script. `binary_path` should be the path via which we were invoked - i.e. arg[0].
-fn proxied_build_rs_bin_path(binary_name: &Path) -> Option<PathBuf> {
-    let orig = orig_build_rs_bin_path(binary_name);
-    if orig.exists() {
-        Some(orig)
+/// Returns the name of the real bin file after we've renamed it.
+fn orig_bin_path(path: &Path) -> PathBuf {
+    if let Some(extension) = path.extension() {
+        let mut new_extension = OsString::from("orig.");
+        new_extension.push(extension);
+        path.with_extension(new_extension)
     } else {
-        None
+        path.with_extension("orig")
     }
 }
 
-/// Returns the name of the actual build.rs file after we've renamed it.
-fn orig_build_rs_bin_path(path: &Path) -> PathBuf {
-    path.with_file_name("original-build-script")
-}
-
-fn proxy_build_script(orig_build_script: PathBuf, rpc_client: &RpcClient) -> Result<ExitCode> {
+fn proxy_binary(
+    orig_bin: PathBuf,
+    crate_sel: &CrateSel,
+    rpc_client: &RpcClient,
+) -> Result<ExitCode> {
     loop {
         let config = get_config_from_env()?;
-        let build_script_id = BuildScriptId::from_env()?;
-        let sandbox_config = config.sandbox_config_for_build_script(&build_script_id);
+        let sandbox_config = config.sandbox_config_for_package(&CrateName::from(crate_sel));
         let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
             // Config says to run without a sandbox.
-            return Ok(Command::new(&orig_build_script).status()?.into());
+            return Ok(Command::new(&orig_bin).status()?.into());
         };
         // Allow read access to the crate's root source directory.
         sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
         // Allow read access to the directory containing the build script itself.
-        if let Some(build_script_dir) = orig_build_script.parent() {
+        if let Some(build_script_dir) = orig_bin.parent() {
             sandbox.ro_bind(build_script_dir);
         }
         // Allow write access to OUT_DIR.
-        sandbox.writable_bind(Path::new(&get_env("OUT_DIR")?));
+        if let Ok(out_dir) = std::env::var("OUT_DIR") {
+            sandbox.writable_bind(Path::new(&out_dir));
+        }
+        // LD_LIBRARY_PATH is set when running `cargo test` on crates that normally compile as
+        // cdylibs - e.g. proc macros. If we don't pass it through, those tests will fail to find
+        // runtime dependencies.
+        sandbox.pass_env("LD_LIBRARY_PATH");
         sandbox.pass_cargo_env();
 
-        let output = sandbox.run(&orig_build_script)?;
+        let output = sandbox.run(&orig_bin)?;
         let rpc_response = rpc_client.build_script_complete({
-            BuildScriptOutput {
+            BinExecutionOutput {
                 exit_code: output.status.code().unwrap_or(-1),
                 stdout: output.stdout.clone(),
                 stderr: output.stderr.clone(),
-                build_script_id,
+                crate_sel: crate_sel.clone(),
                 sandbox_config,
-                build_script: orig_build_script.clone(),
+                build_script: orig_bin.clone(),
             }
         })?;
         match rpc_response {
@@ -350,8 +362,8 @@ fn proxy_linker(
     // Invoke the actual linker first, since the parent process uses the output file to aid with
     // analysis.
     let exit_status = invoke_real_linker(args)?;
-    if exit_status.is_ok() && link_info.is_build_script() {
-        setup_build_script_wrapper(&mut link_info)?;
+    if exit_status.is_ok() && link_info.is_executable() {
+        setup_bin_wrapper(&mut link_info)?;
     }
     match rpc_client.linker_invoked(link_info)? {
         Outcome::Continue => Ok(exit_status),
@@ -390,4 +402,13 @@ fn get_config_from_env() -> Result<Arc<Config>> {
 fn get_env(var_name: &str) -> Result<String> {
     std::env::var(var_name)
         .with_context(|| format!("Failed to get environment variable `{var_name}`"))
+}
+
+#[test]
+fn test_orig_bin_path() {
+    assert_eq!(orig_bin_path(Path::new("foo")), Path::new("foo.orig"));
+    assert_eq!(
+        orig_bin_path(Path::new("foo.exe")),
+        Path::new("foo.orig.exe")
+    );
 }

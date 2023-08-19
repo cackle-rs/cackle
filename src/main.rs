@@ -147,12 +147,26 @@ enum Command {
 
     /// Run an arbitrary cargo command, analysing whatever gets built.
     Cargo(CargoOptions),
+
+    #[clap(hide = true, name = proxy::subprocess::PROXY_BIN_ARG)]
+    ProxyBin(ProxyBinOptions),
+}
+
+#[derive(Parser, Debug, Clone)]
+pub(crate) struct ProxyBinOptions {
+    #[clap(allow_hyphen_values = true)]
+    remaining: Vec<String>,
 }
 
 fn main() -> Result<()> {
     proxy::subprocess::handle_wrapped_binaries()?;
 
     let mut args = Args::parse();
+    if matches!(args.command, Command::ProxyBin(..)) {
+        bail!(
+            "This binary was compiled via cackle and is not intended to be run outside of cackle"
+        );
+    }
     args.colour = args.colour.detect();
     if let Some(log_file) = &args.log_file {
         logging::init(log_file, args.log_level)?;
