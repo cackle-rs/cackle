@@ -38,6 +38,7 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -77,6 +78,7 @@ impl<'a> CargoRunner<'a> {
     pub(crate) fn invoke_cargo_build(
         &self,
         abort_recv: Receiver<()>,
+        abort_sender: Sender<()>,
         request_creator: impl Fn(Request) -> RequestHandler,
     ) -> Result<()> {
         if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
@@ -157,13 +159,13 @@ impl<'a> CargoRunner<'a> {
                 drop(listener);
                 // Deleting the socket is best-effort only, so we don't report an error if we can't.
                 let _ = std::fs::remove_file(&ipc_path);
+                if let Ok(error) = error_recv.try_recv() {
+                    return Err(error);
+                }
                 if status.code() != Some(0) {
                     return Err(CargoBuildFailure { stdout, stderr }.into());
                 }
                 break;
-            }
-            if let Ok(error) = error_recv.try_recv() {
-                return Err(error);
             }
             if abort_recv.try_recv().is_ok() {
                 let _ = cargo_process.kill();
@@ -176,10 +178,13 @@ impl<'a> CargoRunner<'a> {
                     .context("Malformed request from subprocess")?;
                 let request_handler = (request_creator)(request);
                 let error_send = error_send.clone();
+                let abort_sender = abort_sender.clone();
                 std::thread::Builder::new()
                     .name("Request handler".to_owned())
                     .spawn(move || {
-                        if let Err(error) = process_request(request_handler, connection) {
+                        if let Err(error) =
+                            process_request(request_handler, connection, abort_sender)
+                        {
                             let _ = error_send.send(error);
                         }
                     })?;
@@ -206,9 +211,18 @@ fn start_output_collecting_thread(
         })?)
 }
 
-fn process_request(mut request_handler: RequestHandler, mut connection: UnixStream) -> Result<()> {
+fn process_request(
+    mut request_handler: RequestHandler,
+    mut connection: UnixStream,
+    abort_sender: Sender<()>,
+) -> Result<()> {
     let response = request_handler.handle_request();
     let can_continue = response.as_ref().unwrap_or(&Outcome::GiveUp);
+    if can_continue == &Outcome::GiveUp {
+        // Send an abort signal to cargo, otherwise if we're not capturing the output from cargo,
+        // we'll see errors not related to the problem encountered.
+        let _ = abort_sender.send(());
+    }
     rpc::write_to_stream(&can_continue, &mut connection)?;
     response?;
     Ok(())

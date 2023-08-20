@@ -174,6 +174,7 @@ struct Cackle {
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
     crate_index: Arc<CrateIndex>,
+    abort_sender: Sender<()>,
 }
 
 impl Cackle {
@@ -215,7 +216,7 @@ impl Cackle {
             problem_store.clone(),
             crate_index.clone(),
             event_receiver,
-            abort_sender,
+            abort_sender.clone(),
         )?;
         Ok(Self {
             problem_store,
@@ -227,6 +228,7 @@ impl Cackle {
             ui_join_handle,
             crate_index,
             tmpdir,
+            abort_sender,
         })
     }
 
@@ -251,7 +253,8 @@ impl Cackle {
         }
         // Now that the UI (if any) has shut down, print any errors.
         if let Some(error) = error {
-            println!("{error:#}");
+            println!();
+            println!("Error: {error:#}");
         }
 
         let checker = self.checker.lock().unwrap();
@@ -323,7 +326,7 @@ impl Cackle {
                     args: &args,
                     crate_index: &crate_index,
                 };
-                cargo_runner.invoke_cargo_build(abort_recv, |request| {
+                cargo_runner.invoke_cargo_build(abort_recv, self.abort_sender.clone(), |request| {
                     if self.args.save_requests {
                         if let Err(error) = self.save_request(&request) {
                             println!("Failed to save request: {error}");
