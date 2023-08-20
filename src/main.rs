@@ -316,22 +316,21 @@ impl Cackle {
             if self.args.replay_requests {
                 self.replay_requests()
             } else {
-                proxy::invoke_cargo_build(
-                    &root_path,
-                    &self.tmpdir,
-                    &config,
-                    &args,
-                    abort_recv,
-                    &crate_index,
-                    |request| {
-                        if self.args.save_requests {
-                            if let Err(error) = self.save_request(&request) {
-                                println!("Failed to save request: {error}");
-                            }
+                let cargo_runner = proxy::CargoRunner {
+                    manifest_dir: &root_path,
+                    tmpdir: self.tmpdir.path(),
+                    config: &config,
+                    args: &args,
+                    crate_index: &crate_index,
+                };
+                cargo_runner.invoke_cargo_build(abort_recv, |request| {
+                    if self.args.save_requests {
+                        if let Err(error) = self.save_request(&request) {
+                            println!("Failed to save request: {error}");
                         }
-                        self.new_request_handler(Some(request))
-                    },
-                )
+                    }
+                    self.new_request_handler(Some(request))
+                })
             }
         } else {
             // We've already detected problems before running cargo, don't run cargo.
