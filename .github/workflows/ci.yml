@@ -1,0 +1,82 @@
+name: All
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+    branches: [ '**' ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: '-D warnings'
+
+jobs:
+  test-stable:
+    name: Test x86_64-linux stable
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # 64-bit target
+          - target: x86_64-unknown-linux-gnu
+            deps: sudo apt update && sudo apt install git bubblewrap
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup target add ${{ matrix.target }}
+      - run: ${{ matrix.deps }}
+      - run: cargo test --target ${{ matrix.target }} --no-default-features
+      - run: cargo test --target ${{ matrix.target }}
+      - run: cargo test --target ${{ matrix.target }} --all-features
+
+# TODO: fix tests for nightly?
+# https://github.com/pinkforest/cackle/actions/runs/5916635575/job/16044132143
+#  test-nightly:
+#    name: Test Nightly
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v3
+#    - uses: dtolnay/rust-toolchain@nightly
+#    - run: sudo apt update && sudo apt install git bubblewrap
+#    - run: cargo test
+
+# TODO: bench
+#  bench:
+#    name: Check that benchmarks compile
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v3
+#    - uses: dtolnay/rust-toolchain@stable
+#    - name: Build default (host native) bench
+#      run: cargo build --benches
+
+# TODO: appease clippy
+#  clippy:
+#    name: Check that clippy is happy
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v3
+#    - uses: dtolnay/rust-toolchain@nightly
+#      with:
+#        components: clippy
+#    - run: cargo clippy --target x86_64-unknown-linux-gnu
+
+  rustfmt:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - run: cargo fmt --all -- --check
+
+  doc:
+    name: Check docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - run: cargo doc --all-features
