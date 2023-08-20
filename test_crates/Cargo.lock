@@ -25,6 +25,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "crab10"
+version = "0.1.0"
+
+[[package]]
 name = "crab2"
 version = "0.1.0"
 dependencies = [
@@ -68,6 +72,10 @@ dependencies = [
  "crab1",
  "crab6",
 ]
+
+[[package]]
+name = "crab9"
+version = "0.1.0"
 
 [[package]]
 name = "pmacro1"
