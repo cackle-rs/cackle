@@ -12,7 +12,7 @@ env:
 
 jobs:
   test-stable:
-    name: Test 32/64 bit stable
+    name: Test x86_64-linux stable
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,6 +35,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@nightly
+    - run: sudo apt update && sudo apt install git bubblewrap
     - run: cargo test
 
 # TODO: bench
