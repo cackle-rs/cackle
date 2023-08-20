@@ -149,5 +149,19 @@ allow_apis = [
     "fs",
 ]
 
+[pkg.crab10]
+allow_unsafe = true
+
+[pkg.crab10.build]
+allow_unsafe = true
+allow_apis = [
+    "env",
+    "fs",
+    "process",
+]
+allow_build_instructions = [
+    "cargo:rustc-link-*",
+]
+
 [pkg.crab1.build.sandbox]
 allow_network = true

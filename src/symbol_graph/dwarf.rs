@@ -173,7 +173,8 @@ fn get_subprogram_namespaces(
             continue;
         };
         let mut namespace = None;
-        match abbrev.tag() {
+        let tag = abbrev.tag();
+        match tag {
             gimli::DW_TAG_namespace | gimli::DW_TAG_structure_type => {
                 let mut name = None;
                 for spec in abbrev.attributes() {
@@ -182,17 +183,18 @@ fn get_subprogram_namespaces(
                         name = Some(dwarf.attr_string(unit, attr.value())?);
                     }
                 }
-                let name = name
-                    .ok_or_else(|| anyhow!("Namespace missing name attribute"))?
-                    .to_string()
-                    .context("Namespace has non-UTF-8 name")?;
-                namespace = Some(
-                    if let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
-                        parent_namespace.plus(name)
-                    } else {
-                        Namespace::empty().plus(name)
-                    },
-                );
+                if let Some(name) = name {
+                    let name = name
+                        .to_string()
+                        .with_context(|| format!("{tag} has non-UTF-8 name"))?;
+                    namespace = Some(
+                        if let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
+                            parent_namespace.plus(name)
+                        } else {
+                            Namespace::empty().plus(name)
+                        },
+                    );
+                }
             }
             _ => {
                 if abbrev.tag() == gimli::DW_TAG_subprogram {
@@ -304,6 +306,8 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
         entries: &mut gimli::EntriesRaw<EndianSlice<'input, LittleEndian>>,
         attributes: &[gimli::AttributeSpecification],
     ) -> Result<Option<Namespace>> {
+        // TODO: See if we can reduce duplication between this function and
+        // get_subprogram_namespaces.
         let mut name = None;
         for spec in attributes {
             let attr = entries.read_attribute(*spec)?;
@@ -311,10 +315,10 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
                 name = Some(self.attr_string(attr.value())?);
             }
         }
-        let name = name
-            .ok_or_else(|| anyhow!("Namespace missing name attribute"))?
-            .to_string()
-            .context("Namespace has non-UTF-8 name")?;
+        let Some(name) = name else {
+            return Ok(None);
+        };
+        let name = name.to_string().context("Namespace has non-UTF-8 name")?;
         Ok(Some(
             self.frames
                 .last()
