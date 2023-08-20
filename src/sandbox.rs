@@ -71,7 +71,7 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     // of it because it might contain crates.io credentials, which we'd like to avoid exposing.
     let cargo_home = &home.join(".cargo");
     sandbox.ro_bind(&cargo_home.join("bin"));
-    // sandbox.ro_bind(&cargo_home.join("git")); ?
+    sandbox.ro_bind(&cargo_home.join("git"));
     sandbox.ro_bind(&cargo_home.join("registry"));
     sandbox.ro_bind(&home.join(".rustup"));
     sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
