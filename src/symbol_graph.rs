@@ -126,10 +126,15 @@ pub(crate) fn scan_objects(
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
-    let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf)?;
+    let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf).with_context(|| {
+        format!(
+            "Failed while processing debug info for `{}`",
+            bin_path.display()
+        )
+    })?;
     let start = checker.timings.add_timing(start, "Read debug artifacts");
     let ctx = addr2line::Context::from_dwarf(dwarf)
-        .with_context(|| format!("Failed to process {}", bin_path.display()))?;
+        .with_context(|| format!("Failed in addr2line for `{}`", bin_path.display()))?;
     let start = checker.timings.add_timing(start, "Build addr2line context");
 
     let no_api_symbol_hashes = debug_artifacts
