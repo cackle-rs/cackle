@@ -48,6 +48,7 @@ use outcome::ExitCode;
 use outcome::Outcome;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
+use proxy::cargo::profile_name;
 use proxy::cargo::CargoOptions;
 use proxy::rpc::Request;
 use std::path::Path;
@@ -96,11 +97,9 @@ struct Args {
     #[clap(long)]
     target: Option<String>,
 
-    /// Build profile to use. This is currently for testing purposes and isn't yet properly
-    /// supported. In particular, the selected profile needs to satisfy certain criteria and failure
-    /// to meet those criteria leads to surprising behaviour.
-    #[clap(long, default_value = proxy::cargo::DEFAULT_PROFILE_NAME, hide = true)]
-    profile: String,
+    /// Override build profile.
+    #[clap(long)]
+    profile: Option<String>,
 
     /// Print how long various things take to run.
     #[clap(long)]
@@ -203,10 +202,6 @@ impl Cackle {
             .canonicalize()
             .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
 
-        if !args.replay_requests && !matches!(args.command, Command::Cargo(..)) {
-            proxy::clean(&root_path, &args)?;
-        }
-
         let config_path = args
             .cackle_path
             .clone()
@@ -308,7 +303,14 @@ impl Cackle {
             info!("Gave up creating initial configuration");
             return Ok(outcome::FAILURE);
         }
-        self.checker.lock().unwrap().load_config()?;
+        {
+            let checker = &mut self.checker.lock().unwrap();
+            checker.load_config()?;
+
+            if !self.args.replay_requests && !matches!(self.args.command, Command::Cargo(..)) {
+                proxy::clean(&self.root_path, &self.args, &checker.config.common)?;
+            }
+        }
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;
         let config = self.checker.lock().unwrap().config.clone();
@@ -391,7 +393,10 @@ impl Cackle {
     fn saved_request_path(&self) -> PathBuf {
         self.root_path
             .join("target")
-            .join(&self.args.profile)
+            .join(profile_name(
+                &self.args,
+                &self.checker.lock().unwrap().config.common,
+            ))
             .join("saved-cackle-rpcs")
     }
 

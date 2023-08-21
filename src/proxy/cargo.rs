@@ -1,3 +1,4 @@
+use crate::config::CommonConfig;
 use crate::Args;
 use clap::Parser;
 use std::path::Path;
@@ -14,7 +15,21 @@ pub(crate) struct CargoOptions {
     remaining: Vec<String>,
 }
 
-pub(crate) fn command(base_command: &str, dir: &Path, args: &Args) -> Command {
+/// Returns the build profile to use. Order of priority is (1) command line (2) cackle.toml (3)
+/// default.
+pub(crate) fn profile_name<'a>(args: &'a Args, config: &'a CommonConfig) -> &'a str {
+    args.profile
+        .as_deref()
+        .or(config.profile.as_deref())
+        .unwrap_or(DEFAULT_PROFILE_NAME)
+}
+
+pub(crate) fn command(
+    base_command: &str,
+    dir: &Path,
+    args: &Args,
+    config: &CommonConfig,
+) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(dir);
     if args.colour.should_use_colour() {
@@ -41,7 +56,7 @@ pub(crate) fn command(base_command: &str, dir: &Path, args: &Args) -> Command {
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.incremental=false"));
     // We don't currently support split debug info.
     command.arg("--config").arg("split-debuginfo=\"off\"");
-    command.arg("--profile").arg(&args.profile);
+    command.arg("--profile").arg(profile_name(args, config));
     command.args(extra_args);
     command
 }

@@ -130,6 +130,38 @@ If you'd like to not analyse tests, examples etc, you might override this to jus
 `[]`. Or if you want to analyse tests, but not examples you might set it to `["--tests"]`. For
 available options run `cargo build --help`.
 
+### Custom build profile
+
+By default, Cackle builds with a custom profile named "cackle" which inherits from the "dev"
+profile. If you'd like to use a different profile, you can override the profile in the configuration
+file. e.g.
+
+```toml
+[common]
+profile = "cackle-release"
+```
+
+You can also override with the `--profile` flag, which takes precidence over the config file.
+
+Cackle supports analysing references even when inlining occurs, so it should work even with
+optimisations enabled, however it's more likely that you'll run into false attribution bugs, where
+an API usage is attributed to the wrong package. So unless you really need optimisation for some
+reason, it's recommended to set `opt-level = 0`.
+
+Split debug info is not yet supported, so you should turn it off.
+
+Here's an example of what you might put in your `Cargo.toml`:
+
+```toml
+[profile.cackle-release]
+inherits = "release"
+opt-level = 0
+split-debuginfo = "off"
+strip = false
+debug = 2
+lto = "off"
+```
+
 ## Version number
 
 The field `common.version` is the only required field in the config file.

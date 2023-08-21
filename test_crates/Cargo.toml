@@ -19,3 +19,11 @@ members = [
 exclude = [
     "crab3v2",
 ]
+
+[profile.cackle-release]
+inherits = "release"
+opt-level = 0
+split-debuginfo = "off"
+strip = false
+debug = 2
+lto = "off"

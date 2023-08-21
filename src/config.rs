@@ -59,6 +59,9 @@ pub(crate) struct CommonConfig {
 
     #[serde(default)]
     pub(crate) features: Vec<String>,
+
+    #[serde(default)]
+    pub(crate) profile: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]

@@ -21,6 +21,7 @@
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use self::rpc::Request;
+use crate::config::CommonConfig;
 use crate::config::Config;
 use crate::crate_index::CrateIndex;
 use crate::outcome::ExitCode;
@@ -65,10 +66,10 @@ pub(crate) struct CargoRunner<'a> {
     pub(crate) crate_index: &'a CrateIndex,
 }
 
-pub(crate) fn clean(dir: &Path, args: &Args) -> Result<()> {
+pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()> {
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
     // to carefully track changes to things we care about, like cackle.toml.
-    run_command(&mut cargo::command("clean", dir, args))?;
+    run_command(&mut cargo::command("clean", dir, args, config))?;
     Ok(())
 }
 
@@ -90,7 +91,8 @@ impl<'a> CargoRunner<'a> {
         let listener = UnixListener::bind(&ipc_path)
             .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
 
-        let mut command = cargo::command("build", self.manifest_dir, self.args);
+        let mut command =
+            cargo::command("build", self.manifest_dir, self.args, &self.config.common);
         let default_build_flags = ["--all-targets".to_owned()];
         for flag in self
             .config
