@@ -25,6 +25,10 @@ pub(crate) struct SummaryOptions {
     #[clap(long)]
     by_permission: bool,
 
+    /// Call out proc macros with other permissions.
+    #[clap(long)]
+    impure_proc_macros: bool,
+
     /// Print counts.
     #[clap(long)]
     counts: bool,
@@ -42,6 +46,16 @@ pub(crate) struct SummaryOptions {
 struct PackageSummary {
     name: CrateName,
     permissions: Vec<String>,
+}
+
+impl PackageSummary {
+    fn is_proc_macro_with_other_permissions(&self) -> bool {
+        self.permissions.iter().any(|p| p.starts_with("proc_macro"))
+            && self
+                .permissions
+                .iter()
+                .any(|p| !p.starts_with("proc_macro") && !p.ends_with("[build]"))
+    }
 }
 
 impl Summary {
@@ -79,9 +93,7 @@ impl Summary {
 
         Self { packages }
     }
-}
 
-impl Summary {
     pub(crate) fn print(&self, options: &SummaryOptions) {
         let options = options.with_defaults();
         if options.by_package {
@@ -96,6 +108,12 @@ impl Summary {
             }
             self.print_by_permission();
         }
+        if options.impure_proc_macros {
+            if options.print_headers {
+                println!("=== Proc macros with other permissions ===");
+            }
+            self.print_impure_proc_macros();
+        }
         if options.counts {
             if options.print_headers {
                 println!("=== Permission counts ===");
@@ -107,6 +125,14 @@ impl Summary {
     fn print_by_crate(&self) {
         for pkg in &self.packages {
             println!("{}: {}", pkg.name, pkg.permissions.join(", "));
+        }
+    }
+
+    fn print_impure_proc_macros(&self) {
+        for pkg in &self.packages {
+            if pkg.is_proc_macro_with_other_permissions() {
+                println!("{}: {}", pkg.name, pkg.permissions.join(", "));
+            }
         }
     }
 
@@ -140,6 +166,7 @@ impl SummaryOptions {
         if updated.full {
             updated.by_package = true;
             updated.by_permission = true;
+            updated.impure_proc_macros = true;
             updated.counts = true;
         }
         updated
@@ -160,6 +187,9 @@ impl SummaryOptions {
         if self.by_permission {
             count += 1;
         }
+        if self.impure_proc_macros {
+            count += 1;
+        }
         count
     }
 }
@@ -167,12 +197,22 @@ impl SummaryOptions {
 impl Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "num_packages: {}", self.packages.len())?;
-        let no_special_permissions = self
-            .packages
-            .iter()
-            .filter(|pkg| pkg.permissions.is_empty())
-            .count();
-        writeln!(f, "no_special_permissions: {no_special_permissions}")?;
+        writeln!(
+            f,
+            "no_special_permissions: {}",
+            self.packages
+                .iter()
+                .filter(|pkg| pkg.permissions.is_empty())
+                .count()
+        )?;
+        writeln!(
+            f,
+            "proc_macros_with_other_permissions: {}",
+            self.packages
+                .iter()
+                .filter(|p| p.is_proc_macro_with_other_permissions())
+                .count()
+        )?;
         Ok(())
     }
 }
