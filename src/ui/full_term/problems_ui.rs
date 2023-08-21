@@ -69,6 +69,7 @@ enum Mode {
     SelectUsage,
     PromptAutoAccept,
     ShowPackageTree,
+    ShowInternalDiagnostics,
     Help,
 }
 
@@ -112,6 +113,7 @@ impl ProblemsUi {
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::ShowPackageTree => self.render_package_tree(f),
+                Mode::ShowInternalDiagnostics => self.render_internal_diagnostics(f),
                 Mode::Help => render_help(f, previous_mode),
             }
             previous_mode = Some(mode);
@@ -159,6 +161,12 @@ impl ProblemsUi {
             }
             (Mode::SelectUsage, KeyCode::Char('d')) => {
                 // We're already in details mode, drop back out to the problems list.
+                self.modes.pop();
+            }
+            (Mode::SelectUsage, KeyCode::Char('i')) => {
+                self.modes.push(Mode::ShowInternalDiagnostics);
+            }
+            (Mode::ShowInternalDiagnostics, KeyCode::Char('i')) => {
                 self.modes.pop();
             }
             (Mode::SelectUsage, KeyCode::Char('f')) => {
@@ -378,14 +386,7 @@ impl ProblemsUi {
             return;
         };
 
-        let mut lines = usage_source_lines(&**usage).unwrap_or_else(error_lines);
-
-        if let Some(debug_data) = usage.debug_data() {
-            lines.push(Line::from(""));
-            for line in debug_data.lines() {
-                lines.push(Line::from(line.to_owned()));
-            }
-        }
+        let lines = usage_source_lines(&**usage).unwrap_or_else(error_lines);
 
         let block = Block::default()
             .title("Usage details")
@@ -394,6 +395,20 @@ impl ProblemsUi {
             .block(block)
             .wrap(Wrap { trim: false });
         f.render_widget(paragraph, area);
+    }
+
+    fn render_internal_diagnostics(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
+        let usages = self.usages();
+        let Some(usage) = usages.get(self.usage_index) else {
+            return;
+        };
+
+        let debug_data = usage
+            .debug_data()
+            .unwrap_or_else(|| "No debug data for this usage".to_owned());
+
+        let lines: Vec<_> = debug_data.lines().collect();
+        render_message(f, Some("Internal diagnostics"), &lines);
     }
 
     /// Applies the currently selected edit and resolves the problem that produced that edit.
@@ -607,6 +622,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
                 ("down", "Select next usage"),
                 ("f", "Jump to edits for the current problem"),
                 ("d/esc", "Return to problem list"),
+                ("i", "Show internal diagnostics (requires --debug)"),
             ]);
         }
         _ => {}
