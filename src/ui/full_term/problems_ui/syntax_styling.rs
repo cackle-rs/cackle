@@ -4,7 +4,7 @@ use rustc_ap_rustc_lexer::TokenKind;
 
 pub(super) fn colour_for_token_kind(kind: TokenKind, token_text: &str) -> Option<Color> {
     match kind {
-        TokenKind::LineComment { .. } | TokenKind::BlockComment { .. } => Some(Color::LightGreen),
+        TokenKind::LineComment { .. } | TokenKind::BlockComment { .. } => Some(Color::Green),
         TokenKind::Ident | TokenKind::RawIdent => {
             if is_keyword(token_text) {
                 Some(Color::Blue)
