@@ -405,11 +405,8 @@ impl Cackle {
         rpc_paths.sort();
         for path in rpc_paths {
             info!("Replaying RPC `{}`", path.display());
-            let request_str = crate::fs::read_to_string(&path)?;
-            let request: Request = serde_json::from_str(&request_str)?;
-            let mut handler = self.new_request_handler(Some(request));
-            if handler
-                .handle_request()
+            if self
+                .replay_request(&path)
                 .with_context(|| format!("Replay of request `{}` failed", path.display()))?
                 == Outcome::GiveUp
             {
@@ -417,6 +414,13 @@ impl Cackle {
             }
         }
         Ok(())
+    }
+
+    fn replay_request(&self, path: &Path) -> Result<Outcome> {
+        let request_str = crate::fs::read_to_string(path)?;
+        let request: Request = serde_json::from_str(&request_str)?;
+        let mut handler = self.new_request_handler(Some(request));
+        handler.handle_request()
     }
 
     fn save_request(&self, request: &Request) -> Result<()> {
