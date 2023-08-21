@@ -386,7 +386,8 @@ impl ProblemsUi {
             return;
         };
 
-        let lines = usage_source_lines(&**usage).unwrap_or_else(error_lines);
+        let lines = usage_source_lines(&**usage, (area.height as usize).saturating_sub(2))
+            .unwrap_or_else(error_lines);
 
         let block = Block::default()
             .title("Usage details")
@@ -525,9 +526,8 @@ fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'st
     Ok(lines)
 }
 
-fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
-    let before_context = 2;
-    let max_lines = 5;
+fn usage_source_lines(usage: &dyn DisplayUsage, max_lines: usize) -> Result<Vec<Line<'static>>> {
+    let before_context = (max_lines / 2) as i32;
 
     let mut lines = Vec::new();
     let source_location = usage.source_location();
