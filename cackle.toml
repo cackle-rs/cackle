@@ -55,10 +55,6 @@ exclude = [
 
 [pkg.serde_derive]
 allow_proc_macro = true
-allow_apis = [
-    "fs",
-    "process",
-]
 
 [pkg.clap_derive]
 allow_proc_macro = true
