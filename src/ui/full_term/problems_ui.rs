@@ -567,56 +567,44 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
     match mode {
         Some(Mode::SelectProblem) => {
             title = "Help for select-problem";
-            keys.extend(
-                [
-                    ("f", "Show available automatic fixes for this problem"),
-                    (
-                        "d",
-                        "Select and show details of each usage (API/unsafe only)",
-                    ),
-                    ("t", "Show tree of crate dependencies to this crate"),
-                    ("up", "Select previous problem"),
-                    ("down", "Select next problem"),
-                    ("a", "Enable auto-apply for problems with only one edit"),
-                ]
-                .into_iter(),
-            );
+            keys.extend([
+                ("f", "Show available automatic fixes for this problem"),
+                (
+                    "d",
+                    "Select and show details of each usage (API/unsafe only)",
+                ),
+                ("t", "Show tree of crate dependencies to this crate"),
+                ("up", "Select previous problem"),
+                ("down", "Select next problem"),
+                ("a", "Enable auto-apply for problems with only one edit"),
+            ]);
         }
         Some(Mode::SelectEdit) => {
             title = "Help for select-edit";
-            keys.extend(
-                [
-                    ("space/enter/f", "Apply this edit"),
-                    ("d", "Jump to usage details (API/unsafe only)"),
-                    ("up", "Select previous edit"),
-                    ("down", "Select next edit"),
-                    ("esc", "Return to problem list"),
-                ]
-                .into_iter(),
-            );
+            keys.extend([
+                ("space/enter/f", "Apply this edit"),
+                ("d", "Jump to usage details (API/unsafe only)"),
+                ("up", "Select previous edit"),
+                ("down", "Select next edit"),
+                ("esc", "Return to problem list"),
+            ]);
         }
         Some(Mode::SelectUsage) => {
             title = "Help for select-usage";
-            keys.extend(
-                [
-                    ("up", "Select previous usage"),
-                    ("down", "Select next usage"),
-                    ("f", "Jump to edits for the current problem"),
-                    ("d/esc", "Return to problem list"),
-                ]
-                .into_iter(),
-            );
+            keys.extend([
+                ("up", "Select previous usage"),
+                ("down", "Select next usage"),
+                ("f", "Jump to edits for the current problem"),
+                ("d/esc", "Return to problem list"),
+            ]);
         }
         _ => {}
     }
-    keys.extend(
-        [
-            ("p", "Toggle display of package details"),
-            ("q", "Quit"),
-            ("h/?", "Show mode-specific help"),
-        ]
-        .into_iter(),
-    );
+    keys.extend([
+        ("p", "Toggle display of package details"),
+        ("q", "Quit"),
+        ("h/?", "Show mode-specific help"),
+    ]);
     let left_col_width = 5;
     let width = keys.iter().map(|(_, text)| text.len()).max().unwrap_or(0) + left_col_width + 3;
     let height = keys.len() + 2;

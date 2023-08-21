@@ -247,13 +247,12 @@ impl RustcRunner {
                 }
             }
         } else {
-            unsafe_locations.extend(get_disallowed_unsafe_locations(&output)?.into_iter());
+            unsafe_locations.extend(get_disallowed_unsafe_locations(&output)?);
         }
         if !unsafe_permitted {
-            unsafe_locations.extend(
-                find_unsafe_in_sources(self.source_paths.as_deref().unwrap_or_default())?
-                    .into_iter(),
-            );
+            unsafe_locations.extend(find_unsafe_in_sources(
+                self.source_paths.as_deref().unwrap_or_default(),
+            )?);
         }
         if !unsafe_locations.is_empty() {
             unsafe_locations.sort();

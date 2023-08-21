@@ -125,7 +125,7 @@ impl ProblemList {
 
     pub(crate) fn replace(&mut self, index: usize, replacement: ProblemList) -> Problem {
         self.problems
-            .splice(index..index + 1, replacement.problems.into_iter())
+            .splice(index..index + 1, replacement.problems)
             .next()
             .unwrap()
     }
