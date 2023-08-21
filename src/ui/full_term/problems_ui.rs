@@ -386,11 +386,12 @@ impl ProblemsUi {
             return;
         };
 
-        let lines = usage_source_lines(&**usage, (area.height as usize).saturating_sub(2))
+        let source_location = usage.source_location();
+        let lines = usage_source_lines(source_location, (area.height as usize).saturating_sub(2))
             .unwrap_or_else(error_lines);
 
         let block = Block::default()
-            .title("Usage details")
+            .title(source_location.filename().display().to_string())
             .borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
             .block(block)
@@ -526,16 +527,13 @@ fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'st
     Ok(lines)
 }
 
-fn usage_source_lines(usage: &dyn DisplayUsage, max_lines: usize) -> Result<Vec<Line<'static>>> {
+fn usage_source_lines(
+    source_location: &SourceLocation,
+    max_lines: usize,
+) -> Result<Vec<Line<'static>>> {
     let before_context = (max_lines / 2) as i32;
 
     let mut lines = Vec::new();
-    let source_location = usage.source_location();
-    lines.push(Line::from(format!(
-        "{}",
-        source_location.filename().display()
-    )));
-
     let source = crate::fs::read_to_string(source_location.filename())?;
     let target_line = source_location.line() as i32;
     let start_line = (target_line - before_context).max(1);
