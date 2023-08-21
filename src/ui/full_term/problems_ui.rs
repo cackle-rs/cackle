@@ -48,6 +48,7 @@ use std::sync::Arc;
 use std::sync::MutexGuard;
 
 mod diff;
+mod syntax_styling;
 
 pub(super) struct ProblemsUi {
     problem_store: ProblemStoreRef,
@@ -538,27 +539,37 @@ fn usage_source_lines(usage: &dyn DisplayUsage) -> Result<Vec<Line<'static>>> {
             "{marker}{:gutter_width$}: ",
             line_number
         ))];
-        if line_number == target_line {
-            if let Some(column) = source_location.column() {
-                let column = column as usize - 1;
-                spans.push(Span::from(line[..column].to_owned()));
-                spans.push(Span::styled(
-                    line[column..column + 1].to_owned(),
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ));
-                spans.push(Span::from(line[column + 1..].to_owned()));
-            } else {
-                spans.push(Span::styled(
-                    line.to_owned(),
-                    Style::default().add_modifier(Modifier::UNDERLINED),
-                ));
-            }
-        } else {
-            spans.push(Span::from(line.to_owned()));
-        }
+        let column = (line_number == target_line)
+            .then(|| source_location.column())
+            .flatten();
+        format_line(&mut spans, column, line);
         lines.push(Line::from(spans));
     }
     Ok(lines)
+}
+
+fn format_line(out: &mut Vec<Span>, column: Option<u32>, line: &str) {
+    let mut rev = false;
+    let mut offset = 0;
+    let column_offset = column.map(|c| (c as usize).saturating_sub(1));
+    for token in rustc_ap_rustc_lexer::tokenize(line) {
+        let new_offset = offset + token.len;
+        let token_text = &line[offset..new_offset];
+        let mut style = Style::default();
+        if let Some(colour) = syntax_styling::colour_for_token_kind(token.kind, token_text) {
+            style = style.fg(colour);
+        }
+        if column_offset
+            .map(|c| (offset..new_offset).contains(&c))
+            .unwrap_or(false)
+        {
+            rev = true;
+            style = style.add_modifier(Modifier::REVERSED);
+        }
+        out.push(Span::styled(token_text.to_owned(), style));
+        offset = new_offset;
+    }
+    log::info!("col={column:?} line.len={} rev={rev:?}", line.len());
 }
 
 fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
