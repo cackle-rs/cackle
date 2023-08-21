@@ -380,6 +380,10 @@ impl CrateName {
     pub(crate) fn for_build_script(crate_name: &str) -> Self {
         Self(Arc::from(format!("{crate_name}.build").as_str()))
     }
+
+    pub(crate) fn is_build_script(&self) -> bool {
+        self.0.ends_with(".build")
+    }
 }
 
 impl Display for CrateName {
@@ -508,19 +512,6 @@ mod tests {
 
         let sandbox_b = config.sandbox_config_for_package(&"b.build".into());
         assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
-    }
-
-    #[test]
-    fn disallowed_sandbox_override() {
-        // A sandbox configuration for a regular package isn't allowed, since we don't run regular
-        // packages.
-        let result = parse(
-            r#"
-                [pkg.a.sandbox]
-                kind = "Disabled"
-            "#,
-        );
-        assert!(result.is_err());
     }
 
     #[test]

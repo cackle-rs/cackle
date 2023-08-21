@@ -46,6 +46,7 @@ pub(crate) enum Problem {
     ImportStdApi(PermissionName),
     AvailableApi(AvailableApi),
     PossibleExportedApi(PossibleExportedApi),
+    UnusedSandboxConfiguration(CrateName),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -276,6 +277,7 @@ impl Problem {
             Problem::ImportStdApi(_) => None,
             Problem::AvailableApi(d) => Some(&d.pkg_id),
             Problem::PossibleExportedApi(d) => Some(&d.pkg_id),
+            Problem::UnusedSandboxConfiguration(_) => None,
         }
     }
 }
@@ -357,6 +359,13 @@ impl Display for Problem {
                         info.pkg_id, info.api
                     )?;
                 }
+            }
+            Problem::UnusedSandboxConfiguration(crate_name) => {
+                write!(
+                    f,
+                    "Having a sandbox configuration for `{crate_name}` doesn't make sense. \
+                     Perhaps you meant to configure `{crate_name}.build.sandbox`"
+                )?;
             }
         }
         Ok(())

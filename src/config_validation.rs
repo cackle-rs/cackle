@@ -1,5 +1,4 @@
 use crate::config::Config;
-use crate::config::CrateName;
 use crate::config::PermissionName;
 use crate::config::MAX_VERSION;
 use fxhash::FxHashSet;
@@ -17,7 +16,6 @@ pub(crate) struct InvalidConfig {
 enum Problem {
     UnknownPermission(PermissionName),
     DuplicateAllowedApi(PermissionName),
-    DisallowedSandboxConfig(CrateName),
     UnsupportedVersion(i64),
 }
 
@@ -27,7 +25,7 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
         problems.push(Problem::UnsupportedVersion(config.common.version));
     }
     let permission_names: FxHashSet<_> = config.apis.keys().collect();
-    for (name, crate_config) in &config.packages {
+    for crate_config in config.packages.values() {
         let mut used = FxHashSet::default();
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
@@ -36,9 +34,6 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
             if !used.insert(permission_name) {
                 problems.push(Problem::DuplicateAllowedApi(permission_name.clone()))
             }
-        }
-        if crate_config.sandbox.is_some() && !name.as_ref().ends_with(".build") {
-            problems.push(Problem::DisallowedSandboxConfig(name.clone()))
         }
     }
     if problems.is_empty() {
@@ -63,10 +58,6 @@ impl Display for InvalidConfig {
                 Problem::UnsupportedVersion(version) => {
                     write!(f, "  Unsupported version '{version}'")?
                 }
-                Problem::DisallowedSandboxConfig(crate_name) => write!(
-                    f,
-                    "  Sandbox config for regular package `{crate_name}` isn't permitted"
-                )?,
             }
         }
         Ok(())

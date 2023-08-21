@@ -342,6 +342,14 @@ impl Checker {
                 }));
             }
         }
+        for (crate_name, config) in &self.config.packages {
+            if config.sandbox.is_some()
+                && !crate_name.is_build_script()
+                && !self.crate_index.is_local(crate_name)
+            {
+                problems.push(Problem::UnusedSandboxConfiguration(crate_name.clone()));
+            }
+        }
         problems
     }
 

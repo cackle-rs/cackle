@@ -53,6 +53,8 @@ pub(crate) struct PackageInfo {
     crate_name: CrateName,
     build_script_name: Option<CrateName>,
     is_proc_macro: bool,
+    /// Is this package local - as opposed to from some remote source such as crates.io.
+    is_local: bool,
 }
 
 /// The name of the environment variable that we use to pass a list of non-unique package names to
@@ -99,6 +101,7 @@ impl CrateIndex {
                         crate_name: crate_name.clone(),
                         build_script_name: Some(CrateName::for_build_script(&package.name)),
                         is_proc_macro,
+                        is_local: package.source.is_none(),
                     },
                 );
                 mapping
@@ -131,6 +134,19 @@ impl CrateIndex {
             })
             .collect();
         command.env(MULTIPLE_VERSION_PKG_NAMES_ENV, non_unique_names.join(","));
+    }
+
+    /// Returns if `crate_name` is a local crate - i.e. from the current workspace. If there are
+    /// multiple versions of the specified crate, then we'll return true if any are local.
+    pub(crate) fn is_local(&self, crate_name: &CrateName) -> bool {
+        self.pkg_name_to_ids
+            .get(crate_name.as_ref())
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.package_info(id))
+                    .any(|info| info.is_local)
+            })
+            .unwrap_or(false)
     }
 
     pub(crate) fn newest_package_id_with_name(&self, crate_name: &CrateName) -> Option<&PackageId> {
@@ -343,6 +359,7 @@ pub(crate) mod testing {
                         crate_name: CrateName(Arc::from(*name)),
                         build_script_name: Default::default(),
                         is_proc_macro: Default::default(),
+                        is_local: false,
                     },
                 )
             })
