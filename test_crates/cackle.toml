@@ -146,7 +146,9 @@ allow_apis = [
 
 [pkg.crab9]
 allow_apis = [
+    "env",
     "fs",
+    "process",
 ]
 
 [pkg.crab10]

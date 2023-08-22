@@ -89,14 +89,25 @@ fn setup_bin_wrapper(link_info: &mut LinkInfo) -> Result<()> {
         .with_context(|| format!("Failed to rename binary `{}`", bin_path.display()))?;
     let cackle_exe = cackle_exe()?;
     let crate_sel = CrateSel::from_env()?;
+    let cackle_exe = utf8(&cackle_exe)?;
+    let selector_token = crate_sel.selector_token();
+    let bin_path_utf8 = utf8(&new_filename)?;
+    // Write a shell script that checks if the cackle binary exists and if it does, executes it so
+    // that cackle can run the actual binary, possibly in a sandbox. If the script detects that the
+    // cackle binary doesn't exist then likely we're already running in a sandbox due to some other
+    // binary having been invoked. In that case, just run the binary directly. This does mean that
+    // if one binary is invoked from another, the permissions granted will be those of the outer
+    // binary - but the outer binary was what decided to invoke the inner binary, so that seems
+    // fair.
     std::fs::write(
         bin_path,
         format!(
-            "#!/bin/bash\n\"{}\" {} {} \"{}\" \"$@\" ",
-            utf8(&cackle_exe)?,
-            PROXY_BIN_ARG,
-            crate_sel.selector_token(),
-            utf8(&new_filename)?
+            "#!/bin/bash\n\
+             if [ -x \"{cackle_exe}\" ]; then\n\
+                \"{cackle_exe}\" {PROXY_BIN_ARG} {selector_token} \"{bin_path_utf8}\" \"$@\" \n\
+             else\n\
+                \"{bin_path_utf8}\" \"$@\"\n\
+             fi\n",
         ),
     )?;
     link_info.output_file = new_filename;
@@ -128,9 +139,10 @@ fn proxy_binary(
         };
         // Allow read access to the crate's root source directory.
         sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
-        // Allow read access to the directory containing the build script itself.
-        if let Some(build_script_dir) = orig_bin.parent() {
-            sandbox.ro_bind(build_script_dir);
+        // Allow read access to the build directory. This contains the bin file being executed and
+        // possibly other binaries.
+        if let Some(build_dir) = build_directory(&orig_bin) {
+            sandbox.ro_bind(build_dir);
         }
         // Allow write access to OUT_DIR.
         if let Ok(out_dir) = std::env::var("OUT_DIR") {
@@ -166,6 +178,16 @@ fn proxy_binary(
             Outcome::GiveUp => std::process::exit(-1),
         }
     }
+}
+
+fn build_directory(executable: &Path) -> Option<&Path> {
+    let parent = executable.parent()?;
+    if parent.file_name().map(|n| n == "deps").unwrap_or(false) {
+        if let Some(grandparent) = parent.parent() {
+            return Some(grandparent);
+        }
+    }
+    Some(parent)
 }
 
 fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
