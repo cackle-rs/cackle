@@ -161,10 +161,11 @@ fn main() -> Result<()> {
     proxy::subprocess::handle_wrapped_binaries()?;
 
     let mut args = Args::parse();
-    if matches!(args.command, Command::ProxyBin(..)) {
-        bail!(
-            "This binary was compiled via cackle and is not intended to be run outside of cackle"
-        );
+    if let Command::ProxyBin(bin_opts) = &args.command {
+        // If we get here and the call to handle_wrapped_binaries above didn't diverge, then either
+        // a user invoked a bin wrapper directly, or we've been invoked when we're already inside a
+        // cackle sandbox. In either case, we just run the original binary directly.
+        return bin_opts.invoke_directly();
     }
     args.colour = args.colour.detect();
     if let Some(log_file) = &args.log_file {
@@ -481,6 +482,22 @@ impl RequestHandler {
                 }
             }
         }
+    }
+}
+
+impl ProxyBinOptions {
+    fn invoke_directly(&self) -> Result<()> {
+        let mut args = self.remaining.iter();
+        // Skip the crate selector.
+        args.next();
+        let program = args
+            .next()
+            .ok_or_else(|| anyhow!("Missing proxy-bin program"))?;
+        let status = std::process::Command::new(program)
+            .args(args)
+            .status()
+            .with_context(|| format!("Failed to invoke `{program}`"))?;
+        std::process::exit(status.code().unwrap_or(-1));
     }
 }
 
