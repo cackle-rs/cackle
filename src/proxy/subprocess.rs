@@ -156,13 +156,16 @@ fn proxy_binary(
 
         let output = sandbox.run(&orig_bin)?;
         let rpc_response = rpc_client.build_script_complete({
+            let exit_code = output.status.code().unwrap_or(-1);
             BinExecutionOutput {
-                exit_code: output.status.code().unwrap_or(-1),
+                exit_code,
                 stdout: output.stdout.clone(),
                 stderr: output.stderr.clone(),
                 crate_sel: crate_sel.clone(),
                 sandbox_config,
                 build_script: orig_bin.clone(),
+                sandbox_config_display: (exit_code != 0)
+                    .then(|| sandbox.display_to_run(&orig_bin).to_string()),
             }
         })?;
         match rpc_response {

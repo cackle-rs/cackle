@@ -1039,6 +1039,7 @@ mod tests {
                     allow_network: None,
                 },
                 build_script: PathBuf::new(),
+                sandbox_config_display: None,
             },
             crate_sel,
         });

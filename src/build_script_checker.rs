@@ -107,6 +107,7 @@ mod tests {
             crate_sel: CrateSel::BuildScript(build_script_id("my_pkg")),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
+            sandbox_config_display: None,
         };
         super::check(&outputs, &config).unwrap()
     }

@@ -431,12 +431,8 @@ impl Display for BinExecutionFailed {
                 String::from_utf8_lossy(&self.output.stderr),
                 String::from_utf8_lossy(&self.output.stdout)
             )?;
-            if let Ok(Some(sandbox)) = crate::sandbox::from_config(&self.output.sandbox_config) {
-                writeln!(
-                    f,
-                    "Sandbox config:\n{}",
-                    sandbox.display_to_run(&self.output.build_script)
-                )?;
+            if let Some(sandbox_display) = self.output.sandbox_config_display.as_ref() {
+                writeln!(f, "Sandbox config:\n{sandbox_display}",)?;
             }
         }
         Ok(())
