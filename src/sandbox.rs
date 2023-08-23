@@ -69,7 +69,6 @@ pub(crate) fn from_config(
     sandbox.tmpfs(&home);
     sandbox.tmpfs(Path::new("/var"));
     sandbox.tmpfs(Path::new("/tmp"));
-    sandbox.tmpfs(Path::new("/usr/share"));
     // We need access to some parts of ~/.cargo in order to be able to build, but we don't bind all
     // of it because it might contain crates.io credentials, which we'd like to avoid exposing.
     let cargo_home = &home.join(".cargo");
