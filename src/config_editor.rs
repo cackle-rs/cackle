@@ -1037,6 +1037,7 @@ mod tests {
                     kind: crate::config::SandboxKind::Bubblewrap,
                     extra_args: vec![],
                     allow_network: None,
+                    bind_writable: vec![],
                 },
                 build_script: PathBuf::new(),
                 sandbox_config_display: None,

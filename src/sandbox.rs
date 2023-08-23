@@ -53,7 +53,10 @@ pub(crate) trait Sandbox {
     fn display_to_run(&self, binary: &Path) -> Box<dyn Display>;
 }
 
-pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandbox>>> {
+pub(crate) fn from_config(
+    config: &SandboxConfig,
+    bin_path: &Path,
+) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
         SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
         SandboxKind::Bubblewrap => Box::<bubblewrap::Bubblewrap>::default(),
@@ -77,6 +80,27 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
     sandbox.pass_env("PATH");
     sandbox.pass_env("HOME");
+
+    // Allow read access to the crate's root source directory.
+    sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
+    // Allow read access to the build directory. This contains the bin file being executed and
+    // possibly other binaries.
+    if let Some(build_dir) = build_directory(bin_path) {
+        sandbox.ro_bind(build_dir);
+    }
+    // Allow write access to OUT_DIR.
+    if let Ok(out_dir) = std::env::var("OUT_DIR") {
+        sandbox.writable_bind(Path::new(&out_dir));
+    }
+    // LD_LIBRARY_PATH is set when running `cargo test` on crates that normally compile as
+    // cdylibs - e.g. proc macros. If we don't pass it through, those tests will fail to find
+    // runtime dependencies.
+    sandbox.pass_env("LD_LIBRARY_PATH");
+    sandbox.pass_cargo_env();
+
+    for dir in &config.bind_writable {
+        sandbox.writable_bind(Path::new(dir));
+    }
     for arg in &config.extra_args {
         sandbox.raw_arg(OsStr::new(arg));
     }
@@ -109,6 +133,21 @@ pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
         anyhow::bail!("Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`");
     }
     Ok(())
+}
+
+fn get_env(var_name: &str) -> Result<String> {
+    std::env::var(var_name)
+        .with_context(|| format!("Failed to get environment variable `{var_name}`"))
+}
+
+fn build_directory(executable: &Path) -> Option<&Path> {
+    let parent = executable.parent()?;
+    if parent.file_name().map(|n| n == "deps").unwrap_or(false) {
+        if let Some(grandparent) = parent.parent() {
+            return Some(grandparent);
+        }
+    }
+    Some(parent)
 }
 
 fn is_cargo_env(var: &str) -> bool {

@@ -150,6 +150,9 @@ allow_apis = [
     "fs",
     "process",
 ]
+sandbox.bind_writable = [
+    "crab9/scratch"
+]
 
 [pkg.crab10]
 allow_unsafe = true

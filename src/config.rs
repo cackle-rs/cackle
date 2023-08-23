@@ -74,6 +74,9 @@ pub(crate) struct SandboxConfig {
     pub(crate) extra_args: Vec<String>,
 
     pub(crate) allow_network: Option<bool>,
+
+    #[serde(default)]
+    pub(crate) bind_writable: Vec<PathBuf>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
@@ -145,6 +148,7 @@ pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result
     let mut config =
         parse(&cackle).with_context(|| format!("Failed to parse {}", cackle_path.display()))?;
     config.load_imports(crate_index)?;
+    config.make_paths_absolute(crate_index.manifest_path.parent())?;
     crate::config_validation::validate(&config, cackle_path)?;
     Ok(Arc::new(config))
 }
@@ -252,6 +256,27 @@ impl Config {
         }
         problems
     }
+
+    fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
+        for pkg_config in self.packages.values_mut() {
+            if let Some(sandbox_config) = pkg_config.sandbox.as_mut() {
+                for path in &mut sandbox_config.bind_writable {
+                    if !path.is_absolute() {
+                        // When we process the config file in the main cackle process, we should
+                        // always have a workspace root. At that point all paths should be made
+                        // absolute. Subprocesses won't know the workspace root, but the paths
+                        // should already be absolute, since they should be reading a processed
+                        // version of the config written by the main process.
+                        let workspace_root = workspace_root.ok_or_else(|| {
+                            anyhow!("Internal error: relative path with no workspace root")
+                        })?;
+                        *path = workspace_root.join(&path);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Attempts to load "cackle/export.toml" from the specified package.
@@ -328,6 +353,9 @@ impl Config {
         config
             .extra_args
             .extend(pkg_sandbox_config.extra_args.iter().cloned());
+        config
+            .bind_writable
+            .extend(pkg_sandbox_config.bind_writable.iter().cloned());
         if let Some(allow_network) = pkg_sandbox_config.allow_network {
             config.allow_network = Some(allow_network);
         }

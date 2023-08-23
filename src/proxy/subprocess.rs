@@ -133,26 +133,10 @@ fn proxy_binary(
     loop {
         let config = get_config_from_env()?;
         let sandbox_config = config.sandbox_config_for_package(&CrateName::from(crate_sel));
-        let Some(mut sandbox) = crate::sandbox::from_config(&sandbox_config)? else {
+        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin)? else {
             // Config says to run without a sandbox.
             return Ok(Command::new(&orig_bin).status()?.into());
         };
-        // Allow read access to the crate's root source directory.
-        sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
-        // Allow read access to the build directory. This contains the bin file being executed and
-        // possibly other binaries.
-        if let Some(build_dir) = build_directory(&orig_bin) {
-            sandbox.ro_bind(build_dir);
-        }
-        // Allow write access to OUT_DIR.
-        if let Ok(out_dir) = std::env::var("OUT_DIR") {
-            sandbox.writable_bind(Path::new(&out_dir));
-        }
-        // LD_LIBRARY_PATH is set when running `cargo test` on crates that normally compile as
-        // cdylibs - e.g. proc macros. If we don't pass it through, those tests will fail to find
-        // runtime dependencies.
-        sandbox.pass_env("LD_LIBRARY_PATH");
-        sandbox.pass_cargo_env();
 
         let output = sandbox.run(&orig_bin)?;
         let rpc_response = rpc_client.build_script_complete({
@@ -181,16 +165,6 @@ fn proxy_binary(
             Outcome::GiveUp => std::process::exit(-1),
         }
     }
-}
-
-fn build_directory(executable: &Path) -> Option<&Path> {
-    let parent = executable.parent()?;
-    if parent.file_name().map(|n| n == "deps").unwrap_or(false) {
-        if let Some(grandparent) = parent.parent() {
-            return Some(grandparent);
-        }
-    }
-    Some(parent)
 }
 
 fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
@@ -421,11 +395,6 @@ fn get_config_from_env() -> Result<Arc<Config>> {
     // that the parent process wrote after it loaded any required crate-specific config files and
     // then flattened them into a single file.
     crate::config::parse_file(Path::new(&config_path), &CrateIndex::default())
-}
-
-fn get_env(var_name: &str) -> Result<String> {
-    std::env::var(var_name)
-        .with_context(|| format!("Failed to get environment variable `{var_name}`"))
 }
 
 #[test]

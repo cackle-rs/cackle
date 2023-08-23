@@ -14,6 +14,11 @@ pub fn access_file() {
             output_path.display()
         );
     }
+
+    let output_path = manifest_dir.join("scratch/writable.txt");
+    if let Err(error) = std::fs::write(&output_path, "This file is written by a test") {
+        panic!("Failed to write {}: {error}", output_path.display());
+    }
 }
 
 #[cfg(test)]

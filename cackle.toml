@@ -24,6 +24,7 @@ include = [
     "rustix::fs",
     "rustix::mm",
     "rustix::path",
+    "serde::de::impls::PathBufVisitor",
 ]
 no_auto_detect = [
     "cackle",
