@@ -357,9 +357,9 @@ impl Edit for SelectSandbox {
 
     fn help(&self) -> Cow<'static, str> {
         "Select what kind of sandbox you'd like to use. At the moment the sandbox is only used \
-         for running build scripts (build.rs). Hopefully eventually we'll also run proc-macros \
-         in the sandbox. To use Bubblewrap, it must be installed. On Debian-based systems you can \
-         `sudo apt install bubblewrap`"
+         for running build scripts (build.rs) and tests. Hopefully eventually we'll also run \
+         proc-macros in the sandbox. To use Bubblewrap, it must be installed. On Debian-based \
+         systems you can `sudo apt install bubblewrap`"
             .into()
     }
 

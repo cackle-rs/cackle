@@ -23,8 +23,8 @@ Or if you'd like to install from git:
 cargo install --locked --git https://github.com/davidlattimore/cackle.git cackle
 ```
 
-Installing `bubblewrap` is recommended as it allows build scripts (build.rs) to be run inside a
-sandbox.
+Installing `bubblewrap` is recommended as it allows build scripts (build.rs) and tests to be run
+inside a sandbox.
 
 On systems with `apt`, this can be done by running:
 

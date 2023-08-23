@@ -81,6 +81,37 @@ If a build script needs network access, you can relax the sandbox to allow it as
 sandbox.allow_network = true
 ```
 
+Tests can also be run in a sandbox using the `cargo` subcommand, for example:
+
+```sh
+cackle cargo test
+```
+
+This builds the tests, performing the same permission checks as doing `cackle check`, then runs the
+tests, with a sandbox if one is configured.
+
+The sandbox used for tests is configured under the main package - i.e. without `.build`. So to
+disable the sandbox you'd for `foo`'s tests, you'd write:
+
+```toml
+[pkg.foo]
+sandbox.kind = "Disabled"
+```
+
+Tests and build scripts already have write access to a temporary directory, however, if for some
+reason they need to write to some directory in your source folder, this can be permitted as follows:
+
+
+```toml
+[pkg.foo]
+sandbox.bind_writable = [
+    "test_outputs",
+]
+```
+
+This will allow tests to write to the "test_outputs" subdirectory within the directory containing
+your `Cargo.toml`.
+
 ## Importing API definitions from an external crate
 
 If you depend on a crate that publishes `cackle/export.toml`, you can import API definitions from
