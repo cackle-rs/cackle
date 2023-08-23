@@ -293,6 +293,15 @@ allow_apis = [
     "process",
 ]
 
+[pkg.cackle.sandbox]
+bind_writable = [
+    "test_crates/target",
+    "test_crates/crab-bin/scratch",
+    "test_crates/crab9/scratch",
+    "test_crates/crab11/scratch",
+]
+allow_network = true
+
 [pkg.clap_builder]
 allow_apis = [
     "fs",

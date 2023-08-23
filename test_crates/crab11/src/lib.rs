@@ -5,7 +5,7 @@ use std::path::Path;
 
 pub fn access_file() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output_path = manifest_dir.join("test-output.txt");
+    let output_path = manifest_dir.join("scratch").join("test-output.txt");
     std::fs::write(output_path, "crab11 test output").unwrap();
 }
 
