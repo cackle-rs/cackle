@@ -1,9 +1,17 @@
+use std::ffi::OsStr;
+use std::os::unix::prelude::OsStrExt;
 use std::path::PathBuf;
 
 #[test]
 fn run_crab9_bin() {
     let program = target_dir().join("crab9-bin");
-    match std::process::Command::new(&program).output() {
+    let mut command = std::process::Command::new(&program);
+
+    // Make sure that we can pass non-UTF-8 arguments to our binary. This can break if we let cackle
+    // try to parse the arguments with clap.
+    command.arg(OsStr::from_bytes(&[0xff]));
+
+    match command.output() {
         Ok(output) => {
             let stdout = &String::from_utf8(output.stdout).unwrap();
             let stderr = &String::from_utf8(output.stderr).unwrap();

@@ -39,6 +39,7 @@ use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
+use clap::builder::OsStr;
 use clap::Parser;
 use clap::Subcommand;
 use crate_index::CrateIndex;
@@ -60,6 +61,8 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use summary::SummaryOptions;
 use symbol_graph::ScanOutputs;
+
+use crate::proxy::subprocess::PROXY_BIN_ARG;
 
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
@@ -147,7 +150,7 @@ enum Command {
     /// Run an arbitrary cargo command, analysing whatever gets built.
     Cargo(CargoOptions),
 
-    #[clap(hide = true, name = proxy::subprocess::PROXY_BIN_ARG)]
+    #[clap(hide = true, name = PROXY_BIN_ARG)]
     ProxyBin(ProxyBinOptions),
 }
 
@@ -160,13 +163,14 @@ pub(crate) struct ProxyBinOptions {
 fn main() -> Result<()> {
     proxy::subprocess::handle_wrapped_binaries()?;
 
-    let mut args = Args::parse();
-    if let Command::ProxyBin(bin_opts) = &args.command {
+    if std::env::args_os().nth(1).as_deref() == Some(&OsStr::from(PROXY_BIN_ARG)) {
         // If we get here and the call to handle_wrapped_binaries above didn't diverge, then either
         // a user invoked a bin wrapper directly, or we've been invoked when we're already inside a
         // cackle sandbox. In either case, we just run the original binary directly.
-        return bin_opts.invoke_directly();
+        return invoke_wrapped_binary();
     }
+
+    let mut args = Args::parse();
     args.colour = args.colour.detect();
     if let Some(log_file) = &args.log_file {
         logging::init(log_file, args.log_level)?;
@@ -485,20 +489,18 @@ impl RequestHandler {
     }
 }
 
-impl ProxyBinOptions {
-    fn invoke_directly(&self) -> Result<()> {
-        let mut args = self.remaining.iter();
-        // Skip the crate selector.
-        args.next();
-        let program = args
-            .next()
-            .ok_or_else(|| anyhow!("Missing proxy-bin program"))?;
-        let status = std::process::Command::new(program)
-            .args(args)
-            .status()
-            .with_context(|| format!("Failed to invoke `{program}`"))?;
-        std::process::exit(status.code().unwrap_or(-1));
-    }
+/// Directly invokes a wrapped binary, where the binary and arguments were passed to us by the
+/// wrapper shell script.
+fn invoke_wrapped_binary() -> Result<()> {
+    let mut args = std::env::args_os().skip(3);
+    let program = args
+        .next()
+        .ok_or_else(|| anyhow!("Missing proxy-bin program"))?;
+    let status = std::process::Command::new(&program)
+        .args(args)
+        .status()
+        .with_context(|| format!("Failed to invoke `{}`", program.to_string_lossy()))?;
+    std::process::exit(status.code().unwrap_or(-1));
 }
 
 const _CHECK_OS: () = if cfg!(all(
