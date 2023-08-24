@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Represents the name of an object file, possibly contained within an archive. Note, we only
 /// support a single level of archive. i.e. archives within archives aren't supported.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ObjectFilePath {
     pub(crate) outer: PathBuf,
     pub(crate) inner: Option<PathBuf>,

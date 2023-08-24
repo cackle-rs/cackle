@@ -665,7 +665,7 @@ impl<'input> BinInfo<'input> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum NameSource<'symbol> {
     Symbol(Symbol<'symbol>),
     DebugName(DebugName<'static>),
@@ -718,20 +718,20 @@ impl Filetype {
 
 /// Additional information that might be useful for debugging. Only available when --debug is
 /// passed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum UsageDebugData {
     Relocation(RelocationDebugData),
     Inlined(InlinedDebugData),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct RelocationDebugData {
     bin_path: Arc<Path>,
     object_file_path: ObjectFilePath,
     section_name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct InlinedDebugData {
     frames: Vec<String>,
     low_pc: Option<u64>,

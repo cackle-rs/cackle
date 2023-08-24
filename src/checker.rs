@@ -68,7 +68,7 @@ pub(crate) struct CrateInfo {
     unused_allowed_perms: FxHashSet<PermissionName>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ApiUsage {
     pub(crate) source_location: SourceLocation,
     pub(crate) from: SymbolOrDebugName,

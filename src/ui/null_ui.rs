@@ -35,7 +35,6 @@ impl super::UserInterface for NullUi {
                 AppEvent::Shutdown => return Ok(()),
                 AppEvent::ProblemsAdded => {
                     let mut pstore = problem_store.lock();
-                    pstore.group_by_crate();
                     let mut has_errors = false;
                     for (_, problem) in pstore.deduplicated_into_iter() {
                         let mut severity = problem.severity();
@@ -71,7 +70,7 @@ impl super::UserInterface for NullUi {
                     } else {
                         loop {
                             let maybe_index = pstore
-                                .iterate_with_duplicates()
+                                .deduplicated_into_iter()
                                 .next()
                                 .map(|(index, _)| index);
                             if let Some(index) = maybe_index {

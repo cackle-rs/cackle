@@ -1,9 +1,12 @@
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
+use crate::problem::ApiGroupingKind;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
+use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 use log::info;
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -19,16 +22,18 @@ pub(crate) fn create(event_sender: Sender<AppEvent>) -> ProblemStoreRef {
 /// A store of multiple `ProblemList` instances that allows signalling when a problem list is
 /// resolved.
 pub(crate) struct ProblemStore {
-    entries: Vec<Entry>,
+    /// Our problems. Entries are none once each problem is resolved. Indexed by ProblemId. To keep
+    /// ProblemIds stable, we avoid actually removing entries.
+    problems: Vec<Option<Problem>>,
+    notification_entries: Vec<NotificationEntry>,
+    id_by_deduplication_key: FxHashMap<Problem, ProblemId>,
     event_sender: Sender<AppEvent>,
     pub(crate) has_aborted: bool,
+    grouping_kind: ApiGroupingKind,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ProblemStoreIndex {
-    a: usize,
-    b: usize,
-}
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub(crate) struct ProblemId(usize);
 
 #[derive(Clone)]
 pub(crate) struct ProblemStoreRef {
@@ -53,10 +58,21 @@ impl ProblemStoreRef {
 impl ProblemStore {
     fn new(event_sender: Sender<AppEvent>) -> Self {
         Self {
-            entries: Vec::new(),
+            problems: Default::default(),
+            notification_entries: Default::default(),
+            id_by_deduplication_key: Default::default(),
             event_sender,
             has_aborted: false,
+            grouping_kind: ApiGroupingKind::KeepApisSeparate,
         }
+    }
+
+    /// Set how we want problems grouped. This can only be called prior to problems being added.
+    pub(crate) fn set_grouping(&mut self, grouping: ApiGroupingKind) {
+        if !self.problems.is_empty() {
+            panic!("ProblemStore::set_grouping must be called before problems are added");
+        }
+        self.grouping_kind = grouping;
     }
 
     /// Adds `problems` to this store. The returned receiver will receive a single value once all
@@ -68,8 +84,12 @@ impl ProblemStore {
         }
         assert!(!problems.is_empty());
         let (sender, receiver) = std::sync::mpsc::channel();
-        self.entries.push(Entry {
-            problems,
+        let mut problem_ids = FxHashSet::default();
+        for problem in problems.take() {
+            problem_ids.insert(self.add_problem(problem));
+        }
+        self.notification_entries.push(NotificationEntry {
+            problem_ids,
             sender: Some(sender),
         });
         let _ = self.event_sender.send(AppEvent::ProblemsAdded);
@@ -85,7 +105,7 @@ impl ProblemStore {
     ) {
         let current_toml = editor.to_toml();
         let mut empty_indexes = Vec::new();
-        for (index, problem) in self.iterate_with_duplicates() {
+        for (index, problem) in self.deduplicated_into_iter() {
             for edit in crate::config_editor::fixes_for_problem(problem) {
                 if !edit.resolve_problem_if_edit_is_empty() {
                     continue;
@@ -109,107 +129,133 @@ impl ProblemStore {
         }
     }
 
-    pub(crate) fn iterate_with_duplicates(
-        &self,
-    ) -> impl Iterator<Item = (ProblemStoreIndex, &Problem)> {
+    pub(crate) fn deduplicated_into_iter(&self) -> impl Iterator<Item = (ProblemId, &Problem)> {
         ProblemStoreIterator {
             store: self,
-            index: ProblemStoreIndex::default(),
-        }
-    }
-
-    pub(crate) fn deduplicated_into_iter(
-        &self,
-    ) -> impl Iterator<Item = (ProblemStoreIndex, &Problem)> {
-        let mut seen = HashSet::new();
-        self.iterate_with_duplicates()
-            .filter(move |(_, problem)| seen.insert(problem.deduplication_key()))
-    }
-
-    /// Within each problem list, group problems by type and crate.
-    pub(crate) fn group_by_crate(&mut self) {
-        for plist in &mut self.entries {
-            let mut problems = ProblemList::default();
-            std::mem::swap(&mut problems, &mut plist.problems);
-            problems = problems.grouped_by_type_and_crate();
-            std::mem::swap(&mut problems, &mut plist.problems);
+            id: ProblemId(0),
         }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.entries.iter().all(|entry| entry.problems.is_empty())
+        self.problems.iter().all(|p| p.is_none())
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.entries.iter().map(|entry| entry.problems.len()).sum()
+        self.problems.iter().filter(|p| p.is_some()).count()
     }
 
-    pub(crate) fn resolve(&mut self, index: ProblemStoreIndex) {
-        self.replace(index, ProblemList::default());
+    pub(crate) fn resolve(&mut self, id: ProblemId) {
+        self.replace(id, ProblemList::default());
     }
 
-    pub(crate) fn replace(&mut self, index: ProblemStoreIndex, replacement: ProblemList) {
-        let entry = &mut self.entries[index.a];
-        let problem = entry.problems.replace(index.b, replacement);
-        info!("Resolved problem: {problem}");
-        if entry.problems.is_empty() {
-            if let Some(sender) = entry.sender.take() {
-                let _ = sender.send(Outcome::Continue);
-            }
-            self.entries.remove(index.a);
+    pub(crate) fn replace(&mut self, id: ProblemId, replacement: ProblemList) {
+        let problem = self
+            .problems
+            .get_mut(id.0)
+            .expect("Called ProblemStore::replace with invalid ID")
+            .take()
+            .expect("Called ProblemStore::replace with ID that was already resolved");
+        let replacement_ids: Vec<ProblemId> = replacement
+            .take()
+            .into_iter()
+            .map(|problem| self.add_problem(problem))
+            .collect();
+        for entry in &mut self.notification_entries {
+            entry.replace_problem(id, &replacement_ids);
         }
+        info!("Resolved problem: {problem}");
+        // If we try to add an equivalent problem later, it should get a new ID, not reuse this ID -
+        // otherwise we'd be adding entries into middle of the list and we should only ever have new
+        // entries show up at the end.
+        self.id_by_deduplication_key
+            .remove(&problem.deduplication_key(self.grouping_kind));
     }
 
     pub(crate) fn abort(&mut self) {
-        for mut entry in &mut self.entries.drain(..) {
+        for mut entry in &mut self.notification_entries.drain(..) {
             if let Some(sender) = entry.sender.take() {
                 let _ = sender.send(Outcome::GiveUp);
             }
         }
         self.has_aborted = true;
     }
+
+    /// Adds a problem, possibly merging it into an existing problem. Returns the ID of that
+    /// problem.
+    fn add_problem(&mut self, problem: Problem) -> ProblemId {
+        match self
+            .id_by_deduplication_key
+            .entry(problem.deduplication_key(self.grouping_kind))
+        {
+            Entry::Occupied(entry) => {
+                let id = *entry.get();
+                let existing_problem = self.problems[id.0]
+                    .as_mut()
+                    .expect("Internal error: Trying to deduplicate against resolved problem");
+                if problem != *existing_problem {
+                    existing_problem.merge(problem);
+                }
+                id
+            }
+            Entry::Vacant(entry) => {
+                let next_id = ProblemId(self.problems.len());
+                entry.insert(next_id);
+                self.problems.push(Some(problem));
+                next_id
+            }
+        }
+    }
 }
 
-struct Entry {
-    problems: ProblemList,
+struct NotificationEntry {
+    problem_ids: FxHashSet<ProblemId>,
     sender: Option<Sender<Outcome>>,
+}
+impl NotificationEntry {
+    /// Tries to remov `id`. If `id` was present, then adds all `replacements`.
+    fn replace_problem(&mut self, id: ProblemId, replacements: &[ProblemId]) {
+        if !self.problem_ids.remove(&id) {
+            // ID wasn't present.
+            return;
+        }
+        self.problem_ids.extend(replacements.iter());
+        if self.problem_ids.is_empty() {
+            if let Some(sender) = self.sender.take() {
+                let _ = sender.send(Outcome::Continue);
+            }
+        }
+    }
 }
 
 struct ProblemStoreIterator<'a> {
     store: &'a ProblemStore,
-    index: ProblemStoreIndex,
+    id: ProblemId,
 }
 
 impl<'a> Iterator for ProblemStoreIterator<'a> {
-    type Item = (ProblemStoreIndex, &'a Problem);
+    type Item = (ProblemId, &'a Problem);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self
-            .store
-            .entries
-            .get(self.index.a)?
-            .problems
-            .get(self.index.b)?;
-        let item_index = self.index;
-        self.index.b += 1;
-        while let Some(entry) = self.store.entries.get(self.index.a) {
-            if self.index.b < entry.problems.len() {
-                break;
+        loop {
+            if self.id.0 >= self.store.problems.len() {
+                return None;
             }
-            self.index.b = 0;
-            self.index.a += 1;
+            let id = self.id;
+            self.id = ProblemId(id.0 + 1);
+            if let Some(problem) = self.store.problems[id.0].as_ref() {
+                return Some((id, problem));
+            }
         }
-        Some((item_index, item))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::ProblemStore;
-    use super::ProblemStoreIndex;
     use crate::crate_index::testing::build_script_id;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
+    use crate::problem_store::ProblemId;
     use std::sync::mpsc::channel;
     use std::sync::mpsc::TryRecvError;
 
@@ -226,17 +272,9 @@ mod tests {
         store.add(create_problems());
         store.add(create_problems());
 
-        assert_eq!(store.len(), 4);
+        assert_eq!(store.len(), 2);
 
-        let mut iter = store.iterate_with_duplicates();
-        assert_eq!(
-            iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript(build_script_id("crab1")))
-        );
-        assert_eq!(
-            iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript(build_script_id("crab2")))
-        );
+        let mut iter = store.deduplicated_into_iter();
         assert_eq!(
             iter.next().map(|(_, v)| v),
             Some(&Problem::UsesBuildScript(build_script_id("crab1")))
@@ -247,13 +285,13 @@ mod tests {
         );
         assert_eq!(iter.next().map(|(_, v)| v), None);
 
-        assert_eq!(store.iterate_with_duplicates().count(), 4);
+        assert_eq!(store.deduplicated_into_iter().count(), 2);
     }
 
     #[test]
     fn all_resolved() {
-        fn first_problem_index(store: &ProblemStore) -> Option<ProblemStoreIndex> {
-            Some(store.iterate_with_duplicates().next()?.0)
+        fn first_problem_index(store: &ProblemStore) -> Option<ProblemId> {
+            Some(store.deduplicated_into_iter().next()?.0)
         }
 
         let mut store = ProblemStore::new(channel().0);
@@ -261,15 +299,12 @@ mod tests {
         let done2 = store.add(create_problems());
 
         assert_eq!(done1.try_recv(), Err(TryRecvError::Empty));
+        assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
         store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done1.try_recv(), Err(TryRecvError::Empty));
+        assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
         store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done1.try_recv(), Ok(crate::outcome::Outcome::Continue));
-
-        assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(first_problem_index(&store).unwrap());
-        assert_eq!(done2.try_recv(), Err(TryRecvError::Empty));
-        store.resolve(first_problem_index(&store).unwrap());
         assert_eq!(done2.try_recv(), Ok(crate::outcome::Outcome::Continue));
     }
 
@@ -301,7 +336,6 @@ mod tests {
         let mut store = ProblemStore::new(channel().0);
         store.add(create_problems());
         store.add(create_problems());
-        assert_eq!(store.iterate_with_duplicates().count(), 4);
         assert_eq!(store.deduplicated_into_iter().count(), 2);
     }
 }

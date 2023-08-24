@@ -2,6 +2,7 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 
 use crate::checker::ApiUsage;
 use crate::config::ApiPath;
@@ -16,8 +17,8 @@ use crate::names::SymbolOrDebugName;
 use crate::proxy::rpc::BinExecutionOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
-use std::borrow::Cow;
-use std::collections::hash_map::Entry;
+use std::collections::btree_map;
+use std::collections::hash_map;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
@@ -111,10 +112,6 @@ impl ProblemList {
         self.problems.append(&mut other.problems);
     }
 
-    pub(crate) fn get(&self, index: usize) -> Option<&Problem> {
-        self.problems.get(index)
-    }
-
     pub(crate) fn is_empty(&self) -> bool {
         self.problems.is_empty()
     }
@@ -123,23 +120,14 @@ impl ProblemList {
         self.problems.len()
     }
 
-    pub(crate) fn replace(&mut self, index: usize, replacement: ProblemList) -> Problem {
+    pub(crate) fn take(self) -> Vec<Problem> {
         self.problems
-            .splice(index..index + 1, replacement.problems)
-            .next()
-            .unwrap()
     }
 
     pub(crate) fn should_send_retry_to_subprocess(&self) -> bool {
         self.problems
             .iter()
             .all(Problem::should_send_retry_to_subprocess)
-    }
-
-    /// Combines all disallowed API usages for a crate.
-    #[must_use]
-    pub(crate) fn grouped_by_type_and_crate(self) -> ProblemList {
-        self.grouped_by(|usage| usage.crate_sel.to_string())
     }
 
     /// Combines all disallowed API usages for a crate and API.
@@ -160,7 +148,7 @@ impl ProblemList {
             match problem {
                 Problem::DisallowedApiUsage(usage) => {
                     match disallowed_by_crate_name.entry(group_fn(&usage)) {
-                        Entry::Occupied(entry) => {
+                        hash_map::Entry::Occupied(entry) => {
                             let Problem::DisallowedApiUsage(existing) =
                                 &mut merged.problems[*entry.get()]
                             else {
@@ -170,7 +158,7 @@ impl ProblemList {
                                 existing.usages.entry(k).or_default().append(&mut v);
                             }
                         }
-                        Entry::Vacant(entry) => {
+                        hash_map::Entry::Vacant(entry) => {
                             let index = merged.problems.len();
                             merged.push(Problem::DisallowedApiUsage(usage));
                             entry.insert(index);
@@ -208,6 +196,16 @@ pub(crate) enum Severity {
     Error,
 }
 
+/// Selects how we want problems grouped together. This only affects disallowed API usages.
+#[derive(Clone, Copy)]
+pub(crate) enum ApiGroupingKind {
+    /// Each API is kept separate.
+    KeepApisSeparate,
+
+    /// Uses of different APIs by the one crate will be merged into a single group.
+    MergeApisWithinCrate,
+}
+
 impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
@@ -233,32 +231,40 @@ impl Problem {
 
     /// Returns `self` or a clone of `self` with any bits that aren't relevant for deduplication
     /// removed.
-    pub(crate) fn deduplication_key(&self) -> Cow<Problem> {
-        match self {
-            Problem::DisallowedApiUsage(api_usage) => {
-                if api_usage
-                    .usages
-                    .values()
-                    .any(|usages| usages.iter().any(|usage| usage.debug_data.is_some()))
-                {
-                    let mut api_usage = api_usage.clone();
-                    for usages in api_usage.usages.values_mut() {
-                        for usage in usages {
-                            usage.debug_data = None;
-                        }
-                    }
-                    return Cow::Owned(Problem::DisallowedApiUsage(api_usage));
-                }
+    pub(crate) fn deduplication_key(&self, grouping: ApiGroupingKind) -> Problem {
+        match (grouping, self) {
+            (ApiGroupingKind::KeepApisSeparate, Problem::DisallowedApiUsage(api_usage)) => {
+                Problem::DisallowedApiUsage(ApiUsages {
+                    crate_sel: api_usage.crate_sel.clone(),
+                    usages: api_usage
+                        .usages
+                        .keys()
+                        .map(|key| (key.clone(), vec![]))
+                        .collect(),
+                })
             }
-            Problem::PossibleExportedApi(info) => {
-                return Cow::Owned(Problem::PossibleExportedApi(PossibleExportedApi {
+            (ApiGroupingKind::MergeApisWithinCrate, Problem::DisallowedApiUsage(api_usage)) => {
+                Problem::DisallowedApiUsage(ApiUsages {
+                    crate_sel: api_usage.crate_sel.clone(),
+                    usages: Default::default(),
+                })
+            }
+            (_, Problem::PossibleExportedApi(info)) => {
+                Problem::PossibleExportedApi(PossibleExportedApi {
                     symbol: Symbol::borrowed(&[]),
                     ..info.clone()
-                }))
+                })
             }
-            _ => (),
+            _ => self.clone(),
         }
-        Cow::Borrowed(self)
+    }
+
+    /// Merges `other` into `self`. Should only be called with two problems that are not equal, but
+    /// which have equal deduplication_keys.
+    pub(crate) fn merge(&mut self, other: Problem) {
+        if let (Problem::DisallowedApiUsage(a), Problem::DisallowedApiUsage(b)) = (self, other) {
+            a.merge(b);
+        }
     }
 
     pub(crate) fn pkg_id(&self) -> Option<&PackageId> {
@@ -523,81 +529,23 @@ impl ApiUsages {
     pub(crate) fn first_usage(&self) -> Option<&ApiUsage> {
         self.usages.values().next().and_then(|u| u.get(0))
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::Problem;
-    use super::ProblemList;
-    use crate::checker::ApiUsage;
-    use crate::config::PermissionName;
-    use crate::crate_index::testing::pkg_id;
-    use crate::crate_index::CrateSel;
-    use crate::location::SourceLocation;
-    use crate::names::SymbolOrDebugName;
-    use crate::symbol::Symbol;
-    use crate::symbol_graph::NameSource;
-    use std::collections::BTreeMap;
-    use std::path::Path;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_condense() {
-        let mut problems = ProblemList::default();
-        problems.push(create_problem(
-            "foo2",
-            &[("net", &[create_usage("bbb", "net_stuff")])],
-        ));
-        problems.push(create_problem(
-            "foo1",
-            &[("net", &[create_usage("aaa", "net_stuff")])],
-        ));
-        problems.push(create_problem(
-            "foo1",
-            &[("net", &[create_usage("bbb", "net_stuff")])],
-        ));
-        problems.push(create_problem(
-            "foo1",
-            &[("fs", &[create_usage("aaa", "fs_stuff")])],
-        ));
-
-        problems = problems.grouped_by_type_and_crate();
-
-        let mut package_names = Vec::new();
-        for p in &problems.problems {
-            if let Problem::DisallowedApiUsage(u) = p {
-                package_names.push(u.crate_sel.pkg_id().name());
+    fn merge(&mut self, b: ApiUsages) {
+        if self.crate_sel != b.crate_sel {
+            return;
+        }
+        for (perm, usages) in b.usages {
+            match self.usages.entry(perm) {
+                btree_map::Entry::Vacant(entry) => {
+                    entry.insert(usages);
+                }
+                btree_map::Entry::Occupied(mut entry) => {
+                    let existing = entry.get_mut();
+                    let seen: FxHashSet<_> = existing.iter().collect();
+                    let mut to_add = usages.into_iter().filter(|u| !seen.contains(u)).collect();
+                    existing.append(&mut to_add);
+                }
             }
-        }
-        package_names.sort();
-        assert_eq!(package_names, vec!["foo1", "foo2"]);
-    }
-
-    fn create_problem(package: &str, permissions_and_usage: &[(&str, &[ApiUsage])]) -> Problem {
-        let mut usages = BTreeMap::new();
-        for (perm_name, usage) in permissions_and_usage {
-            usages.insert(
-                PermissionName {
-                    name: Arc::from(*perm_name),
-                },
-                usage.to_vec(),
-            );
-        }
-        Problem::DisallowedApiUsage(super::ApiUsages {
-            crate_sel: CrateSel::Primary(pkg_id(package)),
-            usages,
-        })
-    }
-
-    fn create_usage(from: &str, to: &str) -> ApiUsage {
-        let to_symbol = Symbol::borrowed(to.as_bytes()).to_heap();
-        ApiUsage {
-            source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
-            from: SymbolOrDebugName::Symbol(Symbol::borrowed(from.as_bytes()).to_heap()),
-            to: SymbolOrDebugName::Symbol(to_symbol.clone()),
-            to_name: crate::names::split_simple("foo:bar"),
-            to_source: NameSource::Symbol(to_symbol.clone()),
-            debug_data: None,
         }
     }
 }

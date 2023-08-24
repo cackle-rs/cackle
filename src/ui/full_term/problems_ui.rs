@@ -12,8 +12,8 @@ use crate::crate_index::CrateIndex;
 use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
 use crate::problem::Problem;
+use crate::problem_store::ProblemId;
 use crate::problem_store::ProblemStore;
-use crate::problem_store::ProblemStoreIndex;
 use crate::problem_store::ProblemStoreRef;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -249,9 +249,9 @@ impl ProblemsUi {
     fn accept_all_single_edits(&mut self) -> Result<()> {
         fn first_single_edit(
             pstore: &MutexGuard<ProblemStore>,
-        ) -> Option<(ProblemStoreIndex, Box<dyn Edit>)> {
+        ) -> Option<(ProblemId, Box<dyn Edit>)> {
             pstore
-                .iterate_with_duplicates()
+                .deduplicated_into_iter()
                 .find_map(|(index, problem)| {
                     let mut edits = config_editor::fixes_for_problem(problem);
                     if edits.len() == 1 {
