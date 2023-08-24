@@ -87,9 +87,6 @@ impl ProblemsUi {
         let (top, middle) = (chunks[0], chunks[1]);
 
         self.render_problems(f, top);
-        if let Some(bottom) = chunks.get(2) {
-            self.render_package_details(f, *bottom);
-        }
 
         let mut previous_mode = None;
         for mode in self.modes.iter() {
@@ -103,13 +100,19 @@ impl ProblemsUi {
                         .any(|mode| [Mode::SelectEdit, Mode::SelectUsage].contains(mode))
                     {
                         self.render_details(f, middle);
+                        if let Some(bottom) = chunks.get(2) {
+                            self.render_package_details(f, *bottom);
+                        }
                     }
                 }
                 Mode::SelectEdit => {
                     self.render_edit_help_and_diff(f, middle);
                 }
                 Mode::SelectUsage => {
-                    self.render_usage_details(f, middle);
+                    self.render_usage_source(f, middle);
+                    if let Some(bottom) = chunks.get(2) {
+                        self.render_usage_details(f, *bottom);
+                    }
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::ShowPackageTree => self.render_package_tree(f),
@@ -380,7 +383,7 @@ impl ProblemsUi {
         f.render_widget(paragraph, area);
     }
 
-    fn render_usage_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_usage_source(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
         let usages = self.usages();
         let Some(usage) = usages.get(self.usage_index) else {
             return;
@@ -392,6 +395,34 @@ impl ProblemsUi {
 
         let block = Block::default()
             .title(source_location.filename().display().to_string())
+            .borders(Borders::ALL);
+        let paragraph = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
+        f.render_widget(paragraph, area);
+    }
+
+    fn render_usage_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+        let usages = self.usages();
+        let Some(usage) = usages.get(self.usage_index) else {
+            return;
+        };
+
+        let details = usage.details();
+        let key_style = Style::default().add_modifier(Modifier::BOLD);
+        let max_key_width = details.iter().map(|(key, _)| key.len()).max().unwrap_or(5);
+        let lines: Vec<_> = details
+            .into_iter()
+            .map(|(field, value)| {
+                let padding = max_key_width - field.len();
+                Line::from(vec![
+                    Span::styled(format!("{field} {:padding$}", ""), key_style),
+                    Span::raw(value),
+                ])
+            })
+            .collect();
+        let block = Block::default()
+            .title("Usage details")
             .borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
             .block(block)
@@ -746,6 +777,11 @@ trait DisplayUsage {
 
     /// A single line that we display in the list of usages.
     fn list_display(&self) -> String;
+
+    /// Returns a list of field_name, value pairs that describes this usage.
+    fn details(&self) -> Vec<(&'static str, String)> {
+        vec![]
+    }
 }
 
 impl DisplayUsage for ApiUsage {
@@ -761,6 +797,14 @@ impl DisplayUsage for ApiUsage {
 
     fn list_display(&self) -> String {
         format!("{} -> {}", self.from, self.to_source)
+    }
+
+    fn details(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("From", self.from.to_string()),
+            ("To", self.to.to_string()),
+            ("Matched name", self.to_name.to_string()),
+        ]
     }
 }
 
