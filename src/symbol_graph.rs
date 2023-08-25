@@ -11,6 +11,7 @@ use crate::checker::ApiUsage;
 use crate::checker::Checker;
 use crate::config::ApiName;
 use crate::config::CrateName;
+use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::demangle::NonMangledIterator;
 use crate::lazy::Lazy;
@@ -441,9 +442,10 @@ impl<'input> ApiUsageCollector<'input> {
                 .as_ref()
             {
                 // APIs can only be exported from the primary crate in a package.
-                let CrateSel::Primary(pkg_id) = crate_sel else {
+                if crate_sel.kind != CrateKind::Primary {
                     continue;
                 };
+                let pkg_id = &crate_sel.pkg_id;
                 if found.insert((pkg_id.clone(), api_name)) {
                     // Macros can sometimes result in symbols being attributed to lower-level
                     // crates, so we only consider exported APIs that start with the crate name we

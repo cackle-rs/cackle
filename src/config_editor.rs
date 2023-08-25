@@ -871,7 +871,7 @@ mod tests {
 
     fn disallowed_api(pkg_name: &str, api: &'static str) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
-            crate_sel: CrateSel::Primary(pkg_id(pkg_name)),
+            crate_sel: CrateSel::primary(pkg_id(pkg_name)),
             api_name: ApiName::from(api),
             usages: Vec::new(),
         })
@@ -996,7 +996,7 @@ mod tests {
             &[(
                 0,
                 Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
-                    crate_sel: CrateSel::Primary(pkg_id("crab1")),
+                    crate_sel: CrateSel::primary(pkg_id("crab1")),
                     locations: vec![SourceLocation::new(Path::new("main.rs"), 10, None)],
                 }),
             )],
@@ -1010,7 +1010,7 @@ mod tests {
 
     #[test]
     fn build_script_failed() {
-        let crate_sel = CrateSel::BuildScript(pkg_id("crab1"));
+        let crate_sel = CrateSel::build_script(pkg_id("crab1"));
         let failure = Problem::BuildScriptFailed(crate::problem::BinExecutionFailed {
             output: BinExecutionOutput {
                 exit_code: 1,

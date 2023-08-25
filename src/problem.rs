@@ -6,6 +6,7 @@ use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::CrateName;
+use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::names::SymbolOrDebugName;
@@ -243,13 +244,13 @@ impl Display for Problem {
                 write!(
                     f,
                     "`{}` has a build script",
-                    CrateSel::Primary(pkg_id.clone()),
+                    CrateSel::primary(pkg_id.clone()),
                 )?;
             }
             Problem::IsProcMacro(pkg_name) => write!(
                 f,
                 "`{}` is a proc macro",
-                CrateSel::Primary(pkg_name.clone())
+                CrateSel::primary(pkg_name.clone())
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
@@ -257,7 +258,7 @@ impl Display for Problem {
                 write!(
                     f,
                     "{}'s build script emitted disallowed instruction `{}`",
-                    CrateSel::Primary(info.pkg_id.clone()),
+                    CrateSel::primary(info.pkg_id.clone()),
                     info.instruction
                 )?;
             }
@@ -277,7 +278,7 @@ impl Display for Problem {
                 write!(
                     f,
                     "Package `{}` exports API `{}`",
-                    CrateSel::Primary(info.pkg_id.clone()),
+                    CrateSel::primary(info.pkg_id.clone()),
                     info.api
                 )?;
             }
@@ -342,14 +343,15 @@ impl Display for UnusedAllowApi {
 
 impl Display for BinExecutionFailed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.output.crate_sel {
-            CrateSel::Primary(pkg_id) => {
+        let pkg_id = &self.output.crate_sel.pkg_id;
+        match self.output.crate_sel.kind {
+            CrateKind::Primary => {
                 write!(f, "Execution of binary for package `{pkg_id}` failed")?;
             }
-            CrateSel::BuildScript(pkg_id) => {
+            CrateKind::BuildScript => {
                 write!(f, "Build script for package `{pkg_id}` failed")?;
             }
-            CrateSel::Test(pkg_id) => {
+            CrateKind::Test => {
                 write!(f, "Execution of test for package `{pkg_id}` failed")?;
             }
         }

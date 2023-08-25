@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::PackageConfig;
 use crate::crate_index::CrateIndex;
-use crate::crate_index::CrateSel;
 use clap::Parser;
 use fxhash::FxHashMap;
 use std::collections::BTreeMap;
@@ -65,8 +64,8 @@ impl Summary {
             .package_ids()
             .map(|pkg_id| {
                 let mut permissions = Vec::new();
-                let pkg_name = CrateName::from(&CrateSel::Primary(pkg_id.clone()));
-                let build_script_name = CrateName::from(&CrateSel::BuildScript(pkg_id.clone()));
+                let pkg_name = CrateName::for_primary(pkg_id.name());
+                let build_script_name = CrateName::for_build_script(pkg_id.name());
                 for (crate_name, suffix) in [(&pkg_name, ""), (&build_script_name, "[build]")] {
                     if let Some(pkg_config) = pkg_configs.get(&crate_name) {
                         if pkg_config.allow_proc_macro {

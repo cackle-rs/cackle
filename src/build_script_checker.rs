@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::config::CrateName;
-use crate::crate_index::CrateSel;
+use crate::crate_index::CrateKind;
 use crate::crate_index::PackageId;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
@@ -19,7 +19,7 @@ pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<Pro
             .into(),
         );
     }
-    let CrateSel::BuildScript(build_script_id) = crate_sel else {
+    if crate_sel.kind != CrateKind::BuildScript {
         // If it wasn't a build script that was run, then there's nothing else to check.
         return Ok(ProblemList::default());
     };
@@ -32,7 +32,7 @@ pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<Pro
     let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
         return Ok(Problem::new(format!(
             "The build script `{}` emitted invalid UTF-8",
-            build_script_id
+            crate_sel.pkg_id
         ))
         .into());
     };
@@ -41,7 +41,7 @@ pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<Pro
         if line.starts_with("cargo:") {
             problems.merge(check_directive(
                 line,
-                build_script_id,
+                &crate_sel.pkg_id,
                 allow_build_instructions,
             ));
         }
@@ -104,7 +104,7 @@ mod tests {
             exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
-            crate_sel: CrateSel::BuildScript(pkg_id("my_pkg")),
+            crate_sel: CrateSel::build_script(pkg_id("my_pkg")),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
             sandbox_config_display: None,

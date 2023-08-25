@@ -411,6 +411,10 @@ impl AsRef<str> for CrateName {
 }
 
 impl CrateName {
+    pub(crate) fn for_primary(crate_name: &str) -> Self {
+        Self(Arc::from(crate_name))
+    }
+
     pub(crate) fn for_build_script(crate_name: &str) -> Self {
         Self(Arc::from(format!("{crate_name}.build").as_str()))
     }

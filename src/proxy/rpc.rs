@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn serialize_deserialize() {
         let req = Request::CrateUsesUnsafe(UnsafeUsage {
-            crate_sel: CrateSel::Primary(crate::crate_index::testing::pkg_id("foo")),
+            crate_sel: CrateSel::primary(crate::crate_index::testing::pkg_id("foo")),
             locations: vec![SourceLocation::new(Path::new("src/main.rs"), 42, None)],
         });
         let mut buf = Vec::new();

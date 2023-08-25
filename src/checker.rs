@@ -3,6 +3,7 @@ use crate::config::ApiName;
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
@@ -214,8 +215,8 @@ impl Checker {
     ) -> Result<ProblemList> {
         let start = std::time::Instant::now();
         let mut problems = ProblemList::default();
-        if let CrateSel::BuildScript(build_script_id) = &info.crate_sel {
-            problems.merge(self.verify_build_script_permitted(build_script_id));
+        if info.crate_sel.kind == CrateKind::BuildScript {
+            problems.merge(self.verify_build_script_permitted(&info.crate_sel.pkg_id));
         }
         problems.merge(self.check_object_paths(
             &info.object_paths_under(&self.target_dir),
@@ -293,7 +294,7 @@ impl Checker {
                 // Fall-back to just finding the package that contains the source path.
                 self.crate_index
                     .package_id_for_path(source_path)
-                    .map(|pkg_id| Cow::Owned(vec![CrateSel::Primary(pkg_id.clone())]))
+                    .map(|pkg_id| Cow::Owned(vec![CrateSel::primary(pkg_id.clone())]))
             })
     }
 
@@ -473,7 +474,7 @@ mod tests {
         checker.update_config(config.clone());
         let mut problems = ProblemList::default();
 
-        let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
+        let crate_sel = CrateSel::primary(crate::crate_index::testing::pkg_id("foo"));
         let apis = checker
             .apis_for_name_iterator(["std", "fs", "read_to_string"].into_iter())
             .clone();
