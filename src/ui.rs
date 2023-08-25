@@ -57,9 +57,6 @@ pub(crate) fn start_ui(
     let mut ui: Box<dyn UserInterface> = match args.ui_kind() {
         Kind::None => {
             info!("Starting null UI");
-            problem_store
-                .lock()
-                .set_grouping(crate::problem::ApiGroupingKind::MergeApisWithinCrate);
             Box::new(null_ui::NullUi::new(args, abort_sender))
         }
         #[cfg(feature = "ui")]

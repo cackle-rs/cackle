@@ -42,7 +42,6 @@ use object::ObjectSymbol;
 use object::RelocationTarget;
 use object::SectionIndex;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
@@ -411,11 +410,10 @@ impl<'input> ApiUsageCollector<'input> {
                     ))
                     .or_insert_with(|| ApiUsages {
                         crate_sel: shortest_target_usage.crate_sel.clone(),
-                        usages: BTreeMap::default(),
+                        api_name: shortest_target_usage.api.clone(),
+                        usages: Default::default(),
                     })
                     .usages
-                    .entry(shortest_target_usage.api.clone())
-                    .or_default()
                     .push(shortest_target_usage.usage);
             }
         }

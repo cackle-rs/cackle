@@ -1,6 +1,5 @@
 use crate::events::AppEvent;
 use crate::outcome::Outcome;
-use crate::problem::ApiGroupingKind;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use fxhash::FxHashMap;
@@ -29,7 +28,6 @@ pub(crate) struct ProblemStore {
     id_by_deduplication_key: FxHashMap<Problem, ProblemId>,
     event_sender: Sender<AppEvent>,
     pub(crate) has_aborted: bool,
-    grouping_kind: ApiGroupingKind,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -63,16 +61,7 @@ impl ProblemStore {
             id_by_deduplication_key: Default::default(),
             event_sender,
             has_aborted: false,
-            grouping_kind: ApiGroupingKind::KeepApisSeparate,
         }
-    }
-
-    /// Set how we want problems grouped. This can only be called prior to problems being added.
-    pub(crate) fn set_grouping(&mut self, grouping: ApiGroupingKind) {
-        if !self.problems.is_empty() {
-            panic!("ProblemStore::set_grouping must be called before problems are added");
-        }
-        self.grouping_kind = grouping;
     }
 
     /// Adds `problems` to this store. The returned receiver will receive a single value once all
@@ -168,7 +157,7 @@ impl ProblemStore {
         // otherwise we'd be adding entries into middle of the list and we should only ever have new
         // entries show up at the end.
         self.id_by_deduplication_key
-            .remove(&problem.deduplication_key(self.grouping_kind));
+            .remove(&problem.deduplication_key());
     }
 
     pub(crate) fn abort(&mut self) {
@@ -185,7 +174,7 @@ impl ProblemStore {
     fn add_problem(&mut self, problem: Problem) -> ProblemId {
         match self
             .id_by_deduplication_key
-            .entry(problem.deduplication_key(self.grouping_kind))
+            .entry(problem.deduplication_key())
         {
             Entry::Occupied(entry) => {
                 let id = *entry.get();

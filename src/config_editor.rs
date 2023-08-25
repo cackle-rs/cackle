@@ -617,20 +617,11 @@ struct AllowApiUsage {
 
 impl Edit for AllowApiUsage {
     fn title(&self) -> String {
-        let mut sorted_keys: Vec<_> = self.usage.usages.keys().map(|u| u.to_string()).collect();
-        sorted_keys.sort();
-        if let [api] = sorted_keys.as_slice() {
-            format!(
-                "Allow `{}` to use API `{api}`",
-                CrateName::from(&self.usage.crate_sel),
-            )
-        } else {
-            format!(
-                "Allow `{}` to use APIs: {}",
-                CrateName::from(&self.usage.crate_sel),
-                sorted_keys.join(", ")
-            )
-        }
+        let api = &self.usage.api_name;
+        format!(
+            "Allow `{}` to use API `{api}`",
+            CrateName::from(&self.usage.crate_sel),
+        )
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -639,8 +630,7 @@ impl Edit for AllowApiUsage {
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.pkg_table(&CrateName::from(&self.usage.crate_sel))?;
-        let keys: Vec<_> = self.usage.usages.keys().map(|perm| &perm.name).collect();
-        add_to_array(table, "allow_apis", &keys)
+        add_to_array(table, "allow_apis", &[&self.usage.api_name])
     }
 }
 
@@ -880,10 +870,11 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
+    fn disallowed_api(pkg_name: &str, api: &'static str) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
             crate_sel: CrateSel::Primary(pkg_id(pkg_name)),
-            usages: apis.iter().map(|n| (ApiName::from(*n), vec![])).collect(),
+            api_name: ApiName::from(api),
+            usages: Vec::new(),
         })
     }
 
@@ -901,12 +892,11 @@ mod tests {
     fn fix_missing_api_no_existing_config() {
         check(
             "",
-            &[(0, disallowed_apis("crab1", &["fs", "net"]))],
+            &[(0, disallowed_api("crab1", "fs"))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
                     "fs",
-                    "net",
                 ]
             "#,
             },
@@ -917,12 +907,11 @@ mod tests {
     fn fix_missing_api_build_script() {
         check(
             "",
-            &[(0, disallowed_apis("crab1.build", &["fs", "net"]))],
+            &[(0, disallowed_api("crab1.build", "fs"))],
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_apis = [
                     "fs",
-                    "net",
                 ]
             "#,
             },
@@ -955,17 +944,16 @@ mod tests {
                 [pkg.crab1]
                 allow_apis = [
                     "env",
-                    "fs",
+                    "net",
                 ]
             "#},
-            &[(0, disallowed_apis("crab1", &["process", "net", "fs"]))],
+            &[(0, disallowed_api("crab1", "fs"))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
                     "env",
                     "fs",
                     "net",
-                    "process",
                 ]
             "#},
         );
@@ -979,7 +967,7 @@ mod tests {
                 allow_apis = [
                 ]
             "#},
-            &[(0, disallowed_apis("crab1", &["net"]))],
+            &[(0, disallowed_api("crab1", "net"))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [

@@ -13,8 +13,6 @@ use crate::names::SymbolOrDebugName;
 use crate::proxy::rpc::BinExecutionOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
-use fxhash::FxHashSet;
-use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
@@ -61,7 +59,8 @@ pub(crate) struct BinExecutionFailed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApiUsages {
     pub(crate) crate_sel: CrateSel,
-    pub(crate) usages: BTreeMap<ApiName, Vec<ApiUsage>>,
+    pub(crate) api_name: ApiName,
+    pub(crate) usages: Vec<ApiUsage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -151,16 +150,6 @@ pub(crate) enum Severity {
     Error,
 }
 
-/// Selects how we want problems grouped together. This only affects disallowed API usages.
-#[derive(Clone, Copy)]
-pub(crate) enum ApiGroupingKind {
-    /// Each API is kept separate.
-    KeepApisSeparate,
-
-    /// Uses of different APIs by the one crate will be merged into a single group.
-    MergeApisWithinCrate,
-}
-
 impl Problem {
     pub(crate) fn new<T: Into<String>>(text: T) -> Self {
         Self::Message(text.into())
@@ -186,25 +175,14 @@ impl Problem {
 
     /// Returns `self` or a clone of `self` with any bits that aren't relevant for deduplication
     /// removed.
-    pub(crate) fn deduplication_key(&self, grouping: ApiGroupingKind) -> Problem {
-        match (grouping, self) {
-            (ApiGroupingKind::KeepApisSeparate, Problem::DisallowedApiUsage(api_usage)) => {
-                Problem::DisallowedApiUsage(ApiUsages {
-                    crate_sel: api_usage.crate_sel.clone(),
-                    usages: api_usage
-                        .usages
-                        .keys()
-                        .map(|key| (key.clone(), vec![]))
-                        .collect(),
-                })
-            }
-            (ApiGroupingKind::MergeApisWithinCrate, Problem::DisallowedApiUsage(api_usage)) => {
-                Problem::DisallowedApiUsage(ApiUsages {
-                    crate_sel: api_usage.crate_sel.clone(),
-                    usages: Default::default(),
-                })
-            }
-            (_, Problem::PossibleExportedApi(info)) => {
+    pub(crate) fn deduplication_key(&self) -> Problem {
+        match self {
+            Problem::DisallowedApiUsage(api_usage) => Problem::DisallowedApiUsage(ApiUsages {
+                crate_sel: api_usage.crate_sel.clone(),
+                api_name: api_usage.api_name.clone(),
+                usages: Default::default(),
+            }),
+            Problem::PossibleExportedApi(info) => {
                 Problem::PossibleExportedApi(PossibleExportedApi {
                     symbol: Symbol::borrowed(&[]),
                     ..info.clone()
@@ -336,25 +314,14 @@ impl Display for Problem {
 impl Display for ApiUsages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(f, "'{}' uses disallowed APIs:", self.crate_sel)?;
-            for (perm_name, usages) in &self.usages {
-                writeln!(f, "  {perm_name}:")?;
-                display_usages(f, usages)?;
-            }
-        } else if self.usages.len() == 1 {
-            let (perm, _) = self.usages.first_key_value().unwrap();
-            write!(f, "`{}` uses API `{perm}`", self.crate_sel)?;
+            writeln!(
+                f,
+                "'{}' uses disallowed API `{}`",
+                self.crate_sel, self.api_name
+            )?;
+            display_usages(f, &self.usages)?;
         } else {
-            write!(f, "'{}' uses disallowed APIs: ", self.crate_sel)?;
-            let mut first = true;
-            for perm_name in self.usages.keys() {
-                if first {
-                    first = false;
-                } else {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{perm_name}")?;
-            }
+            write!(f, "`{}` uses API `{}`", self.crate_sel, self.api_name)?;
         }
         Ok(())
     }
@@ -416,20 +383,15 @@ fn display_usages(
     }
     let mut by_from: BTreeMap<&SymbolOrDebugName, Vec<&ApiUsage>> = BTreeMap::new();
     for (filename, usages_for_location) in by_source_filename {
-        writeln!(f, "    {}", filename.display())?;
+        writeln!(f, "  {}", filename.display())?;
         by_from.clear();
         for usage in usages_for_location {
             by_from.entry(&usage.from).or_default().push(usage);
         }
         for (from, local_usages) in &by_from {
-            writeln!(f, "      {from}")?;
+            writeln!(f, "    {from}")?;
             for u in local_usages {
-                write!(
-                    f,
-                    "        -> {} [{}",
-                    u.to_source,
-                    u.source_location.line(),
-                )?;
+                write!(f, "      -> {} [{}", u.to_source, u.source_location.line(),)?;
                 if let Some(column) = u.source_location.column() {
                     write!(f, ":{}", column)?;
                 }
@@ -451,30 +413,16 @@ impl From<Problem> for ProblemList {
 impl std::hash::Hash for ApiUsages {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.crate_sel.hash(state);
-        // Out of laziness, we only hash the permission names, not the usage information.
-        for perm in self.usages.keys() {
-            perm.hash(state);
-        }
+        // Out of laziness, we only hash the API name, not the usage information.
+        self.api_name.hash(state);
     }
 }
 
 impl ApiUsages {
-    fn merge(&mut self, b: ApiUsages) {
-        if self.crate_sel != b.crate_sel {
-            return;
+    fn merge(&mut self, mut b: ApiUsages) {
+        if self.crate_sel != b.crate_sel || self.api_name != b.api_name {
+            panic!("Attempted to merge ApiUsages with incompatible attributes");
         }
-        for (perm, usages) in b.usages {
-            match self.usages.entry(perm) {
-                btree_map::Entry::Vacant(entry) => {
-                    entry.insert(usages);
-                }
-                btree_map::Entry::Occupied(mut entry) => {
-                    let existing = entry.get_mut();
-                    let seen: FxHashSet<_> = existing.iter().collect();
-                    let mut to_add = usages.into_iter().filter(|u| !seen.contains(u)).collect();
-                    existing.append(&mut to_add);
-                }
-            }
-        }
+        self.usages.append(&mut b.usages);
     }
 }

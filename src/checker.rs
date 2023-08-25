@@ -313,14 +313,13 @@ impl Checker {
     }
 
     pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
-        assert_eq!(api_usage.usages.keys().count(), 1);
-        let permission = api_usage.usages.keys().next().unwrap();
+        let api = &api_usage.api_name;
         if let Some(crate_info) = self
             .crate_infos
             .get_mut(&CrateName::from(&api_usage.crate_sel))
         {
-            if crate_info.allowed_perms.contains(permission) {
-                crate_info.unused_allowed_perms.remove(permission);
+            if crate_info.allowed_perms.contains(api) {
+                crate_info.unused_allowed_perms.remove(api);
                 return;
             }
         }
@@ -404,7 +403,6 @@ mod tests {
     use super::*;
     use crate::config::testing::parse;
     use crate::symbol::Symbol;
-    use std::collections::BTreeMap;
     use std::fmt::Debug;
     use std::fmt::Display;
 
@@ -488,10 +486,10 @@ mod tests {
         assert_eq!(permissions.len(), 1);
         assert_eq!(permissions.iter().next().unwrap(), &ApiName::from("fs"));
         for api in permissions {
-            let mut usages = BTreeMap::new();
-            usages.insert(
-                api,
-                vec![ApiUsage {
+            let api_usage = ApiUsages {
+                crate_sel: crate_sel.clone(),
+                api_name: api,
+                usages: vec![ApiUsage {
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
                     from: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
                     to_name: crate::names::split_simple("foo::bar"),
@@ -499,10 +497,6 @@ mod tests {
                     to_source: NameSource::Symbol(Symbol::borrowed(b"foo::bar")),
                     debug_data: None,
                 }],
-            );
-            let api_usage = ApiUsages {
-                crate_sel: crate_sel.clone(),
-                usages,
             };
             checker.permission_used(&api_usage, &mut problems);
         }

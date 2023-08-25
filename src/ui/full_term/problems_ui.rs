@@ -739,10 +739,8 @@ fn usages_for_problem(
     let mut usages_out: Vec<Box<dyn DisplayUsage>> = Vec::new();
     match pstore_lock.deduplicated_into_iter().nth(problem_index) {
         Some((_, Problem::DisallowedApiUsage(usages))) => {
-            for usages in usages.usages.values() {
-                for usage in usages {
-                    usages_out.push(Box::new(usage.clone()));
-                }
+            for usage in &usages.usages {
+                usages_out.push(Box::new(usage.clone()));
             }
         }
         Some((_, Problem::DisallowedUnsafe(unsafe_usage))) => {
