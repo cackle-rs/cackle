@@ -294,14 +294,12 @@ impl RustcRunner {
                     args.next();
                     continue;
                 }
-                // Force-enable -C debuginfo=2. We need debug info in order to know where code
-                // originated.
+                // Skip -C debuginfo= if present, so that we can add our own value at the end.
                 if args
                     .peek()
                     .map(|arg| arg.starts_with("debuginfo="))
                     .unwrap_or(false)
                 {
-                    command.arg("-C").arg("debuginfo=2");
                     args.next();
                     continue;
                 }
@@ -324,6 +322,8 @@ impl RustcRunner {
             // For all other arguments, pass them through.
             command.arg(arg);
         }
+        // Force-enable -C debuginfo=2. We need debug info in order to know where code originated.
+        command.arg("-C").arg("debuginfo=2");
         if let Some(orig_linker) = orig_linker_arg {
             command.env(super::ORIG_LINKER_ENV, orig_linker);
         }
