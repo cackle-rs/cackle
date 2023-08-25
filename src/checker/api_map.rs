@@ -1,4 +1,4 @@
-use crate::config::PermissionName;
+use crate::config::ApiName;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 
@@ -14,7 +14,7 @@ use fxhash::FxHashSet;
 /// without heap allocation.
 #[derive(Default)]
 pub(super) struct ApiMap {
-    apis: FxHashSet<PermissionName>,
+    apis: FxHashSet<ApiName>,
     map: FxHashMap<String, Box<ApiMap>>,
 }
 
@@ -22,10 +22,7 @@ impl ApiMap {
     /// Returns the permissions for the path produced by `key_it`. The permissions are those on
     /// whatever node we reach when either `key_it` ends or we have no child node for the next value
     /// it produces. i.e. it's the deepest node that is a prefix of the name produced by `key_it`.
-    pub(super) fn get<'a>(
-        &self,
-        mut key_it: impl Iterator<Item = &'a str>,
-    ) -> &FxHashSet<PermissionName> {
+    pub(super) fn get<'a>(&self, mut key_it: impl Iterator<Item = &'a str>) -> &FxHashSet<ApiName> {
         key_it
             .next()
             .and_then(|key| self.map.get(key))
@@ -61,7 +58,7 @@ impl ApiMap {
     }
 
     /// Modifies the APIs for this node in the subtree and all child nodes.
-    pub(super) fn update_subtree(&mut self, mutator: &impl Fn(&mut FxHashSet<PermissionName>)) {
+    pub(super) fn update_subtree(&mut self, mutator: &impl Fn(&mut FxHashSet<ApiName>)) {
         (mutator)(&mut self.apis);
         for subtree in self.map.values_mut() {
             subtree.update_subtree(mutator);

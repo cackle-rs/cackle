@@ -2,10 +2,10 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
+use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::CrateName;
 use crate::config::PermConfig;
-use crate::config::PermissionName;
 use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
@@ -40,7 +40,7 @@ pub(crate) enum Problem {
     UnusedPackageConfig(CrateName),
     UnusedAllowApi(UnusedAllowApi),
     SelectSandbox,
-    ImportStdApi(PermissionName),
+    ImportStdApi(ApiName),
     AvailableApi(AvailableApi),
     PossibleExportedApi(PossibleExportedApi),
     UnusedSandboxConfiguration(CrateName),
@@ -61,13 +61,13 @@ pub(crate) struct BinExecutionFailed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApiUsages {
     pub(crate) crate_sel: CrateSel,
-    pub(crate) usages: BTreeMap<PermissionName, Vec<ApiUsage>>,
+    pub(crate) usages: BTreeMap<ApiName, Vec<ApiUsage>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct UnusedAllowApi {
     pub(crate) crate_name: CrateName,
-    pub(crate) permissions: Vec<PermissionName>,
+    pub(crate) permissions: Vec<ApiName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -79,7 +79,7 @@ pub(crate) struct DisallowedBuildInstruction {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct AvailableApi {
     pub(crate) pkg_id: PackageId,
-    pub(crate) api: PermissionName,
+    pub(crate) api: ApiName,
     pub(crate) config: PermConfig,
 }
 
@@ -88,7 +88,7 @@ pub(crate) struct AvailableApi {
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub(crate) struct PossibleExportedApi {
     pub(crate) pkg_id: PackageId,
-    pub(crate) api: PermissionName,
+    pub(crate) api: ApiName,
     pub(crate) symbol: Symbol<'static>,
 }
 impl PossibleExportedApi {

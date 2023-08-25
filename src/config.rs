@@ -25,7 +25,7 @@ pub(crate) struct Config {
     pub(crate) common: CommonConfig,
 
     #[serde(default, rename = "api")]
-    pub(crate) apis: BTreeMap<PermissionName, PermConfig>,
+    pub(crate) apis: BTreeMap<ApiName, PermConfig>,
 
     #[serde(default, rename = "pkg")]
     pub(crate) packages: BTreeMap<CrateName, PackageConfig>,
@@ -94,7 +94,7 @@ pub(crate) struct PermConfig {
 
 #[derive(Deserialize, Serialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(transparent)]
-pub(crate) struct PermissionName {
+pub(crate) struct ApiName {
     pub(crate) name: Arc<str>,
 }
 
@@ -125,7 +125,7 @@ pub(crate) struct PackageConfig {
     pub(crate) allow_build_instructions: Vec<String>,
 
     #[serde(default)]
-    pub(crate) allow_apis: Vec<PermissionName>,
+    pub(crate) allow_apis: Vec<ApiName>,
 
     #[serde(default)]
     pub(crate) allow_proc_macro: bool,
@@ -170,7 +170,7 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
     }
     let built_ins = built_in::get_built_ins();
     for imp in config.common.import_std.drain(..) {
-        let perm = PermissionName::new(imp.as_str());
+        let perm = ApiName::new(imp.as_str());
         let built_in_api = built_ins
             .get(&perm)
             .ok_or_else(|| anyhow!("Unknown API `{imp}` in import_std"))?;
@@ -209,7 +209,7 @@ impl Config {
                     // The user didn't request importing this API, so skip it.
                     continue;
                 }
-                let qualified_api_name = PermissionName {
+                let qualified_api_name = ApiName {
                     name: format!("{}::{}", crate_name, api_name).into(),
                 };
                 if self
@@ -309,7 +309,7 @@ fn flatten(config: &mut Config) {
     config.packages = crates_by_name;
 }
 
-impl Display for PermissionName {
+impl Display for ApiName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
@@ -321,13 +321,13 @@ impl Display for ApiPath {
     }
 }
 
-impl From<&'static str> for PermissionName {
+impl From<&'static str> for ApiName {
     fn from(name: &'static str) -> Self {
-        PermissionName { name: name.into() }
+        ApiName { name: name.into() }
     }
 }
 
-impl PermissionName {
+impl ApiName {
     pub(crate) fn new(name: &str) -> Self {
         Self {
             name: name.to_owned().into(),
@@ -382,7 +382,7 @@ impl ApiPath {
     }
 }
 
-impl AsRef<str> for PermissionName {
+impl AsRef<str> for ApiName {
     fn as_ref(&self) -> &str {
         &self.name
     }

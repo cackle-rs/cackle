@@ -2,7 +2,7 @@
 //! do.
 
 use crate::config;
-use crate::config::PermissionName;
+use crate::config::ApiName;
 use crate::config::SandboxKind;
 use crate::config::MAX_VERSION;
 use crate::config_editor;
@@ -127,7 +127,7 @@ impl BasicTermUi {
                 if part.is_empty() {
                     continue;
                 }
-                if built_ins.contains_key(&PermissionName::new(part)) {
+                if built_ins.contains_key(&ApiName::new(part)) {
                     editor.toggle_std_import(part)?;
                 } else {
                     println!("Unknown API `{part}`");

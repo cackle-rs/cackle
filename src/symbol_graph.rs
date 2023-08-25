@@ -9,8 +9,8 @@ use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::Checker;
+use crate::config::ApiName;
 use crate::config::CrateName;
-use crate::config::PermissionName;
 use crate::crate_index::CrateSel;
 use crate::demangle::NonMangledIterator;
 use crate::lazy::Lazy;
@@ -70,7 +70,7 @@ struct ApiUsageCollector<'input> {
 
 struct SingleApiUsage {
     crate_sel: CrateSel,
-    api: PermissionName,
+    api: ApiName,
     usage: ApiUsage,
 }
 
@@ -89,7 +89,7 @@ struct BinInfo<'input> {
 
 #[derive(Default)]
 pub(crate) struct ScanOutputs {
-    api_usages: FxHashMap<(CrateSel, PermissionName), ApiUsages>,
+    api_usages: FxHashMap<(CrateSel, ApiName), ApiUsages>,
 
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
     /// once computed, they won't be recomputed.
@@ -422,7 +422,7 @@ impl<'input> ApiUsageCollector<'input> {
     }
 
     fn find_possible_exports(&mut self, checker: &Checker) {
-        let api_names: FxHashMap<&str, &PermissionName> = checker
+        let api_names: FxHashMap<&str, &ApiName> = checker
             .config
             .apis
             .keys()
@@ -457,7 +457,7 @@ impl<'input> ApiUsageCollector<'input> {
                         .possible_exported_apis
                         .push(PossibleExportedApi {
                             pkg_id: pkg_id.to_owned(),
-                            api: PermissionName::clone(permission_name),
+                            api: ApiName::clone(permission_name),
                             symbol: symbol.to_heap(),
                         });
                 }
@@ -619,7 +619,7 @@ impl<'input> BinInfo<'input> {
         &mut self,
         symbol_and_name: &SymbolAndName,
         checker: &'checker Checker,
-        mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<PermissionName>) -> Result<()>,
+        mut callback: impl FnMut(Name, NameSource, &'checker FxHashSet<ApiName>) -> Result<()>,
     ) -> Result<()> {
         // If we've previously observed that this symbol has no APIs associated with it, then skip
         // it.
@@ -740,7 +740,7 @@ impl Filetype {
 #[derive(Hash, Eq, PartialEq)]
 pub(crate) struct ApiUsageGroupKey {
     crate_sel: CrateSel,
-    api: PermissionName,
+    api: ApiName,
     from: SymbolOrDebugName,
     source_location: SourceLocation,
 }

@@ -1,12 +1,12 @@
+use super::ApiName;
 use super::ApiPath;
 use super::PermConfig;
-use super::PermissionName;
 use std::collections::BTreeMap;
 
-pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
+pub(crate) fn get_built_ins() -> BTreeMap<ApiName, PermConfig> {
     let mut result = BTreeMap::new();
     result.insert(
-        PermissionName::from("fs"),
+        ApiName::from("fs"),
         perm(
             &[
                 // std::env provides quite a few functions that return paths, which can in turn
@@ -37,20 +37,20 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
             ],
         ),
     );
-    result.insert(PermissionName::from("env"), perm(&["std::env"], &[]));
+    result.insert(ApiName::from("env"), perm(&["std::env"], &[]));
     result.insert(
-        PermissionName::from("net"),
+        ApiName::from("net"),
         perm(
             &["std::net", "std::os::wasi::net", "std::os::windows::net"],
             &[],
         ),
     );
     result.insert(
-        PermissionName::from("unix_sockets"),
+        ApiName::from("unix_sockets"),
         perm(&["std::os::unix::net"], &[]),
     );
     result.insert(
-        PermissionName::from("process"),
+        ApiName::from("process"),
         perm(
             &[
                 "std::process",
@@ -61,7 +61,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<PermissionName, PermConfig> {
         ),
     );
     result.insert(
-        PermissionName::from("terminate"),
+        ApiName::from("terminate"),
         perm(&["std::process::abort", "std::process::exit"], &[]),
     );
     result

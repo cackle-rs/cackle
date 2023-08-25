@@ -1,7 +1,7 @@
 use crate::build_script_checker;
+use crate::config::ApiName;
 use crate::config::Config;
 use crate::config::CrateName;
-use crate::config::PermissionName;
 use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateSel;
@@ -61,11 +61,11 @@ pub(crate) struct PermId(usize);
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
     /// Permissions that are allowed for this crate according to cackle.toml.
-    allowed_perms: FxHashSet<PermissionName>,
+    allowed_perms: FxHashSet<ApiName>,
 
     /// Permissions that are allowed for this crate according to cackle.toml,
     /// but haven't yet been found to be used by the crate.
-    unused_allowed_perms: FxHashSet<PermissionName>,
+    unused_allowed_perms: FxHashSet<ApiName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -308,7 +308,7 @@ impl Checker {
     pub(crate) fn apis_for_name_iterator<'a>(
         &self,
         key_it: impl Iterator<Item = &'a str>,
-    ) -> &FxHashSet<PermissionName> {
+    ) -> &FxHashSet<ApiName> {
         self.permissions_by_prefix.get(key_it)
     }
 
@@ -486,10 +486,7 @@ mod tests {
             .apis_for_name_iterator(["std", "fs", "read_to_string"].into_iter())
             .clone();
         assert_eq!(permissions.len(), 1);
-        assert_eq!(
-            permissions.iter().next().unwrap(),
-            &PermissionName::from("fs")
-        );
+        assert_eq!(permissions.iter().next().unwrap(), &ApiName::from("fs"));
         for api in permissions {
             let mut usages = BTreeMap::new();
             usages.insert(

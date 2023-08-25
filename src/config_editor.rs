@@ -1,7 +1,7 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::config::ApiName;
 use crate::config::CrateName;
-use crate::config::PermissionName;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
@@ -368,7 +368,7 @@ impl Edit for SelectSandbox {
     }
 }
 
-struct ImportStdApi(PermissionName);
+struct ImportStdApi(ApiName);
 
 impl Edit for ImportStdApi {
     fn title(&self) -> String {
@@ -410,7 +410,7 @@ impl Edit for ImportApi {
     }
 }
 
-struct InlineStdApi(PermissionName);
+struct InlineStdApi(ApiName);
 
 impl Edit for InlineStdApi {
     fn title(&self) -> String {
@@ -504,7 +504,7 @@ fn add_to_array<S: AsRef<str>>(
     Ok(())
 }
 
-struct IgnoreStdApi(PermissionName);
+struct IgnoreStdApi(ApiName);
 
 impl Edit for IgnoreStdApi {
     fn title(&self) -> String {
@@ -863,8 +863,8 @@ mod tests {
     use super::ConfigEditor;
     use super::Edit;
     use super::InlineStdApi;
+    use crate::config::ApiName;
     use crate::config::Config;
-    use crate::config::PermissionName;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
     use crate::crate_index::testing::build_script_id;
@@ -883,10 +883,7 @@ mod tests {
     fn disallowed_apis(pkg_name: &str, apis: &[&'static str]) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
             crate_sel: CrateSel::Primary(pkg_id(pkg_name)),
-            usages: apis
-                .iter()
-                .map(|n| (PermissionName::from(*n), vec![]))
-                .collect(),
+            usages: apis.iter().map(|n| (ApiName::from(*n), vec![])).collect(),
         })
     }
 
@@ -1068,7 +1065,7 @@ mod tests {
     fn unused_allow_api() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1.build".into(),
-            permissions: vec![PermissionName::new("fs"), PermissionName::new("net")],
+            permissions: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
             indoc! {r#"
@@ -1094,7 +1091,7 @@ mod tests {
     fn unused_allow_api_empty() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1.build".into(),
-            permissions: vec![PermissionName::new("fs"), PermissionName::new("net")],
+            permissions: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
             indoc! {r#"
@@ -1118,7 +1115,7 @@ mod tests {
     fn unused_allow_api_already_deleted() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1".into(),
-            permissions: vec![PermissionName::new("fs")],
+            permissions: vec![ApiName::new("fs")],
         });
         // If another edit (e.g. removal of an unused pkg config) removed our table, make sure we
         // don't recreate it.
@@ -1173,7 +1170,7 @@ mod tests {
 
     #[test]
     fn inline_std_api() {
-        let fs_perm = PermissionName::new("fs");
+        let fs_perm = ApiName::new("fs");
         let edit = &InlineStdApi(fs_perm.clone());
         let config = apply_edit_and_parse("", edit);
         let built_ins = crate::config::built_in::get_built_ins();

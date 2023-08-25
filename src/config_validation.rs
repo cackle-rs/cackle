@@ -1,5 +1,5 @@
+use crate::config::ApiName;
 use crate::config::Config;
-use crate::config::PermissionName;
 use crate::config::MAX_VERSION;
 use fxhash::FxHashSet;
 use std::fmt::Display;
@@ -14,8 +14,8 @@ pub(crate) struct InvalidConfig {
 
 #[derive(Debug)]
 enum Problem {
-    UnknownPermission(PermissionName),
-    DuplicateAllowedApi(PermissionName),
+    UnknownPermission(ApiName),
+    DuplicateAllowedApi(ApiName),
     UnsupportedVersion(i64),
 }
 
