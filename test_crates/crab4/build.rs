@@ -9,4 +9,14 @@ fn main() {
             panic!("Environment variable `{var}` not set in build script")
         }
     }
+
+    // Verify that we can't access the socket used to communicate with the main cackle process.
+    if let Some(socket_path) = option_env!("CACKLE_SOCKET_PATH").map(std::path::Path::new) {
+        if socket_path.exists() {
+            panic!(
+                "socket_path: `{}` accessible from build script sandbox",
+                socket_path.display()
+            );
+        }
+    }
 }
