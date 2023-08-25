@@ -6,7 +6,6 @@ use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::CrateName;
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::names::SymbolOrDebugName;
@@ -29,7 +28,7 @@ pub(crate) struct ProblemList {
 pub(crate) enum Problem {
     Message(String),
     MissingConfiguration(PathBuf),
-    UsesBuildScript(BuildScriptId),
+    UsesBuildScript(PackageId),
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
@@ -71,7 +70,7 @@ pub(crate) struct UnusedAllowApi {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DisallowedBuildInstruction {
-    pub(crate) build_script_id: BuildScriptId,
+    pub(crate) pkg_id: PackageId,
     pub(crate) instruction: String,
 }
 
@@ -204,12 +203,12 @@ impl Problem {
         match self {
             Problem::Message(_) => None,
             Problem::MissingConfiguration(_) => None,
-            Problem::UsesBuildScript(build_script_id) => Some(&build_script_id.pkg_id),
+            Problem::UsesBuildScript(pkg_id) => Some(pkg_id),
             Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
             Problem::DisallowedApiUsage(d) => Some(d.crate_sel.pkg_id()),
             Problem::BuildScriptFailed(d) => Some(d.crate_sel.pkg_id()),
-            Problem::DisallowedBuildInstruction(d) => Some(&d.build_script_id.pkg_id),
+            Problem::DisallowedBuildInstruction(d) => Some(&d.pkg_id),
             Problem::UnusedPackageConfig(_) => None,
             Problem::UnusedAllowApi(_) => None,
             Problem::SelectSandbox => None,
@@ -240,11 +239,11 @@ impl Display for Problem {
                     }
                 }
             }
-            Problem::UsesBuildScript(build_script_id) => {
+            Problem::UsesBuildScript(pkg_id) => {
                 write!(
                     f,
                     "`{}` has a build script",
-                    CrateSel::Primary(build_script_id.pkg_id.clone()),
+                    CrateSel::Primary(pkg_id.clone()),
                 )?;
             }
             Problem::IsProcMacro(pkg_name) => write!(
@@ -258,7 +257,7 @@ impl Display for Problem {
                 write!(
                     f,
                     "{}'s build script emitted disallowed instruction `{}`",
-                    CrateSel::Primary(info.build_script_id.pkg_id.clone()),
+                    CrateSel::Primary(info.pkg_id.clone()),
                     info.instruction
                 )?;
             }
@@ -347,8 +346,7 @@ impl Display for BinExecutionFailed {
             CrateSel::Primary(pkg_id) => {
                 write!(f, "Execution of binary for package `{pkg_id}` failed")?;
             }
-            CrateSel::BuildScript(build_script_id) => {
-                let pkg_id = &build_script_id.pkg_id;
+            CrateSel::BuildScript(pkg_id) => {
                 write!(f, "Build script for package `{pkg_id}` failed")?;
             }
             CrateSel::Test(pkg_id) => {

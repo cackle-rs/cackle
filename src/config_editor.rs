@@ -253,7 +253,7 @@ fn edits_for_build_instruction(
     let mut suffix = "";
     loop {
         out.push(Box::new(AllowBuildInstruction {
-            crate_name: CrateName::from(&failure.build_script_id),
+            crate_name: CrateName::for_build_script(failure.pkg_id.name()),
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
@@ -857,7 +857,6 @@ mod tests {
     use crate::config::Config;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
-    use crate::crate_index::testing::build_script_id;
     use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
     use crate::location::SourceLocation;
@@ -921,7 +920,7 @@ mod tests {
     #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-            build_script_id: build_script_id("crab1"),
+            pkg_id: pkg_id("crab1"),
             instruction: "cargo:rustc-env=SOME_VAR=/home/some-path".to_owned(),
         });
         check(
@@ -1011,7 +1010,7 @@ mod tests {
 
     #[test]
     fn build_script_failed() {
-        let crate_sel = CrateSel::BuildScript(build_script_id("crab1"));
+        let crate_sel = CrateSel::BuildScript(pkg_id("crab1"));
         let failure = Problem::BuildScriptFailed(crate::problem::BinExecutionFailed {
             output: BinExecutionOutput {
                 exit_code: 1,

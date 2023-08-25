@@ -2,9 +2,9 @@ use crate::build_script_checker;
 use crate::config::ApiName;
 use crate::config::Config;
 use crate::config::CrateName;
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateSel;
+use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::Name;
@@ -255,20 +255,17 @@ impl Checker {
         Problem::DisallowedUnsafe(usage.clone()).into()
     }
 
-    pub(crate) fn verify_build_script_permitted(
-        &mut self,
-        build_script_id: &BuildScriptId,
-    ) -> ProblemList {
+    pub(crate) fn verify_build_script_permitted(&mut self, pkg_id: &PackageId) -> ProblemList {
         if !self.config.common.explicit_build_scripts {
             return ProblemList::default();
         }
         if self
             .crate_infos
-            .contains_key(&CrateName::from(build_script_id))
+            .contains_key(&CrateName::for_build_script(pkg_id.name()))
         {
             return ProblemList::default();
         }
-        Problem::UsesBuildScript(build_script_id.clone()).into()
+        Problem::UsesBuildScript(pkg_id.clone()).into()
     }
 
     pub(crate) fn crate_names_from_source_path(

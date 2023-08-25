@@ -34,16 +34,11 @@ pub(crate) struct PackageId {
     name_is_unique: bool,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct BuildScriptId {
-    pub(crate) pkg_id: PackageId,
-}
-
 /// Identifies either the primary crate or the build script from a package.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum CrateSel {
     Primary(PackageId),
-    BuildScript(BuildScriptId),
+    BuildScript(PackageId),
     Test(PackageId),
 }
 
@@ -242,7 +237,7 @@ impl CrateSel {
             .map(|v| v.starts_with("build_script_"))
             .unwrap_or(false);
         if is_build_script {
-            Ok(CrateSel::BuildScript(BuildScriptId { pkg_id }))
+            Ok(CrateSel::BuildScript(pkg_id))
         } else if let Ok(crate_kind) = std::env::var(crate::proxy::subprocess::ENV_CRATE_KIND) {
             if crate_kind == "test" {
                 Ok(CrateSel::Test(pkg_id))
@@ -257,7 +252,7 @@ impl CrateSel {
     pub(crate) fn pkg_id(&self) -> &PackageId {
         match self {
             CrateSel::Primary(pkg_id) => pkg_id,
-            CrateSel::BuildScript(build_script_id) => &build_script_id.pkg_id,
+            CrateSel::BuildScript(pkg_id) => pkg_id,
             CrateSel::Test(pkg_id) => pkg_id,
         }
     }
@@ -274,7 +269,7 @@ impl CrateSel {
         let pkg_id = self.pkg_id().clone();
         Ok(match token {
             "primary" => CrateSel::Primary(pkg_id),
-            "build-script" => CrateSel::BuildScript(BuildScriptId { pkg_id }),
+            "build-script" => CrateSel::BuildScript(pkg_id),
             "test" => CrateSel::Test(pkg_id),
             other => bail!("Invalid crate selector token `{other}`"),
         })
@@ -291,19 +286,15 @@ impl Display for CrateSel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pkg_id = self.pkg_id();
         write!(f, "{}", pkg_id.name)?;
-        if matches!(self, CrateSel::BuildScript(_)) {
-            write!(f, ".build")?;
+        match self {
+            CrateSel::BuildScript(_) => write!(f, ".build")?,
+            CrateSel::Primary(_) => {}
+            CrateSel::Test(_) => write!(f, ".test")?,
         }
         if !pkg_id.name_is_unique {
             write!(f, "[{}]", pkg_id.version)?;
         }
         Ok(())
-    }
-}
-
-impl Display for BuildScriptId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        CrateSel::BuildScript(self.clone()).fmt(f)
     }
 }
 
@@ -313,17 +304,11 @@ impl Display for PackageId {
     }
 }
 
-impl From<&BuildScriptId> for CrateName {
-    fn from(value: &BuildScriptId) -> Self {
-        CrateName::for_build_script(&value.pkg_id.name)
-    }
-}
-
 impl From<&CrateSel> for CrateName {
     fn from(value: &CrateSel) -> Self {
         match value {
             CrateSel::Primary(pkg_id) => pkg_id.into(),
-            CrateSel::BuildScript(build_script_id) => build_script_id.into(),
+            CrateSel::BuildScript(pkg_id) => CrateName::for_build_script(&pkg_id.name),
             CrateSel::Test(pkg_id) => CrateName::for_test(&pkg_id.name),
         }
     }
@@ -337,7 +322,6 @@ impl PackageId {
 
 #[cfg(test)]
 pub(crate) mod testing {
-    use super::BuildScriptId;
     use super::CrateIndex;
     use super::PackageId;
     use super::PackageInfo;
@@ -350,12 +334,6 @@ pub(crate) mod testing {
             name: Arc::from(name),
             version: Version::new(0, 0, 0),
             name_is_unique: true,
-        }
-    }
-
-    pub(crate) fn build_script_id(name: &str) -> BuildScriptId {
-        BuildScriptId {
-            pkg_id: pkg_id(name),
         }
     }
 

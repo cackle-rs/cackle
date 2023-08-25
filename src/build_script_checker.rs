@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::config::CrateName;
-use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
+use crate::crate_index::PackageId;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -55,7 +55,7 @@ const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:r
 
 fn check_directive(
     instruction: &str,
-    build_script_id: &BuildScriptId,
+    pkg_id: &PackageId,
     allow_build_instructions: &[String],
 ) -> ProblemList {
     if ALWAYS_PERMITTED
@@ -71,7 +71,7 @@ fn check_directive(
         return ProblemList::default();
     }
     Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-        build_script_id: build_script_id.clone(),
+        pkg_id: pkg_id.clone(),
         instruction: instruction.to_owned(),
     })
     .into()
@@ -89,7 +89,7 @@ fn matches(instruction: &str, rule: &str) -> bool {
 mod tests {
     use crate::config;
     use crate::config::SandboxConfig;
-    use crate::crate_index::testing::build_script_id;
+    use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
@@ -104,7 +104,7 @@ mod tests {
             exit_code: 0,
             stdout: stdout.as_bytes().to_owned(),
             stderr: vec![],
-            crate_sel: CrateSel::BuildScript(build_script_id("my_pkg")),
+            crate_sel: CrateSel::BuildScript(pkg_id("my_pkg")),
             sandbox_config: SandboxConfig::default(),
             build_script: PathBuf::new(),
             sandbox_config_display: None,
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(
             check("cargo:rustc-link-search=some_directory", ""),
             Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
-                build_script_id: build_script_id("my_pkg"),
+                pkg_id: pkg_id("my_pkg"),
                 instruction: "cargo:rustc-link-search=some_directory".to_owned(),
             })
             .into()

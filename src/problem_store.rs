@@ -241,7 +241,7 @@ impl<'a> Iterator for ProblemStoreIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::ProblemStore;
-    use crate::crate_index::testing::build_script_id;
+    use crate::crate_index::testing::pkg_id;
     use crate::problem::Problem;
     use crate::problem::ProblemList;
     use crate::problem_store::ProblemId;
@@ -250,8 +250,8 @@ mod tests {
 
     fn create_problems() -> ProblemList {
         let mut problems = ProblemList::default();
-        problems.push(Problem::UsesBuildScript(build_script_id("crab1")));
-        problems.push(Problem::UsesBuildScript(build_script_id("crab2")));
+        problems.push(Problem::UsesBuildScript(pkg_id("crab1")));
+        problems.push(Problem::UsesBuildScript(pkg_id("crab2")));
         problems
     }
 
@@ -266,11 +266,11 @@ mod tests {
         let mut iter = store.deduplicated_into_iter();
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript(build_script_id("crab1")))
+            Some(&Problem::UsesBuildScript(pkg_id("crab1")))
         );
         assert_eq!(
             iter.next().map(|(_, v)| v),
-            Some(&Problem::UsesBuildScript(build_script_id("crab2")))
+            Some(&Problem::UsesBuildScript(pkg_id("crab2")))
         );
         assert_eq!(iter.next().map(|(_, v)| v), None);
 
