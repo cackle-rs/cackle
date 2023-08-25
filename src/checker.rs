@@ -225,7 +225,6 @@ impl Checker {
             &info.output_file,
             check_state,
         )?);
-        let problems = problems.grouped_by_type_crate_and_api();
         self.timings.add_timing(start, "Total object processing");
         info!(
             "Checking linker args for {} with {} objects. {} problems",

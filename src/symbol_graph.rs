@@ -19,7 +19,7 @@ use crate::names::DebugName;
 use crate::names::Name;
 use crate::names::NamesIterator;
 use crate::names::SymbolAndName;
-use crate::problem::ApiUsageGroupKey;
+use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
 use crate::problem::ProblemList;
@@ -65,7 +65,13 @@ struct ApiUsageCollector<'input> {
 
     bin: BinInfo<'input>,
     debug_enabled: bool,
-    new_api_usages: FxHashMap<ApiUsageGroupKey, Vec<ApiUsages>>,
+    new_api_usages: FxHashMap<ApiUsageGroupKey, Vec<SingleApiUsage>>,
+}
+
+struct SingleApiUsage {
+    crate_sel: CrateSel,
+    api: PermissionName,
+    usage: ApiUsage,
 }
 
 /// Information derived from a linked binary. Generally an executable, but could also be shared
@@ -83,7 +89,7 @@ struct BinInfo<'input> {
 
 #[derive(Default)]
 pub(crate) struct ScanOutputs {
-    api_usages: Vec<ApiUsages>,
+    api_usages: FxHashMap<(CrateSel, PermissionName), ApiUsages>,
 
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
     /// once computed, they won't be recomputed.
@@ -191,8 +197,8 @@ pub(crate) fn scan_objects(
 impl ScanOutputs {
     pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
         let mut problems: ProblemList = self.base_problems.clone();
-        for api_usage in &self.api_usages {
-            checker.permission_used(api_usage, &mut problems);
+        for api_usages in self.api_usages.values() {
+            checker.permission_used(api_usages, &mut problems);
         }
         checker.possible_exported_api_problems(&self.possible_exported_apis, &mut problems);
 
@@ -362,24 +368,20 @@ impl<'input> ApiUsageCollector<'input> {
                         if from_apis.contains(&permission) {
                             continue;
                         }
-                        let mut usages = BTreeMap::new();
-                        usages.insert(
-                            permission.clone(),
-                            vec![ApiUsage {
+                        let api_usage = SingleApiUsage {
+                            crate_sel: crate_sel.clone(),
+                            api: permission.clone(),
+                            usage: ApiUsage {
                                 source_location: location.clone(),
                                 from: from.symbol_or_debug_name()?,
                                 to: target.symbol_or_debug_name()?,
                                 to_name: name.clone(),
                                 to_source: name_source.to_owned(),
                                 debug_data: debug_data.cloned(),
-                            }],
-                        );
-                        let api_usage = ApiUsages {
-                            crate_sel: crate_sel.clone(),
-                            usages,
+                            },
                         };
                         self.new_api_usages
-                            .entry(api_usage.deduplication_key())
+                            .entry(api_usage.group_key())
                             .or_default()
                             .push(api_usage);
                     }
@@ -396,12 +398,25 @@ impl<'input> ApiUsageCollector<'input> {
             if let Some(shortest_target_usage) =
                 api_usages
                     .into_iter()
-                    .min_by_key(|u| match &u.first_usage().unwrap().to_source {
+                    .min_by_key(|u| match &u.usage.to_source {
                         NameSource::Symbol(sym) => sym.len(),
                         NameSource::DebugName(debug_name) => debug_name.name.len(),
                     })
             {
-                self.outputs.api_usages.push(shortest_target_usage);
+                self.outputs
+                    .api_usages
+                    .entry((
+                        shortest_target_usage.crate_sel.clone(),
+                        shortest_target_usage.api.clone(),
+                    ))
+                    .or_insert_with(|| ApiUsages {
+                        crate_sel: shortest_target_usage.crate_sel.clone(),
+                        usages: BTreeMap::default(),
+                    })
+                    .usages
+                    .entry(shortest_target_usage.api.clone())
+                    .or_default()
+                    .push(shortest_target_usage.usage);
             }
         }
     }
@@ -712,6 +727,31 @@ impl Filetype {
             Filetype::Archive
         } else {
             Filetype::Other
+        }
+    }
+}
+
+/// An opaque key for ApiUsages that can be used in a HashMap for deduplication. Notably, doesn't
+/// include the target or debug data. The idea is to collect several usages that are identical
+/// except for the target, then pick the shortest of them to show to the user. For example if we
+/// have targets of `std::path::PathBuf` and `core::ptr::drop_in_place<std::path::PathBuf>` then the
+/// second is redundant. Even if the longer target didn't contain the symbol of the shorter target,
+/// it's probably unnecessary to show them all.
+#[derive(Hash, Eq, PartialEq)]
+pub(crate) struct ApiUsageGroupKey {
+    crate_sel: CrateSel,
+    api: PermissionName,
+    from: SymbolOrDebugName,
+    source_location: SourceLocation,
+}
+
+impl SingleApiUsage {
+    fn group_key(&self) -> ApiUsageGroupKey {
+        ApiUsageGroupKey {
+            crate_sel: self.crate_sel.clone(),
+            api: self.api.clone(),
+            from: self.usage.from.clone(),
+            source_location: self.usage.source_location.clone(),
         }
     }
 }

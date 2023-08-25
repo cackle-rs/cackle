@@ -1,9 +1,6 @@
 //! Some problem - either an error or a permissions problem or similar. We generally collect
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
-use fxhash::FxHashMap;
-use fxhash::FxHashSet;
-
 use crate::checker::ApiUsage;
 use crate::config::ApiPath;
 use crate::config::CrateName;
@@ -12,13 +9,12 @@ use crate::config::PermissionName;
 use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
-use crate::location::SourceLocation;
 use crate::names::SymbolOrDebugName;
 use crate::proxy::rpc::BinExecutionOutput;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
+use fxhash::FxHashSet;
 use std::collections::btree_map;
-use std::collections::hash_map;
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::path::Path;
@@ -128,47 +124,6 @@ impl ProblemList {
         self.problems
             .iter()
             .all(Problem::should_send_retry_to_subprocess)
-    }
-
-    /// Combines all disallowed API usages for a crate and API.
-    #[must_use]
-    pub(crate) fn grouped_by_type_crate_and_api(self) -> ProblemList {
-        self.grouped_by(|usage| match usage.usages.first_key_value() {
-            Some((key, _)) => format!("{}-{key}", usage.crate_sel),
-            None => usage.crate_sel.to_string(),
-        })
-    }
-
-    /// Combines disallowed API usages by whatever the supplied `group_fn` returns.
-    #[must_use]
-    fn grouped_by(mut self, group_fn: impl Fn(&ApiUsages) -> String) -> ProblemList {
-        let mut merged = ProblemList::default();
-        let mut disallowed_by_crate_name: FxHashMap<String, usize> = FxHashMap::default();
-        for problem in self.problems.drain(..) {
-            match problem {
-                Problem::DisallowedApiUsage(usage) => {
-                    match disallowed_by_crate_name.entry(group_fn(&usage)) {
-                        hash_map::Entry::Occupied(entry) => {
-                            let Problem::DisallowedApiUsage(existing) =
-                                &mut merged.problems[*entry.get()]
-                            else {
-                                panic!("Problems::condense internal error");
-                            };
-                            for (k, mut v) in usage.usages {
-                                existing.usages.entry(k).or_default().append(&mut v);
-                            }
-                        }
-                        hash_map::Entry::Vacant(entry) => {
-                            let index = merged.problems.len();
-                            merged.push(Problem::DisallowedApiUsage(usage));
-                            entry.insert(index);
-                        }
-                    }
-                }
-                other => merged.push(other),
-            }
-        }
-        merged
     }
 }
 
@@ -503,36 +458,7 @@ impl std::hash::Hash for ApiUsages {
     }
 }
 
-/// An opaque key for ApiUsages that can be used in a HashMap for deduplication. Notably, doesn't
-/// include the target or debug data. The idea is to collect several usages that are identical
-/// except for the target, then pick the shortest of them to show to the user. For example if we
-/// have targets of `std::path::PathBuf` and `core::ptr::drop_in_place<std::path::PathBuf>` then the
-/// second is redundant. Even if the longer target didn't contain the symbol of the shorter target,
-/// it's probably unnecessary to show them all.
-#[derive(Hash, Eq, PartialEq)]
-pub(crate) struct ApiUsageGroupKey {
-    crate_sel: CrateSel,
-    permission: PermissionName,
-    from: SymbolOrDebugName,
-    source_location: SourceLocation,
-}
-
 impl ApiUsages {
-    pub(crate) fn deduplication_key(&self) -> ApiUsageGroupKey {
-        let (permission, usages) = self.usages.iter().next().unwrap();
-        let usage = &usages[0];
-        ApiUsageGroupKey {
-            crate_sel: self.crate_sel.clone(),
-            permission: permission.clone(),
-            from: usage.from.clone(),
-            source_location: usage.source_location.clone(),
-        }
-    }
-
-    pub(crate) fn first_usage(&self) -> Option<&ApiUsage> {
-        self.usages.values().next().and_then(|u| u.get(0))
-    }
-
     fn merge(&mut self, b: ApiUsages) {
         if self.crate_sel != b.crate_sel {
             return;
