@@ -1,5 +1,6 @@
 use crate::cowarc::Utf8Bytes;
 use crate::demangle::DemangleToken;
+use crate::demangle::NonMangledIterator;
 use crate::symbol::Symbol;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -74,6 +75,14 @@ impl Namespace {
     }
 }
 
+impl<'input> DebugName<'input> {
+    pub(crate) fn names_iterator(&self) -> NamesIterator<NonMangledIterator> {
+        NamesIterator::new(NonMangledIterator::new(
+            &self.namespace.parts,
+            self.name.as_ref(),
+        ))
+    }
+}
 /// Splits a composite name into names. Each name is further split on "::". For example:
 /// "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>" would split into:
 /// [

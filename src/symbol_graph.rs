@@ -13,12 +13,10 @@ use crate::config::ApiName;
 use crate::config::CrateName;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
-use crate::demangle::NonMangledIterator;
 use crate::lazy::Lazy;
 use crate::location::SourceLocation;
 use crate::names::DebugName;
 use crate::names::Name;
-use crate::names::NamesIterator;
 use crate::names::SymbolAndName;
 use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsages;
@@ -634,10 +632,7 @@ impl<'input> BinInfo<'input> {
         }
         let mut got_apis = false;
         if let Some(debug_name) = symbol_and_name.debug_name.as_ref() {
-            let mut it = NamesIterator::new(NonMangledIterator::new(
-                &debug_name.namespace.parts,
-                debug_name.name.as_ref(),
-            ));
+            let mut it = debug_name.names_iterator();
             while let Some((parts, name)) = it
                 .next_name()
                 .with_context(|| format!("Failed to parse debug name `{debug_name}`"))?
