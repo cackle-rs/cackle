@@ -44,6 +44,7 @@ pub(crate) struct BuildScriptId {
 pub(crate) enum CrateSel {
     Primary(PackageId),
     BuildScript(BuildScriptId),
+    Test(PackageId),
 }
 
 #[derive(Debug)]
@@ -53,9 +54,8 @@ pub(crate) struct PackageInfo {
     pub(crate) documentation: Option<String>,
     crate_name: CrateName,
     build_script_name: Option<CrateName>,
+    test_name: Option<CrateName>,
     is_proc_macro: bool,
-    /// Is this package local - as opposed to from some remote source such as crates.io.
-    is_local: bool,
 }
 
 /// The name of the environment variable that we use to pass a list of non-unique package names to
@@ -86,10 +86,14 @@ impl CrateIndex {
                 name_is_unique: name_counts.get(&package.name) == Some(&1),
             };
             let mut is_proc_macro = false;
+            let mut has_build_script = false;
+            let mut has_test = false;
             for target in &package.targets {
                 if target.kind.iter().any(|kind| kind == "proc-macro") {
                     is_proc_macro = true;
                 }
+                has_build_script |= target.kind.iter().any(|kind| kind == "custom-build");
+                has_test |= target.test;
             }
             if let Some(dir) = package.manifest_path.parent() {
                 let crate_name: CrateName = package.name.as_str().into();
@@ -100,9 +104,10 @@ impl CrateIndex {
                         description: package.description.clone(),
                         documentation: package.documentation.clone(),
                         crate_name: crate_name.clone(),
-                        build_script_name: Some(CrateName::for_build_script(&package.name)),
+                        build_script_name: has_build_script
+                            .then(|| CrateName::for_build_script(&package.name)),
+                        test_name: has_test.then(|| CrateName::for_test(&package.name)),
                         is_proc_macro,
-                        is_local: package.source.is_none(),
                     },
                 );
                 mapping
@@ -137,19 +142,6 @@ impl CrateIndex {
         command.env(MULTIPLE_VERSION_PKG_NAMES_ENV, non_unique_names.join(","));
     }
 
-    /// Returns if `crate_name` is a local crate - i.e. from the current workspace. If there are
-    /// multiple versions of the specified crate, then we'll return true if any are local.
-    pub(crate) fn is_local(&self, crate_name: &CrateName) -> bool {
-        self.pkg_name_to_ids
-            .get(crate_name.as_ref())
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.package_info(id))
-                    .any(|info| info.is_local)
-            })
-            .unwrap_or(false)
-    }
-
     pub(crate) fn newest_package_id_with_name(&self, crate_name: &CrateName) -> Option<&PackageId> {
         self.pkg_name_to_ids
             .get(crate_name.as_ref())
@@ -181,9 +173,10 @@ impl CrateIndex {
     }
 
     pub(crate) fn crate_names(&self) -> impl Iterator<Item = &CrateName> {
-        self.package_infos
-            .values()
-            .flat_map(|info| std::iter::once(&info.crate_name).chain(info.build_script_name.iter()))
+        self.package_infos.values().flat_map(|info| {
+            std::iter::once(&info.crate_name)
+                .chain(info.build_script_name.iter().chain(info.test_name.iter()))
+        })
     }
 
     /// Returns the ID of the package that contains the specified path, if any. This is used as a
@@ -250,6 +243,12 @@ impl CrateSel {
             .unwrap_or(false);
         if is_build_script {
             Ok(CrateSel::BuildScript(BuildScriptId { pkg_id }))
+        } else if let Ok(crate_kind) = std::env::var(crate::proxy::subprocess::ENV_CRATE_KIND) {
+            if crate_kind == "test" {
+                Ok(CrateSel::Test(pkg_id))
+            } else {
+                bail!("Unsupported crate_kind='{crate_kind}'");
+            }
         } else {
             Ok(CrateSel::Primary(pkg_id))
         }
@@ -259,6 +258,7 @@ impl CrateSel {
         match self {
             CrateSel::Primary(pkg_id) => pkg_id,
             CrateSel::BuildScript(build_script_id) => &build_script_id.pkg_id,
+            CrateSel::Test(pkg_id) => pkg_id,
         }
     }
 
@@ -266,6 +266,7 @@ impl CrateSel {
         match self {
             CrateSel::Primary(_) => "primary",
             CrateSel::BuildScript(_) => "build-script",
+            CrateSel::Test(_) => "test",
         }
     }
 
@@ -274,6 +275,7 @@ impl CrateSel {
         Ok(match token {
             "primary" => CrateSel::Primary(pkg_id),
             "build-script" => CrateSel::BuildScript(BuildScriptId { pkg_id }),
+            "test" => CrateSel::Test(pkg_id),
             other => bail!("Invalid crate selector token `{other}`"),
         })
     }
@@ -322,6 +324,7 @@ impl From<&CrateSel> for CrateName {
         match value {
             CrateSel::Primary(pkg_id) => pkg_id.into(),
             CrateSel::BuildScript(build_script_id) => build_script_id.into(),
+            CrateSel::Test(pkg_id) => CrateName::for_test(&pkg_id.name),
         }
     }
 }
@@ -367,9 +370,9 @@ pub(crate) mod testing {
                         description: Default::default(),
                         documentation: Default::default(),
                         crate_name: CrateName(Arc::from(*name)),
-                        build_script_name: Default::default(),
+                        build_script_name: None,
+                        test_name: None,
                         is_proc_macro: Default::default(),
-                        is_local: false,
                     },
                 )
             })

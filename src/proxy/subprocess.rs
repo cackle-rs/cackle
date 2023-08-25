@@ -29,6 +29,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 pub(crate) const PROXY_BIN_ARG: &str = "proxy-bin";
+pub(crate) const ENV_CRATE_KIND: &str = "CACKLE_CRATE_KIND";
 
 /// Checks if we're acting as a wrapper for rustc or the linker. If we are, then we do whatever work
 /// we need to do, then invoke the binary that we're wrapping and then exit - i.e. we don't return.
@@ -88,9 +89,8 @@ fn setup_bin_wrapper(link_info: &mut LinkInfo) -> Result<()> {
     std::fs::copy(bin_path, &new_filename)
         .with_context(|| format!("Failed to rename binary `{}`", bin_path.display()))?;
     let cackle_exe = cackle_exe()?;
-    let crate_sel = CrateSel::from_env()?;
     let cackle_exe = utf8(&cackle_exe)?;
-    let selector_token = crate_sel.selector_token();
+    let selector_token = link_info.crate_sel.selector_token();
     let bin_path_utf8 = utf8(&new_filename)?;
     // Write a shell script that checks if the cackle binary exists and if it does, executes it so
     // that cackle can run the actual binary, possibly in a sandbox. If the script detects that the
@@ -281,6 +281,7 @@ impl RustcRunner {
         let mut command = Command::new("rustc");
         let mut linker_arg = OsString::new();
         let mut orig_linker_arg = None;
+        let mut crate_kind = None;
         while let Some(arg) = args.next() {
             // Look for `-C linker=...`. If we find it, note the value for later use and drop the
             // argument.
@@ -319,6 +320,9 @@ impl RustcRunner {
                     continue;
                 }
             }
+            if arg == "--test" {
+                crate_kind = Some("test");
+            }
             // For all other arguments, pass them through.
             command.arg(arg);
         }
@@ -333,6 +337,9 @@ impl RustcRunner {
         command.arg("-C").arg(linker_arg);
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
+        if let Some(crate_kind) = crate_kind {
+            command.env(ENV_CRATE_KIND, crate_kind);
+        }
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
         }

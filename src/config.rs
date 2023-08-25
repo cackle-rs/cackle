@@ -130,9 +130,13 @@ pub(crate) struct PackageConfig {
     #[serde(default)]
     pub(crate) allow_proc_macro: bool,
 
-    /// Configuration for this crate's build.rs. Only used during parsing, after
-    /// which it's flattened out.
+    /// Configuration for this crate's build.rs. Only used during parsing, after which it's
+    /// flattened out.
     build: Option<Box<PackageConfig>>,
+
+    /// Configuration for this crate's tests. Only used during parsing, after which it's flattened
+    /// out.
+    test: Option<Box<PackageConfig>>,
 
     #[serde()]
     pub(crate) sandbox: Option<SandboxConfig>,
@@ -294,8 +298,11 @@ fn flatten(config: &mut Config) {
     let mut crates_by_name = BTreeMap::new();
     for (name, crate_config) in &config.packages {
         let mut crate_config = crate_config.clone();
-        if let Some(build_config) = crate_config.build.take() {
-            crates_by_name.insert(format!("{name}.build").as_str().into(), *build_config);
+        if let Some(sub_cfg) = crate_config.build.take() {
+            crates_by_name.insert(format!("{name}.build").as_str().into(), *sub_cfg);
+        }
+        if let Some(sub_cfg) = crate_config.test.take() {
+            crates_by_name.insert(format!("{name}.test").as_str().into(), *sub_cfg);
         }
         crates_by_name.insert(name.clone(), crate_config);
     }
@@ -404,8 +411,16 @@ impl CrateName {
         Self(Arc::from(format!("{crate_name}.build").as_str()))
     }
 
+    pub(crate) fn for_test(crate_name: &str) -> Self {
+        Self(Arc::from(format!("{crate_name}.test").as_str()))
+    }
+
     pub(crate) fn is_build_script(&self) -> bool {
         self.0.ends_with(".build")
+    }
+
+    pub(crate) fn is_test(&self) -> bool {
+        self.0.ends_with(".test")
     }
 }
 

@@ -293,7 +293,7 @@ allow_apis = [
     "process",
 ]
 
-[pkg.cackle.sandbox]
+[pkg.cackle.test.sandbox]
 bind_writable = [
     "test_crates/target",
     "test_crates/crab-bin/scratch",

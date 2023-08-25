@@ -90,11 +90,10 @@ cackle cargo test
 This builds the tests, performing the same permission checks as doing `cackle check`, then runs the
 tests, with a sandbox if one is configured.
 
-The sandbox used for tests is configured under the main package - i.e. without `.build`. So to
-disable the sandbox you'd for `foo`'s tests, you'd write:
+The sandbox used for tests is configured under `pkg.{pkg-name}.test`. e.g.:
 
 ```toml
-[pkg.foo]
+[pkg.foo.test]
 sandbox.kind = "Disabled"
 ```
 
@@ -103,7 +102,7 @@ reason they need to write to some directory in your source folder, this can be p
 
 
 ```toml
-[pkg.foo]
+[pkg.foo.test]
 sandbox.bind_writable = [
     "test_outputs",
 ]

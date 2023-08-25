@@ -429,6 +429,9 @@ impl Display for BinExecutionFailed {
                 let pkg_id = &build_script_id.pkg_id;
                 write!(f, "Build script for package `{pkg_id}` failed")?;
             }
+            CrateSel::Test(pkg_id) => {
+                write!(f, "Execution of test for package `{pkg_id}` failed")?;
+            }
         }
         if f.alternate() {
             write!(

@@ -151,7 +151,7 @@ allow_apis = [
     "fs",
     "process",
 ]
-sandbox.bind_writable = [
+test.sandbox.bind_writable = [
     "crab9/scratch"
 ]
 
@@ -173,6 +173,8 @@ allow_build_instructions = [
 allow_apis = [
     "fs",
 ]
+
+[pkg.crab11.test]
 sandbox.kind = "Disabled"
 
 [pkg.crab1.build.sandbox]
