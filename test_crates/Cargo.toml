@@ -19,6 +19,7 @@ members = [
 exclude = [
     "crab3v2",
 ]
+resolver = "2"
 
 [profile.cackle-release]
 inherits = "release"
