@@ -197,7 +197,7 @@ impl ScanOutputs {
     pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
         let mut problems: ProblemList = self.base_problems.clone();
         for api_usages in self.api_usages.values() {
-            checker.permission_used(api_usages, &mut problems);
+            checker.api_used(api_usages, &mut problems);
         }
         checker.possible_exported_api_problems(&self.possible_exported_apis, &mut problems);
 
@@ -363,13 +363,13 @@ impl<'input> ApiUsageCollector<'input> {
                     {
                         continue;
                     }
-                    for permission in apis {
-                        if from_apis.contains(&permission) {
+                    for api in apis {
+                        if from_apis.contains(&api) {
                             continue;
                         }
                         let api_usage = SingleApiUsage {
                             crate_sel: crate_sel.clone(),
-                            api: permission.clone(),
+                            api: api.clone(),
                             usage: ApiUsage {
                                 source_location: location.clone(),
                                 from: from.symbol_or_debug_name()?,
@@ -431,7 +431,7 @@ impl<'input> ApiUsageCollector<'input> {
             let Some(module_name) = symbol.module_name() else {
                 continue;
             };
-            let Some(permission_name) = api_names.get(module_name) else {
+            let Some(api_name) = api_names.get(module_name) else {
                 continue;
             };
             let location = debug_info.source_location();
@@ -444,7 +444,7 @@ impl<'input> ApiUsageCollector<'input> {
                 let CrateSel::Primary(pkg_id) = crate_sel else {
                     continue;
                 };
-                if found.insert((pkg_id.clone(), permission_name)) {
+                if found.insert((pkg_id.clone(), api_name)) {
                     // Macros can sometimes result in symbols being attributed to lower-level
                     // crates, so we only consider exported APIs that start with the crate name we
                     // expect for the package.
@@ -455,7 +455,7 @@ impl<'input> ApiUsageCollector<'input> {
                         .possible_exported_apis
                         .push(PossibleExportedApi {
                             pkg_id: pkg_id.to_owned(),
-                            api: ApiName::clone(permission_name),
+                            api: ApiName::clone(api_name),
                             symbol: symbol.to_heap(),
                         });
                 }

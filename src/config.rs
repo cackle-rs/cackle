@@ -25,7 +25,7 @@ pub(crate) struct Config {
     pub(crate) common: CommonConfig,
 
     #[serde(default, rename = "api")]
-    pub(crate) apis: BTreeMap<ApiName, PermConfig>,
+    pub(crate) apis: BTreeMap<ApiName, ApiConfig>,
 
     #[serde(default, rename = "pkg")]
     pub(crate) packages: BTreeMap<CrateName, PackageConfig>,
@@ -81,7 +81,7 @@ pub(crate) struct SandboxConfig {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PermConfig {
+pub(crate) struct ApiConfig {
     #[serde(default)]
     pub(crate) include: Vec<ApiPath>,
 
@@ -170,13 +170,17 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
     }
     let built_ins = built_in::get_built_ins();
     for imp in config.common.import_std.drain(..) {
-        let perm = ApiName::new(imp.as_str());
+        let api = ApiName::new(imp.as_str());
         let built_in_api = built_ins
-            .get(&perm)
+            .get(&api)
             .ok_or_else(|| anyhow!("Unknown API `{imp}` in import_std"))?;
-        let api = config.apis.entry(perm).or_insert_with(Default::default);
-        api.include.extend(built_in_api.include.iter().cloned());
-        api.exclude.extend(built_in_api.exclude.iter().cloned());
+        let api_config = config.apis.entry(api).or_insert_with(Default::default);
+        api_config
+            .include
+            .extend(built_in_api.include.iter().cloned());
+        api_config
+            .exclude
+            .extend(built_in_api.exclude.iter().cloned());
     }
     Ok(())
 }

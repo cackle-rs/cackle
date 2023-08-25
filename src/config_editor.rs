@@ -428,11 +428,11 @@ impl Edit for InlineStdApi {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(["api", self.0.name.as_ref()].into_iter())?;
         let built_ins = crate::config::built_in::get_built_ins();
-        let perm_config = built_ins
+        let api_config = built_ins
             .get(&self.0)
             .ok_or_else(|| anyhow!("Attempted to inline unknown API `{}`", self.0))?;
-        add_to_array(table, "include", &perm_config.include)?;
-        add_to_array(table, "exclude", &perm_config.exclude)?;
+        add_to_array(table, "include", &api_config.include)?;
+        add_to_array(table, "exclude", &api_config.exclude)?;
         Ok(())
     }
 }
@@ -654,7 +654,7 @@ impl Edit for RemoveUnusedAllowApis {
         let Some(allow_apis) = get_array(table, "allow_apis")? else {
             return Ok(());
         };
-        for api in &self.unused.permissions {
+        for api in &self.unused.apis {
             let index_and_entry = allow_apis
                 .iter()
                 .enumerate()
@@ -806,7 +806,7 @@ impl Edit for AllowUnsafe {
 
     fn help(&self) -> Cow<'static, str> {
         "Allow this crate to use unsafe code. With unsafe code, this crate could do just about \
-         anything, so this is like a bit like a wildcard permssion. Crates that use unsafe \
+         anything, so this is like a bit like a wildcard permission. Crates that use unsafe \
          sometimes export APIs that you might want to restrict - e.g. network or filesystem APIs. \
          so you should have a think about if this crate falls into that category and if it does, \
          add some API definitions for it."
@@ -1053,7 +1053,7 @@ mod tests {
     fn unused_allow_api() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1.build".into(),
-            permissions: vec![ApiName::new("fs"), ApiName::new("net")],
+            apis: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
             indoc! {r#"
@@ -1079,7 +1079,7 @@ mod tests {
     fn unused_allow_api_empty() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1.build".into(),
-            permissions: vec![ApiName::new("fs"), ApiName::new("net")],
+            apis: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
             indoc! {r#"
@@ -1103,7 +1103,7 @@ mod tests {
     fn unused_allow_api_already_deleted() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
             crate_name: "crab1".into(),
-            permissions: vec![ApiName::new("fs")],
+            apis: vec![ApiName::new("fs")],
         });
         // If another edit (e.g. removal of an unused pkg config) removed our table, make sure we
         // don't recreate it.
@@ -1158,10 +1158,10 @@ mod tests {
 
     #[test]
     fn inline_std_api() {
-        let fs_perm = ApiName::new("fs");
-        let edit = &InlineStdApi(fs_perm.clone());
+        let fs_api = ApiName::new("fs");
+        let edit = &InlineStdApi(fs_api.clone());
         let config = apply_edit_and_parse("", edit);
         let built_ins = crate::config::built_in::get_built_ins();
-        assert_eq!(built_ins.get(&fs_perm), config.apis.get(&fs_perm));
+        assert_eq!(built_ins.get(&fs_api), config.apis.get(&fs_api));
     }
 }

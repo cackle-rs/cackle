@@ -2,10 +2,10 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
+use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::CrateName;
-use crate::config::PermConfig;
 use crate::crate_index::BuildScriptId;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
@@ -66,7 +66,7 @@ pub(crate) struct ApiUsages {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct UnusedAllowApi {
     pub(crate) crate_name: CrateName,
-    pub(crate) permissions: Vec<ApiName>,
+    pub(crate) apis: Vec<ApiName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -79,7 +79,7 @@ pub(crate) struct DisallowedBuildInstruction {
 pub(crate) struct AvailableApi {
     pub(crate) pkg_id: PackageId,
     pub(crate) api: ApiName,
-    pub(crate) config: PermConfig,
+    pub(crate) config: ApiConfig,
 }
 
 /// The name of a top-level module in a crate that matches the name of a restricted API. For
@@ -331,7 +331,7 @@ impl Display for UnusedAllowApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
             writeln!(f, "`pkg.{}` allows APIs that aren't used:", self.crate_name)?;
-            for api in &self.permissions {
+            for api in &self.apis {
                 writeln!(f, "    {api}")?;
             }
         } else {

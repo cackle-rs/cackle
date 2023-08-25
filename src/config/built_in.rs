@@ -1,9 +1,9 @@
+use super::ApiConfig;
 use super::ApiName;
 use super::ApiPath;
-use super::PermConfig;
 use std::collections::BTreeMap;
 
-pub(crate) fn get_built_ins() -> BTreeMap<ApiName, PermConfig> {
+pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
     let mut result = BTreeMap::new();
     result.insert(
         ApiName::from("fs"),
@@ -67,8 +67,8 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, PermConfig> {
     result
 }
 
-fn perm(include: &[&str], exclude: &[&str]) -> PermConfig {
-    PermConfig {
+fn perm(include: &[&str], exclude: &[&str]) -> ApiConfig {
+    ApiConfig {
         include: include.iter().map(|s| ApiPath::from_str(s)).collect(),
         exclude: exclude.iter().map(|s| ApiPath::from_str(s)).collect(),
         no_auto_detect: Vec::new(),

@@ -36,9 +36,9 @@ use tempfile::TempDir;
 mod api_map;
 
 pub(crate) struct Checker {
-    /// For each name, the set of permissions active for that name and all names that have this name
-    /// as a prefix.
-    permissions_by_prefix: api_map::ApiMap,
+    /// For each name, the set of APIs active for that name and all names that have this name as a
+    /// prefix.
+    apis_by_prefix: api_map::ApiMap,
     pub(crate) crate_infos: FxHashMap<CrateName, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
@@ -55,17 +55,14 @@ pub(crate) struct Checker {
     pub(crate) timings: TimingCollector,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) struct PermId(usize);
-
 #[derive(Default, Debug)]
 pub(crate) struct CrateInfo {
-    /// Permissions that are allowed for this crate according to cackle.toml.
-    allowed_perms: FxHashSet<ApiName>,
+    /// APIs that are allowed for this crate according to cackle.toml.
+    allowed_apis: FxHashSet<ApiName>,
 
-    /// Permissions that are allowed for this crate according to cackle.toml,
-    /// but haven't yet been found to be used by the crate.
-    unused_allowed_perms: FxHashSet<ApiName>,
+    /// APIs that are allowed for this crate according to cackle.toml, but haven't yet been found to
+    /// be used by the crate.
+    unused_allowed_apis: FxHashSet<ApiName>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -88,7 +85,7 @@ impl Checker {
     ) -> Self {
         let timings = TimingCollector::new(args.print_timing);
         Self {
-            permissions_by_prefix: Default::default(),
+            apis_by_prefix: Default::default(),
             crate_infos: Default::default(),
             config_path,
             config: Default::default(),
@@ -101,7 +98,7 @@ impl Checker {
         }
     }
 
-    /// Load (or reload) config. Note in the case of reloading, permissions are only ever additive.
+    /// Load (or reload) config. Note in the case of reloading, APIs are only ever additive.
     pub(crate) fn load_config(&mut self) -> Result<()> {
         let config = crate::config::parse_file(&self.config_path, &self.crate_index)?;
         // Every time we reload our configuration, we rewrite the flattened configuration. The
@@ -128,30 +125,30 @@ impl Checker {
     }
 
     fn update_config(&mut self, config: Arc<Config>) {
-        self.permissions_by_prefix.clear();
+        self.apis_by_prefix.clear();
         for api in config.apis.values() {
             for path in api.include.iter().chain(api.exclude.iter()) {
-                self.permissions_by_prefix
+                self.apis_by_prefix
                     .create_entry(crate::names::split_simple(&path.prefix).parts())
             }
         }
-        for (perm_name, api) in &config.apis {
+        for (api_name, api) in &config.apis {
             for path in &api.include {
                 let name = &crate::names::split_simple(&path.prefix);
-                self.permissions_by_prefix
+                self.apis_by_prefix
                     .mut_tree(name.parts())
-                    .update_subtree(&|permissions| {
-                        permissions.insert(perm_name.clone());
+                    .update_subtree(&|apis| {
+                        apis.insert(api_name.clone());
                     });
             }
         }
-        for (perm_name, api) in &config.apis {
-            for path in &api.exclude {
+        for (api_name, api_config) in &config.apis {
+            for path in &api_config.exclude {
                 let name = &crate::names::split_simple(&path.prefix);
-                self.permissions_by_prefix
+                self.apis_by_prefix
                     .mut_tree(name.parts())
-                    .update_subtree(&|permissions| {
-                        permissions.remove(perm_name);
+                    .update_subtree(&|apis| {
+                        apis.remove(api_name);
                     });
             }
         }
@@ -160,9 +157,9 @@ impl Checker {
                 .crate_infos
                 .entry(crate_name.as_ref().into())
                 .or_default();
-            for perm in &crate_config.allow_apis {
-                if crate_info.allowed_perms.insert(perm.clone()) {
-                    crate_info.unused_allowed_perms.insert(perm.clone());
+            for api in &crate_config.allow_apis {
+                if crate_info.allowed_apis.insert(api.clone()) {
+                    crate_info.unused_allowed_apis.insert(api.clone());
                 }
             }
         }
@@ -303,23 +300,23 @@ impl Checker {
             })
     }
 
-    /// Returns all permissions that are matched by `name`. e.g. The name `["std", "fs", "write"]`
-    /// might return the APIs `{"net"}`.
+    /// Returns all APIs that are matched by `name`. e.g. The name `["std", "fs", "write"]` might
+    /// return the APIs `{"net"}`.
     pub(crate) fn apis_for_name_iterator<'a>(
         &self,
         key_it: impl Iterator<Item = &'a str>,
     ) -> &FxHashSet<ApiName> {
-        self.permissions_by_prefix.get(key_it)
+        self.apis_by_prefix.get(key_it)
     }
 
-    pub(crate) fn permission_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
+    pub(crate) fn api_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
         let api = &api_usage.api_name;
         if let Some(crate_info) = self
             .crate_infos
             .get_mut(&CrateName::from(&api_usage.crate_sel))
         {
-            if crate_info.allowed_perms.contains(api) {
-                crate_info.unused_allowed_perms.remove(api);
+            if crate_info.allowed_apis.contains(api) {
+                crate_info.unused_allowed_apis.remove(api);
                 return;
             }
         }
@@ -333,10 +330,10 @@ impl Checker {
             if !crate_names_in_index.contains(crate_name) {
                 problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
             }
-            if !crate_info.unused_allowed_perms.is_empty() {
+            if !crate_info.unused_allowed_apis.is_empty() {
                 problems.push(Problem::UnusedAllowApi(UnusedAllowApi {
                     crate_name: crate_name.clone(),
-                    permissions: crate_info.unused_allowed_perms.iter().cloned().collect(),
+                    apis: crate_info.unused_allowed_apis.iter().cloned().collect(),
                 }));
             }
         }
@@ -426,7 +423,7 @@ mod tests {
     }
 
     #[track_caller]
-    fn assert_perms(config: &str, path: &[&str], expected: &[&str]) {
+    fn assert_apis(config: &str, path: &[&str], expected: &[&str]) {
         let mut checker = checker_for_testing();
         checker.update_config(parse(config).unwrap());
 
@@ -453,8 +450,8 @@ mod tests {
                 [api.env2]
                 include = ["std::env"]
                 "#;
-        assert_perms(config, &["std", "env", "var"], &["env", "env2"]);
-        assert_perms(config, &["std", "env", "exe"], &["env", "env2", "fs"]);
+        assert_apis(config, &["std", "env", "var"], &["env", "env2"]);
+        assert_apis(config, &["std", "env", "exe"], &["env", "env2", "fs"]);
     }
 
     #[test]
@@ -480,12 +477,12 @@ mod tests {
         let mut problems = ProblemList::default();
 
         let crate_sel = CrateSel::Primary(crate::crate_index::testing::pkg_id("foo"));
-        let permissions = checker
+        let apis = checker
             .apis_for_name_iterator(["std", "fs", "read_to_string"].into_iter())
             .clone();
-        assert_eq!(permissions.len(), 1);
-        assert_eq!(permissions.iter().next().unwrap(), &ApiName::from("fs"));
-        for api in permissions {
+        assert_eq!(apis.len(), 1);
+        assert_eq!(apis.iter().next().unwrap(), &ApiName::from("fs"));
+        for api in apis {
             let api_usage = ApiUsages {
                 crate_sel: crate_sel.clone(),
                 api_name: api,
@@ -498,7 +495,7 @@ mod tests {
                     debug_data: None,
                 }],
             };
-            checker.permission_used(&api_usage, &mut problems);
+            checker.api_used(&api_usage, &mut problems);
         }
 
         assert!(problems.is_empty());
