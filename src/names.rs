@@ -24,7 +24,7 @@ pub(crate) struct DebugName<'input> {
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug, PartialOrd, Ord)]
 pub(crate) struct Namespace {
-    pub(crate) parts: Arc<[Box<str>]>,
+    pub(crate) parts: Arc<[Arc<str>]>,
 }
 
 #[derive(Default, Clone)]
@@ -54,7 +54,7 @@ impl Namespace {
 
     pub(crate) fn top_level(name: &str) -> Self {
         Self {
-            parts: Arc::new([Box::from(name)]),
+            parts: Arc::new([Arc::from(name)]),
         }
     }
 
@@ -64,7 +64,7 @@ impl Namespace {
                 .parts
                 .iter()
                 .cloned()
-                .chain(std::iter::once(Box::from(name)))
+                .chain(std::iter::once(Arc::from(name)))
                 .collect(),
         }
     }
@@ -454,7 +454,7 @@ mod tests {
     fn check(namespace: &[&str], input: &str, expected: &[&[&str]]) {
         let mut out = Vec::new();
         let mut name_parts = Vec::new();
-        let namespace: Vec<Box<str>> = namespace.iter().map(|s| Box::from(*s)).collect();
+        let namespace: Vec<Arc<str>> = namespace.iter().map(|s| Arc::from(*s)).collect();
         for token in NamesIterator::new(NonMangledIterator::new(&namespace, input)).current {
             match token {
                 NameToken::Part(part) => name_parts.push(part),

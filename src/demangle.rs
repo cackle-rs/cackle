@@ -7,6 +7,7 @@
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum DemangleToken<'data> {
@@ -23,7 +24,7 @@ pub(crate) struct DemangleIterator<'data> {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct NonMangledIterator<'data> {
-    namespace: &'data [Box<str>],
+    namespace: &'data [Arc<str>],
     data: &'data str,
 }
 
@@ -47,7 +48,7 @@ impl<'data> DemangleIterator<'data> {
 /// An iterator that processes a non-mangled string and provides the same tokens as
 /// `DemangleIterator`.
 impl<'data> NonMangledIterator<'data> {
-    pub(crate) fn new(namespace: &'data [Box<str>], data: &'data str) -> Self {
+    pub(crate) fn new(namespace: &'data [Arc<str>], data: &'data str) -> Self {
         Self { namespace, data }
     }
 }
