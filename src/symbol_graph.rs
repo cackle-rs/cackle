@@ -196,7 +196,7 @@ impl ScanOutputs {
     pub(crate) fn problems(&self, checker: &mut Checker) -> Result<ProblemList> {
         let mut problems: ProblemList = self.base_problems.clone();
         for api_usages in self.api_usages.values() {
-            checker.api_used(api_usages, &mut problems);
+            checker.api_used(api_usages, &mut problems)?;
         }
         checker.possible_exported_api_problems(&self.possible_exported_apis, &mut problems);
 

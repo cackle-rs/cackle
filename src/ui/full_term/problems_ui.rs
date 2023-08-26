@@ -11,6 +11,7 @@ use crate::config_editor::Edit;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
+use crate::problem::OffTreeApiUsage;
 use crate::problem::Problem;
 use crate::problem_store::ProblemId;
 use crate::problem_store::ProblemStore;
@@ -738,7 +739,8 @@ fn usages_for_problem(
 ) -> Vec<Box<dyn DisplayUsage>> {
     let mut usages_out: Vec<Box<dyn DisplayUsage>> = Vec::new();
     match pstore_lock.deduplicated_into_iter().nth(problem_index) {
-        Some((_, Problem::DisallowedApiUsage(usages))) => {
+        Some((_, Problem::DisallowedApiUsage(usages)))
+        | Some((_, Problem::OffTreeApiUsage(OffTreeApiUsage { usages, .. }))) => {
             for usage in &usages.usages {
                 usages_out.push(Box::new(usage.clone()));
             }
@@ -834,6 +836,16 @@ fn problem_details(problem: &Problem) -> String {
             "This user interface can guide you through creating an initial cackle.toml. \
              Press 'h' at any time to see what keys are available."
                 .to_owned()
+        }
+        Problem::OffTreeApiUsage(info) => {
+            let pkg = &info.usages.crate_sel.pkg_id;
+            let api = &info.usages.api_name;
+            let non_dep = &info.referenced_pkg_id;
+            format!(
+                "Although `{pkg}` doesn't depend on `{non_dep}`, we found code that used the \
+                `{api}` API. Most likely there's a generic parameter being used that allows \
+                access to this API, but which hasn't been declared as belonging to this API."
+            )
         }
         _ => {
             // For kinds of problems that don't support per-usage details, show the full details report.

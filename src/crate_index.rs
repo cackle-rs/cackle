@@ -1,13 +1,16 @@
 //! This module extracts various bits of information from cargo metadata, such as which paths belong
 //! to which crates, which are proc macros etc.
 
+use self::lib_tree::LibTree;
 use crate::config::CrateName;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
+use cargo_metadata::DependencyKind;
 use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -16,12 +19,15 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub(crate) mod lib_tree;
+
 #[derive(Default, Debug)]
 pub(crate) struct CrateIndex {
     pub(crate) manifest_path: PathBuf,
     pub(crate) package_infos: FxHashMap<PackageId, PackageInfo>,
     dir_to_pkg_id: FxHashMap<PathBuf, PackageId>,
-    pkg_name_to_ids: FxHashMap<String, Vec<PackageId>>,
+    pkg_name_to_ids: FxHashMap<Arc<str>, Vec<PackageId>>,
+    lib_tree: LibTree,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +86,7 @@ impl CrateIndex {
         for package in &metadata.packages {
             *name_counts.entry(&package.name).or_default() += 1;
         }
+        let mut direct_deps: FxHashMap<PackageId, Vec<Arc<str>>> = FxHashMap::default();
         for package in &metadata.packages {
             let pkg_id = PackageId {
                 name: Arc::from(package.name.as_str()),
@@ -98,6 +105,15 @@ impl CrateIndex {
             }
             if let Some(dir) = package.manifest_path.parent() {
                 let crate_name: CrateName = package.name.as_str().into();
+                direct_deps.insert(
+                    pkg_id.clone(),
+                    package
+                        .dependencies
+                        .iter()
+                        .filter(|dep| dep.kind == DependencyKind::Normal && !dep.optional)
+                        .map(|dep| Arc::from(dep.name.as_str()))
+                        .collect(),
+                );
                 mapping.package_infos.insert(
                     pkg_id.clone(),
                     PackageInfo {
@@ -113,7 +129,7 @@ impl CrateIndex {
                 );
                 mapping
                     .pkg_name_to_ids
-                    .entry(package.name.clone())
+                    .entry(Arc::from(package.name.as_str()))
                     .or_default()
                     .push(pkg_id.clone());
                 mapping
@@ -121,6 +137,7 @@ impl CrateIndex {
                     .insert(dir.as_std_path().to_owned(), pkg_id.clone());
             }
         }
+        mapping.lib_tree = LibTree::from_workspace(dir, &mapping.pkg_name_to_ids)?;
         for package_ids in mapping.pkg_name_to_ids.values_mut() {
             package_ids.sort_by_key(|pkg_id| pkg_id.version.clone());
         }
@@ -196,6 +213,17 @@ impl CrateIndex {
                 return None;
             }
         }
+    }
+
+    /// Returns the transitive deps for `pkg_id`. All deps will be in "crate form", i.e. with '-'
+    /// replaced with '_'.
+    pub(crate) fn transitive_deps(&self, pkg_id: &PackageId) -> Option<&FxHashSet<Arc<str>>> {
+        self.lib_tree.pkg_transitive_deps.get(pkg_id)
+    }
+
+    /// Returns a map from "crate form" names to package names.
+    pub(crate) fn name_prefix_to_pkg_id(&self) -> &FxHashMap<Arc<str>, PackageId> {
+        &self.lib_tree.lib_name_to_pkg_id
     }
 }
 
@@ -394,4 +422,34 @@ pub(crate) mod testing {
             ..CrateIndex::default()
         })
     }
+}
+
+#[test]
+fn test_crate_index() {
+    #[track_caller]
+    fn check(index: &CrateIndex, from: &str, expected_deps: &[&str]) {
+        let Some(pkg_id) = index.name_prefix_to_pkg_id().get(from) else {
+            panic!("Missing package ID for `{from}`");
+        };
+        let Some(deps) = index.transitive_deps(pkg_id) else {
+            panic!("No deps for {pkg_id}");
+        };
+        let mut sorted_deps: Vec<&str> = deps.iter().map(|d| d.as_ref()).collect();
+        sorted_deps.sort();
+        assert_eq!(sorted_deps, expected_deps);
+    }
+
+    let crate_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let test_crates_dir = crate_root.join("test_crates");
+    let index = CrateIndex::new(&test_crates_dir).unwrap();
+
+    check(&index, "crab2", &["crab1", "crab3"]);
+    check(&index, "crab4", &[]);
+    check(
+        &index,
+        "crab_bin",
+        &[
+            "crab1", "crab2", "crab3", "crab4", "crab6", "crab7", "crab8", "res1",
+        ],
+    );
 }

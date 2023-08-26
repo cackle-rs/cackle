@@ -83,6 +83,7 @@ impl<'input> DebugName<'input> {
         ))
     }
 }
+
 /// Splits a composite name into names. Each name is further split on "::". For example:
 /// "core::ptr::drop_in_place<std::rt::lang_start<()>::{{closure}}>" would split into:
 /// [

@@ -1,6 +1,7 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
 use crate::config::ApiName;
+use crate::config::ApiPath;
 use crate::config::CrateName;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
@@ -106,8 +107,22 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             crate_name: crate_name.clone(),
         })),
         Problem::PossibleExportedApi(info) => {
-            edits.push(Box::new(ExtendApi(info.clone())));
+            edits.push(Box::new(ExtendApi {
+                api: info.api.clone(),
+                api_path: info.api_path(),
+            }));
             edits.push(Box::new(NoDetectApi(info.clone())));
+        }
+        Problem::OffTreeApiUsage(info) => {
+            for prefix in &info.common_prefixes {
+                edits.push(Box::new(ExtendApi {
+                    api: info.usages.api_name.clone(),
+                    api_path: ApiPath::from_str(prefix),
+                }));
+            }
+            edits.push(Box::new(AllowApiUsage {
+                usage: info.usages.clone(),
+            }))
         }
         _ => {}
     }
@@ -556,29 +571,27 @@ impl Edit for IgnoreApi {
     }
 }
 
-struct ExtendApi(PossibleExportedApi);
+struct ExtendApi {
+    api: ApiName,
+    api_path: ApiPath,
+}
 
 impl Edit for ExtendApi {
     fn title(&self) -> String {
-        format!("Extend API `{}` with `{}`", self.0.api, self.0.api_path(),)
+        format!("Extend API `{}` with `{}`", self.api, self.api_path)
     }
 
     fn help(&self) -> Cow<'static, str> {
         format!(
             "Classify usages of `{}` as the API `{}`",
-            self.0.api_path(),
-            self.0.api
+            self.api_path, self.api
         )
         .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
-        let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
-        add_to_array(
-            table,
-            "include",
-            &[format!("{}::{}", self.0.pkg_id.name(), self.0.api).as_str()],
-        )?;
+        let table = editor.table(["api", self.api.name.as_ref()].into_iter())?;
+        add_to_array(table, "include", &[&self.api_path])?;
         Ok(())
     }
 }

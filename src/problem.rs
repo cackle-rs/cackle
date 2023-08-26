@@ -33,6 +33,7 @@ pub(crate) enum Problem {
     DisallowedUnsafe(UnsafeUsage),
     IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
+    OffTreeApiUsage(OffTreeApiUsage),
     BuildScriptFailed(BinExecutionFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(CrateName),
@@ -61,6 +62,13 @@ pub(crate) struct ApiUsages {
     pub(crate) crate_sel: CrateSel,
     pub(crate) api_name: ApiName,
     pub(crate) usages: Vec<ApiUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct OffTreeApiUsage {
+    pub(crate) usages: ApiUsages,
+    pub(crate) referenced_pkg_id: PackageId,
+    pub(crate) common_prefixes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -208,6 +216,7 @@ impl Problem {
             Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
             Problem::DisallowedApiUsage(d) => Some(d.crate_sel.pkg_id()),
+            Problem::OffTreeApiUsage(d) => Some(&d.usages.crate_sel.pkg_id),
             Problem::BuildScriptFailed(d) => Some(d.crate_sel.pkg_id()),
             Problem::DisallowedBuildInstruction(d) => Some(&d.pkg_id),
             Problem::UnusedPackageConfig(_) => None,
@@ -253,6 +262,15 @@ impl Display for Problem {
                 CrateSel::primary(pkg_name.clone())
             )?,
             Problem::DisallowedApiUsage(info) => info.fmt(f)?,
+            Problem::OffTreeApiUsage(info) => {
+                write!(
+                    f,
+                    "`{}` uses `{}` API from non-dependency `{}`",
+                    info.usages.crate_sel.pkg_id(),
+                    info.usages.api_name,
+                    info.referenced_pkg_id
+                )?;
+            }
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
                 write!(
@@ -424,5 +442,13 @@ impl ApiUsages {
             panic!("Attempted to merge ApiUsages with incompatible attributes");
         }
         self.usages.append(&mut b.usages);
+    }
+
+    pub(crate) fn with_usages(&self, usages: Vec<ApiUsage>) -> Self {
+        Self {
+            crate_sel: self.crate_sel.clone(),
+            api_name: self.api_name.clone(),
+            usages,
+        }
     }
 }

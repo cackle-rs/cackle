@@ -11,6 +11,7 @@ use crate::location::SourceLocation;
 use crate::names::Name;
 use crate::names::SymbolOrDebugName;
 use crate::problem::ApiUsages;
+use crate::problem::OffTreeApiUsage;
 use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
@@ -35,6 +36,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 mod api_map;
+mod off_tree;
 
 pub(crate) struct Checker {
     /// For each name, the set of APIs active for that name and all names that have this name as a
@@ -154,10 +156,7 @@ impl Checker {
             }
         }
         for (crate_name, crate_config) in &config.packages {
-            let crate_info = self
-                .crate_infos
-                .entry(crate_name.as_ref().into())
-                .or_default();
+            let crate_info = self.crate_infos.entry(crate_name.clone()).or_default();
             for api in &crate_config.allow_apis {
                 if crate_info.allowed_apis.insert(api.clone()) {
                     crate_info.unused_allowed_apis.insert(api.clone());
@@ -307,7 +306,12 @@ impl Checker {
         self.apis_by_prefix.get(key_it)
     }
 
-    pub(crate) fn api_used(&mut self, api_usage: &ApiUsages, problems: &mut ProblemList) {
+    /// Reports an API usage. If it's not permitted, then a problem will be added to `problems`.
+    pub(crate) fn api_used(
+        &mut self,
+        api_usage: &ApiUsages,
+        problems: &mut ProblemList,
+    ) -> Result<()> {
         let api = &api_usage.api_name;
         if let Some(crate_info) = self
             .crate_infos
@@ -315,10 +319,50 @@ impl Checker {
         {
             if crate_info.allowed_apis.contains(api) {
                 crate_info.unused_allowed_apis.remove(api);
-                return;
+                return Ok(());
             }
         }
-        problems.push(Problem::DisallowedApiUsage(api_usage.clone()));
+
+        // Partition all usages into on-tree and off-tree usages. On-tree are those usages that are
+        // referencing a name from one of our dependencies. Off-tree are those that reference names
+        // from packages not in our package's dependency tree.
+        let mut on_tree = Vec::new();
+        let mut off_tree: FxHashMap<&PackageId, Vec<ApiUsage>> = FxHashMap::default();
+
+        let all_deps = self.crate_index.name_prefix_to_pkg_id();
+        if let Some(crate_deps) = self
+            .crate_index
+            .transitive_deps(&api_usage.crate_sel.pkg_id)
+        {
+            for usage in &api_usage.usages {
+                if let Some(first_name_part) = usage.to_name.parts.first() {
+                    if !crate_deps.contains(first_name_part) {
+                        if let Some(pkg_id) = all_deps.get(first_name_part) {
+                            off_tree.entry(pkg_id).or_default().push(usage.clone());
+                            continue;
+                        }
+                    }
+                }
+                on_tree.push(usage.clone());
+            }
+        }
+
+        // Report off-tree problems for each off-tree package that we appear to reference.
+        for (pkg_id, off_tree_usages) in off_tree {
+            let usages = api_usage.with_usages(off_tree_usages);
+            let common_prefixes = off_tree::common_from_prefixes(&usages)?;
+            problems.push(Problem::OffTreeApiUsage(OffTreeApiUsage {
+                usages,
+                referenced_pkg_id: pkg_id.clone(),
+                common_prefixes,
+            }));
+        }
+
+        // For any remaining on-tree usages, report a regular disallowed API usage.
+        if !on_tree.is_empty() {
+            problems.push(Problem::DisallowedApiUsage(api_usage.with_usages(on_tree)));
+        }
+        Ok(())
     }
 
     pub(crate) fn check_unused(&self) -> ProblemList {
@@ -493,7 +537,7 @@ mod tests {
                     debug_data: None,
                 }],
             };
-            checker.api_used(&api_usage, &mut problems);
+            checker.api_used(&api_usage, &mut problems).unwrap();
         }
 
         assert!(problems.is_empty());
