@@ -270,6 +270,10 @@ impl Display for Problem {
                     info.usages.api_name,
                     info.referenced_pkg_id
                 )?;
+                if f.alternate() {
+                    writeln!(f)?;
+                    display_usages(f, &info.usages.usages)?;
+                }
             }
             Problem::BuildScriptFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
