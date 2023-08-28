@@ -9,6 +9,7 @@ use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::Checker;
+use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::CrateName;
 use crate::crate_index::CrateKind;
@@ -41,6 +42,7 @@ use object::ObjectSymbol;
 use object::RelocationTarget;
 use object::SectionIndex;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
@@ -94,6 +96,10 @@ pub(crate) struct ScanOutputs {
     base_problems: ProblemList,
 
     possible_exported_apis: Vec<PossibleExportedApi>,
+
+    /// The API definitions used to produce these outputs. Used to determine if we need to recompute
+    /// API usages.
+    pub(crate) apis: BTreeMap<ApiName, ApiConfig>,
 }
 
 struct ObjectIndex<'obj, 'data> {

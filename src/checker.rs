@@ -238,8 +238,18 @@ impl Checker {
         exe_path: &Path,
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
+        if check_state
+            .graph_outputs
+            .as_ref()
+            .map(|outputs| outputs.apis != self.config.apis)
+            .unwrap_or(false)
+        {
+            // APIs have changed, invalidate cache.
+            check_state.graph_outputs = None;
+        }
         if check_state.graph_outputs.is_none() {
-            let graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
+            let mut graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
+            graph_outputs.apis = self.config.apis.clone();
             check_state.graph_outputs = Some(graph_outputs);
         }
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();

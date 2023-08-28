@@ -14,7 +14,7 @@ pub(crate) fn common_from_prefixes(usages: &ApiUsages) -> Result<Vec<String>> {
     for usage in &usages.usages {
         checker.check_usage(usage)?;
     }
-    Ok(checker
+    let mut prefixes: Vec<String> = checker
         .common1
         .into_iter()
         .map(|s| s.to_owned())
@@ -24,7 +24,9 @@ pub(crate) fn common_from_prefixes(usages: &ApiUsages) -> Result<Vec<String>> {
                 .into_iter()
                 .map(|(s1, s2)| format!("{s1}::{s2}")),
         )
-        .collect())
+        .collect();
+    prefixes.sort();
+    Ok(prefixes)
 }
 
 #[derive(Default)]
