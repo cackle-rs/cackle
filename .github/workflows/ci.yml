@@ -29,16 +29,14 @@ jobs:
       - run: cargo test --target ${{ matrix.target }}
       - run: cargo test --target ${{ matrix.target }} --all-features
 
-# TODO: fix tests for nightly?
-# https://github.com/pinkforest/cackle/actions/runs/5916635575/job/16044132143
-#  test-nightly:
-#    name: Test Nightly
-#    runs-on: ubuntu-latest
-#    steps:
-#    - uses: actions/checkout@v3
-#    - uses: dtolnay/rust-toolchain@nightly
-#    - run: sudo apt update && sudo apt install git bubblewrap
-#    - run: cargo test
+  test-nightly:
+    name: Test Nightly
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - run: sudo apt update && sudo apt install git bubblewrap
+    - run: cargo test
 
 # TODO: bench
 #  bench:
