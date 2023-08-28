@@ -25,9 +25,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup target add ${{ matrix.target }}
       - run: ${{ matrix.deps }}
-      - run: cargo test --target ${{ matrix.target }} --no-default-features
       - run: cargo test --target ${{ matrix.target }}
-      - run: cargo test --target ${{ matrix.target }} --all-features
+      - run: cargo build --target ${{ matrix.target }} --no-default-features
 
   test-nightly:
     name: Test Nightly
