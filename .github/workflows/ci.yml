@@ -25,8 +25,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: rustup target add ${{ matrix.target }}
       - run: ${{ matrix.deps }}
-      - run: cargo test --target ${{ matrix.target }}
-      - run: cargo build --target ${{ matrix.target }} --no-default-features
+      - run: cargo test --profile ci --target ${{ matrix.target }}
+      - run: cargo build --profile ci --target ${{ matrix.target }} --no-default-features
 
   test-nightly:
     name: Test Nightly
@@ -35,7 +35,7 @@ jobs:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@nightly
     - run: sudo apt update && sudo apt install git bubblewrap
-    - run: cargo test
+    - run: cargo test --profile ci
 
 # TODO: bench
 #  bench:

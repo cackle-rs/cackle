@@ -43,3 +43,10 @@ ui = ["toml_edit", "ratatui", "diff", "crossterm"]
 # Build even on an operating system that isn't yet supported. Enable this feature if you're working
 # on porting.
 unsupported-os = []
+
+# Profile used for CI. We turn off incremental compilation and debug info, since both are
+# unnecessary in CI and slow things down.
+[profile.ci]
+inherits = "dev"
+incremental = false
+debug = 0
