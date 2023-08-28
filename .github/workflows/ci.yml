@@ -48,16 +48,15 @@ jobs:
 #    - name: Build default (host native) bench
 #      run: cargo build --benches
 
-# TODO: appease clippy
-#  clippy:
-#    name: Check that clippy is happy
-#    runs-on: ubuntu-latest
-#    steps:
-#    - uses: actions/checkout@v3
-#    - uses: dtolnay/rust-toolchain@nightly
-#      with:
-#        components: clippy
-#    - run: cargo clippy --target x86_64-unknown-linux-gnu
+  clippy:
+    name: Check that clippy is happy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - run: cargo clippy --target x86_64-unknown-linux-gnu
 
   rustfmt:
     name: Check formatting
