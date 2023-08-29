@@ -1,6 +1,7 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::checker::Checker;
 use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
@@ -14,6 +15,7 @@ use std::path::Path;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 #[cfg(feature = "ui")]
@@ -49,6 +51,7 @@ trait UserInterface: Send {
 pub(crate) fn start_ui(
     args: &Arc<Args>,
     config_path: &Path,
+    checker: &Arc<Mutex<Checker>>,
     problem_store: ProblemStoreRef,
     crate_index: Arc<CrateIndex>,
     event_receiver: Receiver<AppEvent>,
@@ -69,6 +72,7 @@ pub(crate) fn start_ui(
             info!("Starting full terminal UI");
             Box::new(full_term::FullTermUi::new(
                 config_path.to_owned(),
+                checker,
                 crate_index,
                 abort_sender,
             )?)

@@ -1,3 +1,4 @@
+use crate::checker::BinLocation;
 use crate::location::SourceLocation;
 use crate::names::DebugName;
 use crate::names::Namespace;
@@ -39,10 +40,10 @@ pub(crate) struct SymbolDebugInfo<'input> {
 
 /// A reference pair resulting from one function being inlined into another.
 pub(crate) struct InlinedFunction<'input> {
+    pub(crate) bin_location: BinLocation,
     pub(crate) from: SymbolAndName<'input>,
     pub(crate) to: SymbolAndName<'input>,
     call_location: CallLocation<'input>,
-    pub(crate) low_pc: Option<u64>,
 }
 
 impl<'input> InlinedFunction<'input> {
@@ -104,6 +105,7 @@ impl<'input> DwarfScanner<'input> {
                 let mut inline_scanner = InlinedFunctionScanner {
                     names: Default::default(),
                     low_pc: None,
+                    symbol_start: None,
                     call_location: CallLocation {
                         compdir,
                         directory: None,
@@ -119,6 +121,9 @@ impl<'input> DwarfScanner<'input> {
                     || tag == gimli::DW_TAG_lexical_block
                     || tag == gimli::DW_TAG_variable
                 {
+                    if tag == gimli::DW_TAG_subprogram || tag == gimli::DW_TAG_variable {
+                        inline_scanner.start_top_level();
+                    }
                     for spec in abbrev.attributes() {
                         let attr = entries.read_attribute(*spec)?;
                         inline_scanner.handle_attribute(attr, &unit_state)?;
@@ -450,6 +455,8 @@ struct InlinedFunctionScanner<'input> {
     names: SymbolAndName<'input>,
     low_pc: Option<u64>,
     call_location: CallLocation<'input>,
+    /// The address of the start of the current (non-inlined) symbol.
+    symbol_start: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -497,6 +504,9 @@ impl<'input> InlinedFunctionScanner<'input> {
                     .dwarf
                     .attr_address(&unit_state.unit, attr.value())
                     .context("Unsupported DW_AT_low_pc")?;
+                if self.symbol_start.is_none() {
+                    self.symbol_start = self.low_pc;
+                }
             }
             gimli::DW_AT_ranges => {
                 if let Some(ranges_offset) = unit_state
@@ -524,10 +534,11 @@ impl<'input> InlinedFunctionScanner<'input> {
         if self.names.debug_name.is_none() && self.names.symbol.is_none() {
             return None;
         }
+        let low_pc = self.low_pc?;
+        let symbol_start = self.symbol_start?;
         // Functions with DW_AT_low_pc=0 or 1, or absent have been optimised out so can be ignored.
-        match self.low_pc {
-            None | Some(0) | Some(1) => return None,
-            _ => {}
+        if low_pc == 0 || low_pc == 1 {
+            return None;
         }
         let mut call_location = &self.call_location;
         for frame in frames.iter().rev() {
@@ -543,13 +554,20 @@ impl<'input> InlinedFunctionScanner<'input> {
                     continue;
                 }
                 return Some(InlinedFunction {
+                    bin_location: BinLocation {
+                        address: low_pc,
+                        symbol_start,
+                    },
                     from: frame.names.clone(),
                     to: self.names.clone(),
                     call_location: call_location.clone(),
-                    low_pc: self.low_pc,
                 });
             }
         }
         None
+    }
+
+    fn start_top_level(&mut self) {
+        self.symbol_start = None;
     }
 }

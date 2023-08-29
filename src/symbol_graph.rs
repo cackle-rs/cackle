@@ -5,9 +5,11 @@
 //! We also parse the Dwarf debug information to determine what source file each linker section came
 //! from.
 
+use self::backtrace::Backtracer;
 use self::dwarf::SymbolDebugInfo;
 use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
+use crate::checker::BinLocation;
 use crate::checker::Checker;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
@@ -51,6 +53,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+pub(crate) mod backtrace;
 mod dwarf;
 pub(crate) mod object_file_path;
 
@@ -60,8 +63,9 @@ enum Filetype {
     Other,
 }
 
-struct ApiUsageCollector<'input> {
+struct ApiUsageCollector<'input, 'backtracer> {
     outputs: ScanOutputs,
+    backtracer: &'backtracer mut Backtracer,
 
     bin: BinInfo<'input>,
     debug_enabled: bool,
@@ -124,14 +128,32 @@ struct SymbolInfo<'data> {
 
 pub(crate) fn scan_objects(
     paths: &[PathBuf],
-    bin_path: &Path,
+    bin_path: &Arc<Path>,
     checker: &mut Checker,
-) -> Result<ScanOutputs> {
+) -> Result<(ScanOutputs, Backtracer)> {
     log::info!("Scanning {}", bin_path.display());
     let start = Instant::now();
     let file_bytes = std::fs::read(bin_path)
         .with_context(|| format!("Failed to read `{}`", bin_path.display()))?;
-    let obj = object::File::parse(file_bytes.as_slice())
+    checker.timings.add_timing(start, "Read bin file");
+
+    let mut backtracer = Backtracer::default();
+    let outputs =
+        scan_object_with_bin_bytes(&file_bytes, checker, &mut backtracer, bin_path, paths)?;
+
+    backtracer.provide_bin_bytes(file_bytes);
+    Ok((outputs, backtracer))
+}
+
+fn scan_object_with_bin_bytes(
+    bin_file_bytes: &Vec<u8>,
+    checker: &mut Checker,
+    backtracer: &mut Backtracer,
+    bin_path: &Arc<Path>,
+    paths: &[PathBuf],
+) -> Result<ScanOutputs> {
+    let start = Instant::now();
+    let obj = object::File::parse(bin_file_bytes.as_slice())
         .with_context(|| format!("Failed to parse {}", bin_path.display()))?;
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
@@ -146,7 +168,6 @@ pub(crate) fn scan_objects(
     let ctx = addr2line::Context::from_dwarf(dwarf)
         .with_context(|| format!("Failed in addr2line for `{}`", bin_path.display()))?;
     let start = checker.timings.add_timing(start, "Build addr2line context");
-
     let no_api_symbol_hashes = debug_artifacts
         .symbol_debug_info
         .keys()
@@ -154,8 +175,9 @@ pub(crate) fn scan_objects(
         .collect();
     let mut collector = ApiUsageCollector {
         outputs: Default::default(),
+        backtracer,
         bin: BinInfo {
-            filename: Arc::from(bin_path),
+            filename: bin_path.clone(),
             symbol_addresses: Default::default(),
             symbol_debug_info: debug_artifacts.symbol_debug_info,
             symbol_has_no_apis: no_api_symbol_hashes,
@@ -169,12 +191,14 @@ pub(crate) fn scan_objects(
         let mut lazy_location = crate::lazy::lazy(|| f.location());
         let debug_data = if checker.args.debug {
             Some(UsageDebugData::Inlined(InlinedDebugData::from_offset(
-                f.low_pc, &ctx,
+                Some(f.bin_location.address),
+                &ctx,
             )?))
         } else {
             None
         };
         collector.process_reference(
+            f.bin_location,
             &f.from,
             &f.to,
             checker,
@@ -194,7 +218,6 @@ pub(crate) fn scan_objects(
     }
     collector.emit_shortest_api_usages();
     checker.timings.add_timing(start, "Process object files");
-
     Ok(collector.outputs)
 }
 
@@ -210,7 +233,7 @@ impl ScanOutputs {
     }
 }
 
-impl<'input> ApiUsageCollector<'input> {
+impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
     fn process_file(
         &mut self,
         filename: &Path,
@@ -311,12 +334,20 @@ impl<'input> ApiUsageCollector<'input> {
                 let frame_symbol = frame_fn_name
                     .as_ref()
                     .map(|fn_name| Symbol::borrowed(&fn_name.name));
+                let bin_location = BinLocation {
+                    address: offset_in_bin,
+                    symbol_start: symbol_address_in_bin,
+                };
 
                 let from_symbol = frame_symbol.as_ref().unwrap_or(&first_sym_info.symbol);
                 let from = self.bin.get_symbol_and_name(from_symbol);
                 for target_symbol in target_symbols {
+                    if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol) {
+                        self.backtracer.add_reference(bin_location, *target_address);
+                    }
                     let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
+                        bin_location,
                         &from,
                         &target,
                         checker,
@@ -331,6 +362,7 @@ impl<'input> ApiUsageCollector<'input> {
 
     fn process_reference(
         &mut self,
+        bin_location: BinLocation,
         from: &SymbolAndName,
         target: &SymbolAndName,
         checker: &Checker,
@@ -345,6 +377,7 @@ impl<'input> ApiUsageCollector<'input> {
             Ok(())
         })?;
         let mut lazy_crate_names = None;
+        let bin_path = self.bin.filename.clone();
         self.bin
             .names_and_apis_do(target, checker, |name, name_source, apis| {
                 // For the majority of references we expect no APIs to match. We defer computation
@@ -376,6 +409,8 @@ impl<'input> ApiUsageCollector<'input> {
                             crate_sel: crate_sel.clone(),
                             api: api.clone(),
                             usage: ApiUsage {
+                                bin_location,
+                                bin_path: bin_path.clone(),
                                 source_location: location.clone(),
                                 from: from.symbol_or_debug_name()?,
                                 to: target.symbol_or_debug_name()?,

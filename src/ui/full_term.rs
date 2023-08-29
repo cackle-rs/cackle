@@ -1,5 +1,6 @@
 //! A fullscreen terminal user interface.
 
+use crate::checker::Checker;
 use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
@@ -31,6 +32,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 mod problems_ui;
@@ -40,11 +42,13 @@ pub(crate) struct FullTermUi {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     abort_sender: Sender<()>,
     crate_index: Arc<CrateIndex>,
+    checker: Arc<Mutex<Checker>>,
 }
 
 impl FullTermUi {
     pub(crate) fn new(
         config_path: PathBuf,
+        checker: &Arc<Mutex<Checker>>,
         crate_index: Arc<CrateIndex>,
         abort_sender: Sender<()>,
     ) -> Result<Self> {
@@ -58,6 +62,7 @@ impl FullTermUi {
             terminal,
             abort_sender,
             crate_index,
+            checker: checker.clone(),
         })
     }
 }
@@ -71,6 +76,7 @@ impl super::UserInterface for FullTermUi {
         let mut screen = problems_ui::ProblemsUi::new(
             problem_store.clone(),
             self.crate_index.clone(),
+            self.checker.clone(),
             self.config_path.clone(),
         );
         let mut needs_redraw = true;

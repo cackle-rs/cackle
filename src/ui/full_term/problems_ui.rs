@@ -4,6 +4,8 @@ use super::centre_area;
 use super::render_list;
 use super::update_counter;
 use crate::checker::ApiUsage;
+use crate::checker::BinLocation;
+use crate::checker::Checker;
 use crate::config::CrateName;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
@@ -16,6 +18,7 @@ use crate::problem::Problem;
 use crate::problem_store::ProblemId;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreRef;
+use crate::symbol_graph::backtrace;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
@@ -46,6 +49,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::MutexGuard;
 
 mod diff;
@@ -58,16 +62,19 @@ pub(super) struct ProblemsUi {
     problem_index: usize,
     edit_index: usize,
     usage_index: usize,
+    backtrace_index: usize,
     config_path: PathBuf,
     accept_single_enabled: bool,
     show_package_details: bool,
+    checker: Arc<Mutex<Checker>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum Mode {
     SelectProblem,
     SelectEdit,
     SelectUsage,
+    Backtrace(Vec<backtrace::Frame>),
     PromptAutoAccept,
     ShowPackageTree,
     ShowInternalDiagnostics,
@@ -110,10 +117,19 @@ impl ProblemsUi {
                     self.render_edit_help_and_diff(f, middle);
                 }
                 Mode::SelectUsage => {
-                    self.render_usage_source(f, middle);
-                    if let Some(bottom) = chunks.get(2) {
-                        self.render_usage_details(f, *bottom);
+                    if !self
+                        .modes
+                        .iter()
+                        .any(|mode| matches!(mode, Mode::Backtrace(..)))
+                    {
+                        self.render_usage_source(f, middle);
+                        if let Some(bottom) = chunks.get(2) {
+                            self.render_usage_details(f, *bottom);
+                        }
                     }
+                }
+                Mode::Backtrace(frames) => {
+                    self.render_backtrace_source(frames, f, middle);
                 }
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::ShowPackageTree => self.render_package_tree(f),
@@ -144,6 +160,9 @@ impl ProblemsUi {
             (Mode::SelectUsage, KeyCode::Up | KeyCode::Down) => {
                 let num_usages = self.usages().len();
                 update_counter(&mut self.usage_index, key.code, num_usages);
+            }
+            (Mode::Backtrace(frames), KeyCode::Up | KeyCode::Down) => {
+                update_counter(&mut self.backtrace_index, key.code, frames.len());
             }
             (Mode::SelectProblem, KeyCode::Char('f')) => {
                 if self.edits().is_empty() {
@@ -177,6 +196,13 @@ impl ProblemsUi {
                 // We're showing details, jump over to showing edits.
                 self.modes.pop();
                 self.enter_edit_mode();
+            }
+            (Mode::SelectUsage, KeyCode::Char('b')) => {
+                self.backtrace_index = 0;
+                self.modes.push(Mode::Backtrace(self.backtrace()?));
+            }
+            (Mode::Backtrace(..), KeyCode::Char('b')) => {
+                self.modes.pop();
             }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
@@ -228,6 +254,7 @@ impl ProblemsUi {
     pub(super) fn new(
         problem_store: ProblemStoreRef,
         crate_index: Arc<CrateIndex>,
+        checker: Arc<Mutex<Checker>>,
         config_path: PathBuf,
     ) -> Self {
         Self {
@@ -237,9 +264,11 @@ impl ProblemsUi {
             problem_index: 0,
             edit_index: 0,
             usage_index: 0,
+            backtrace_index: 0,
             config_path,
             accept_single_enabled: false,
             show_package_details: true,
+            checker,
         }
     }
 
@@ -289,6 +318,10 @@ impl ProblemsUi {
         let mut items = Vec::new();
         let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
         let is_usage_mode = self.modes.contains(&Mode::SelectUsage);
+        let backtrace_frames = match self.modes.last() {
+            Some(Mode::Backtrace(frames)) => Some(frames),
+            _ => None,
+        };
         for (index, (_, problem)) in pstore_lock.deduplicated_into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
             if index == self.problem_index {
@@ -302,11 +335,16 @@ impl ProblemsUi {
                 } else if is_usage_mode {
                     let usages =
                         usages_for_problem(pstore_lock, self.problem_index, &self.crate_index);
-                    items.extend(
-                        usages
-                            .iter()
-                            .map(|usage| ListItem::new(format!("  {}", usage.list_display()))),
-                    );
+                    for (usage_index, usage) in usages.iter().enumerate() {
+                        items.push(ListItem::new(format!("  {}", usage.list_display())));
+                        if let Some(frames) = backtrace_frames {
+                            if usage_index == self.usage_index {
+                                for bt_frame in frames {
+                                    items.push(ListItem::new(format!("    {bt_frame}")));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -314,10 +352,15 @@ impl ProblemsUi {
         let title;
         if is_edit_mode {
             title = "Select edit";
-            index += self.edit_index + 1
+            index += self.edit_index + 1;
         } else if is_usage_mode {
-            title = "Select usage";
-            index += self.usage_index + 1
+            index += self.usage_index + 1;
+            if backtrace_frames.is_some() {
+                title = "Usage backtrace";
+                index += self.backtrace_index + 1;
+            } else {
+                title = "Select usage";
+            }
         } else {
             title = "Problems";
         }
@@ -328,7 +371,12 @@ impl ProblemsUi {
             items.into_iter(),
             matches!(
                 self.modes.last(),
-                Some(&Mode::SelectProblem | &Mode::SelectEdit | &Mode::SelectUsage)
+                Some(
+                    &Mode::SelectProblem
+                        | &Mode::SelectEdit
+                        | &Mode::SelectUsage
+                        | &Mode::Backtrace(..)
+                )
             ),
             area,
             index,
@@ -390,17 +438,30 @@ impl ProblemsUi {
             return;
         };
 
-        let source_location = usage.source_location();
-        let lines = usage_source_lines(source_location, (area.height as usize).saturating_sub(2))
-            .unwrap_or_else(error_lines);
+        render_source_location(usage.source_location(), area, f);
+    }
 
-        let block = Block::default()
-            .title(source_location.filename().display().to_string())
-            .borders(Borders::ALL);
-        let paragraph = Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false });
-        f.render_widget(paragraph, area);
+    fn render_backtrace_source(
+        &self,
+        frames: &[backtrace::Frame],
+        f: &mut Frame<CrosstermBackend<Stdout>>,
+        area: Rect,
+    ) {
+        let Some(frame) = frames.get(self.backtrace_index) else {
+            return;
+        };
+
+        if let Some(location) = frame.source_location.as_ref() {
+            render_source_location(location, area, f);
+        } else {
+            let block = Block::default()
+                .title("Missing source location")
+                .borders(Borders::ALL);
+            let paragraph = Paragraph::new("Debug info didn't have source location.")
+                .block(block)
+                .wrap(Wrap { trim: false });
+            f.render_widget(paragraph, area);
+        }
     }
 
     fn render_usage_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
@@ -531,6 +592,39 @@ impl ProblemsUi {
         };
         problem.pkg_id().cloned()
     }
+
+    fn backtrace(&self) -> Result<Vec<backtrace::Frame>> {
+        let usages = self.usages();
+        let Some(usage) = usages.get(self.usage_index) else {
+            bail!("Need a usage selected in order to get a backtrace");
+        };
+        let Some((bin_path, bin_location)) = usage.bin_location() else {
+            bail!("This kind of usage doesn't support backtracing");
+        };
+
+        let checker = self.checker.lock().unwrap();
+        let Some(backtracer) = checker.get_backtracer(bin_path) else {
+            bail!("No backtracer available for {}", bin_path.display());
+        };
+        backtracer.backtrace(bin_location)
+    }
+}
+
+fn render_source_location(
+    source_location: &SourceLocation,
+    area: Rect,
+    f: &mut Frame<CrosstermBackend<Stdout>>,
+) {
+    let lines = usage_source_lines(source_location, (area.height as usize).saturating_sub(2))
+        .unwrap_or_else(error_lines);
+
+    let block = Block::default()
+        .title(source_location.filename().display().to_string())
+        .borders(Borders::ALL);
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
 }
 
 fn error_lines(error: anyhow::Error) -> Vec<Line<'static>> {
@@ -650,6 +744,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             keys.extend([
                 ("up", "Select previous usage"),
                 ("down", "Select next usage"),
+                ("b", "Show backtrace for this usage (API only)"),
                 ("f", "Jump to edits for the current problem"),
                 ("d/esc", "Return to problem list"),
                 ("i", "Show internal diagnostics (requires --debug)"),
@@ -782,6 +877,10 @@ trait DisplayUsage {
     fn details(&self) -> Vec<(&'static str, String)> {
         vec![]
     }
+
+    fn bin_location(&self) -> Option<(&Path, BinLocation)> {
+        None
+    }
 }
 
 impl DisplayUsage for ApiUsage {
@@ -805,6 +904,10 @@ impl DisplayUsage for ApiUsage {
             ("To", self.to.to_string()),
             ("Matched name", self.to_name.to_string()),
         ]
+    }
+
+    fn bin_location(&self) -> Option<(&Path, BinLocation)> {
+        Some((&self.bin_path, self.bin_location))
     }
 }
 

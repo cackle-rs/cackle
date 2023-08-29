@@ -215,18 +215,19 @@ impl Cackle {
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
         let target_dir = root_path.join("target");
         let tmpdir = Arc::new(tempfile::TempDir::new()?);
-        let checker = Checker::new(
+        let checker = Arc::new(Mutex::new(Checker::new(
             tmpdir.clone(),
             target_dir.clone(),
             args.clone(),
             crate_index.clone(),
             config_path.clone(),
-        );
+        )));
         let (event_sender, event_receiver) = std::sync::mpsc::channel();
         let problem_store = crate::problem_store::create(event_sender.clone());
         let ui_join_handle = ui::start_ui(
             &args,
             &config_path,
+            &checker,
             problem_store.clone(),
             crate_index.clone(),
             event_receiver,
@@ -236,7 +237,7 @@ impl Cackle {
             problem_store,
             root_path,
             config_path,
-            checker: Arc::new(Mutex::new(checker)),
+            checker,
             args,
             event_sender,
             ui_join_handle,

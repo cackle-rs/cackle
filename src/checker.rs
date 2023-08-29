@@ -18,6 +18,7 @@ use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
+use crate::symbol_graph::backtrace::Backtracer;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
 use crate::timing::TimingCollector;
@@ -56,6 +57,8 @@ pub(crate) struct Checker {
     path_to_crate: FxHashMap<PathBuf, Vec<CrateSel>>,
 
     pub(crate) timings: TimingCollector,
+
+    backtracers: FxHashMap<Arc<Path>, Backtracer>,
 }
 
 #[derive(Default, Debug)]
@@ -70,12 +73,22 @@ pub(crate) struct CrateInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ApiUsage {
+    pub(crate) bin_location: BinLocation,
+    pub(crate) bin_path: Arc<Path>,
     pub(crate) source_location: SourceLocation,
     pub(crate) from: SymbolOrDebugName,
     pub(crate) to: SymbolOrDebugName,
     pub(crate) to_name: Name,
     pub(crate) to_source: NameSource<'static>,
     pub(crate) debug_data: Option<UsageDebugData>,
+}
+
+/// A location within a bin file (executable or shared object).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct BinLocation {
+    pub(crate) address: u64,
+    /// The address of the start of the symbol (or section) containing `address`.
+    pub(crate) symbol_start: u64,
 }
 
 impl Checker {
@@ -98,6 +111,7 @@ impl Checker {
             crate_index,
             path_to_crate: Default::default(),
             timings,
+            backtracers: Default::default(),
         }
     }
 
@@ -125,6 +139,10 @@ impl Checker {
 
     pub(crate) fn print_timing(&self) {
         println!("{}", self.timings);
+    }
+
+    pub(crate) fn get_backtracer(&self, bin_path: &Path) -> Option<&Backtracer> {
+        self.backtracers.get(bin_path)
     }
 
     fn update_config(&mut self, config: Arc<Config>) {
@@ -248,9 +266,12 @@ impl Checker {
             check_state.graph_outputs = None;
         }
         if check_state.graph_outputs.is_none() {
-            let mut graph_outputs = crate::symbol_graph::scan_objects(paths, exe_path, self)?;
+            let exe_path = Arc::from(exe_path);
+            let (mut graph_outputs, backtracer) =
+                crate::symbol_graph::scan_objects(paths, &exe_path, self)?;
             graph_outputs.apis = self.config.apis.clone();
             check_state.graph_outputs = Some(graph_outputs);
+            self.backtracers.insert(exe_path.clone(), backtracer);
         }
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
         let problems = graph_outputs.problems(self)?;
@@ -539,6 +560,11 @@ mod tests {
                 crate_sel: crate_sel.clone(),
                 api_name: api,
                 usages: vec![ApiUsage {
+                    bin_location: BinLocation {
+                        address: 0,
+                        symbol_start: 0,
+                    },
+                    bin_path: Arc::from(Path::new("bin")),
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
                     from: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
                     to_name: crate::names::split_simple("foo::bar"),
