@@ -449,7 +449,7 @@ fn test_crate_index() {
         &index,
         "crab_bin",
         &[
-            "crab1", "crab2", "crab3", "crab4", "crab6", "crab7", "crab8", "res1",
+            "crab1", "crab2", "crab3", "crab4", "crab5", "crab6", "crab7", "crab8", "res1",
         ],
     );
 }

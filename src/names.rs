@@ -44,6 +44,13 @@ impl Name {
     pub(crate) fn parts(&self) -> impl Iterator<Item = &str> {
         self.parts.iter().map(|p| p.as_ref())
     }
+
+    pub(crate) fn starts_with(&self, prefix: &str) -> bool {
+        self.parts
+            .first()
+            .map(|name_start| prefix == &**name_start)
+            .unwrap_or(false)
+    }
 }
 
 impl Namespace {

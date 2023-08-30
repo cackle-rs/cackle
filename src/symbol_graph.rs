@@ -199,7 +199,14 @@ fn scan_object_with_bin_bytes(
         } else {
             None
         };
-        collector.process_reference(f.bin_location, &from, &f.to, checker, debug_data.as_ref())?;
+        collector.process_reference(
+            f.bin_location,
+            None,
+            &from,
+            &f.to,
+            checker,
+            debug_data.as_ref(),
+        )?;
     }
     let start = checker
         .timings
@@ -338,6 +345,15 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                     names: self.bin.get_symbol_and_name(from_symbol),
                     location_fetcher,
                 };
+                let mut non_inlined_from = None;
+                if frame_symbol.as_ref() != Some(&first_sym_info.symbol) {
+                    non_inlined_from = Some(Node {
+                        names: self.bin.get_symbol_and_name(&first_sym_info.symbol),
+                        location_fetcher: LocationFetcher::AlreadyResolved(
+                            &fallback_source_location,
+                        ),
+                    });
+                }
                 for target_symbol in target_symbols {
                     if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol) {
                         self.backtracer.add_reference(bin_location, *target_address);
@@ -345,6 +361,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                     let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
                         bin_location,
+                        non_inlined_from.as_ref(),
                         &from,
                         &target,
                         checker,
@@ -359,6 +376,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
     fn process_reference(
         &mut self,
         bin_location: BinLocation,
+        non_inlined_from: Option<&Node>,
         from: &Node,
         target: &SymbolAndName,
         checker: &Checker,
@@ -393,18 +411,16 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                     let crate_name = CrateName::from(crate_sel);
                     // If a package references another symbol within the same package,
                     // ignore it.
-                    if name
-                        .parts
-                        .first()
-                        .map(|name_start| crate_name.as_ref() == &**name_start)
-                        .unwrap_or(false)
-                    {
+                    if name.starts_with(crate_name.as_ref()) {
                         continue;
                     }
                     for api in apis {
                         if from_apis.contains(&api) {
                             continue;
                         }
+                        let outer_location = non_inlined_from
+                            .map(|n| n.location_fetcher.location())
+                            .transpose()?;
                         let api_usage = SingleApiUsage {
                             crate_sel: crate_sel.clone(),
                             api: api.clone(),
@@ -412,6 +428,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                                 bin_location,
                                 bin_path: bin_path.clone(),
                                 source_location: location.clone(),
+                                outer_location,
                                 from: from.names.symbol_or_debug_name()?,
                                 to: target.symbol_or_debug_name()?,
                                 to_name: name.clone(),
@@ -516,7 +533,9 @@ enum LocationFetcher<'a> {
         fallback: &'a SourceLocation,
     },
     InlinedFunction(&'a dwarf::CallLocation<'a>),
+    AlreadyResolved(&'a SourceLocation),
 }
+
 impl<'a> LocationFetcher<'a> {
     fn location(&self) -> Result<SourceLocation> {
         match self {
@@ -528,6 +547,7 @@ impl<'a> LocationFetcher<'a> {
                 .and_then(|l| l.try_into().ok())
                 .unwrap_or_else(|| (*fallback).clone())),
             LocationFetcher::InlinedFunction(call_location) => call_location.location(),
+            LocationFetcher::AlreadyResolved(location) => Ok((*location).clone()),
         }
     }
 }

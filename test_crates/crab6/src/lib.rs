@@ -2,6 +2,9 @@
 
 use std::ops::Deref;
 
+pub use crab5::MacroCallsite;
+pub use crab5::Metadata;
+
 pub fn add(left: u32, right: u32) -> u32 {
     left + right
 }
@@ -29,6 +32,20 @@ macro_rules! impl_foo {
             }
         }
     };
+}
+
+/// This macro, together with some code in crab5, reproduces a minimal subset of a structure present
+/// in the tracing/tracing-core crates. If the debug macro is invoked from another crate, say res1,
+/// then we observe a reference `crab5::MacroCallsite::metadata -> res1::print_something::CALLSITE`.
+/// If `res1` is a restricted API, then crab5 is flagged as using that restricted API, even though
+/// it cannot, since crab5 doesn't depend on res1.
+#[macro_export]
+macro_rules! debug {
+    () => {{
+        static META: $crate::Metadata = $crate::Metadata;
+        static CALLSITE: $crate::MacroCallsite = $crate::MacroCallsite::new(&META);
+        let meta = CALLSITE.metadata();
+    }};
 }
 
 #[cfg(test)]

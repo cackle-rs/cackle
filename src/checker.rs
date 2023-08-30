@@ -76,6 +76,8 @@ pub(crate) struct ApiUsage {
     pub(crate) bin_location: BinLocation,
     pub(crate) bin_path: Arc<Path>,
     pub(crate) source_location: SourceLocation,
+    /// The source location of the outer (non-inlined) function or variable.
+    pub(crate) outer_location: Option<SourceLocation>,
     pub(crate) from: SymbolOrDebugName,
     pub(crate) to: SymbolOrDebugName,
     pub(crate) to_name: Name,
@@ -369,7 +371,19 @@ impl Checker {
                 if let Some(first_name_part) = usage.to_name.parts.first() {
                     if !crate_deps.contains(first_name_part) {
                         if let Some(pkg_id) = all_deps.get(first_name_part) {
-                            off_tree.entry(pkg_id).or_default().push(usage.clone());
+                            // If we detect an off-tree usage where the outer function/variable is
+                            // defined by crate that also defined the restricted API that's being
+                            // accessed, then we ignore it completely.
+                            //
+                            // This can happen if for example a macro defines a variable that is
+                            // then referenced by an inlined function. The macro and the inlined
+                            // function can both be from leaf crates, while the code calling the
+                            // macro is from a higher level crate that provides a restricted API.
+                            // The end effect is that it looks like the inlined function is
+                            // referencing the restricted API.
+                            if !self.is_to_name_from_outer_location(usage)? {
+                                off_tree.entry(pkg_id).or_default().push(usage.clone());
+                            }
                             continue;
                         }
                     }
@@ -392,6 +406,23 @@ impl Checker {
             problems.push(Problem::DisallowedApiUsage(api_usage.with_usages(on_tree)));
         }
         Ok(())
+    }
+
+    /// Returns whether the to-name of `usage` starts with a crate name that matches the package
+    /// that defined the outer location of the usage.
+    fn is_to_name_from_outer_location(&self, usage: &ApiUsage) -> Result<bool> {
+        if let Some(outer_location) = usage.outer_location.as_ref() {
+            for crate_sel in self
+                .crate_names_from_source_path(outer_location.filename())?
+                .as_ref()
+            {
+                let crate_name = CrateName::from(crate_sel);
+                if usage.to_name.starts_with(crate_name.as_ref()) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     pub(crate) fn check_unused(&self) -> ProblemList {
@@ -564,6 +595,7 @@ mod tests {
                     },
                     bin_path: Arc::from(Path::new("bin")),
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
+                    outer_location: None,
                     from: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
                     to_name: crate::names::split_simple("foo::bar"),
                     to: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),

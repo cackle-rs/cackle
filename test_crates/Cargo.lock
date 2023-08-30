@@ -64,6 +64,9 @@ version = "0.1.0"
 [[package]]
 name = "crab6"
 version = "0.1.0"
+dependencies = [
+ "crab5",
+]
 
 [[package]]
 name = "crab7"

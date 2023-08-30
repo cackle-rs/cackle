@@ -6,4 +6,5 @@ impl_foo!(Res);
 pub fn print_something() {
     let r = Res {};
     r.foo2();
+    crab6::debug!();
 }
