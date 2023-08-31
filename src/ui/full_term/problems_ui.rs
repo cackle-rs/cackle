@@ -201,7 +201,7 @@ impl ProblemsUi {
                 self.backtrace_index = 0;
                 self.modes.push(Mode::Backtrace(self.backtrace()?));
             }
-            (Mode::Backtrace(..), KeyCode::Char('b')) => {
+            (Mode::Backtrace(..), KeyCode::Char('b' | 'd')) => {
                 self.modes.pop();
             }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
