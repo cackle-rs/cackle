@@ -337,3 +337,21 @@ allow_apis = [
     "fs",
     "process",
 ]
+
+[pkg.strum_macros]
+allow_proc_macro = true
+
+[pkg.rustversion]
+allow_proc_macro = true
+
+[pkg.rustversion.build]
+allow_apis = [
+    "fs",
+    "process",
+]
+
+[pkg.either]
+allow_unsafe = true
+
+[pkg.itertools]
+allow_unsafe = true
