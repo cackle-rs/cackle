@@ -114,8 +114,14 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
             edits.push(Box::new(NoDetectApi(info.clone())));
         }
         Problem::OffTreeApiUsage(info) => {
-            for prefix in &info.common_prefixes {
+            for prefix in &info.common_from_prefixes {
                 edits.push(Box::new(ExtendApi {
+                    api: info.usages.api_name.clone(),
+                    api_path: ApiPath::from_str(prefix),
+                }));
+            }
+            for prefix in &info.common_to_prefixes {
+                edits.push(Box::new(ExcludeFromApi {
                     api: info.usages.api_name.clone(),
                     api_path: ApiPath::from_str(prefix),
                 }));
@@ -578,7 +584,7 @@ struct ExtendApi {
 
 impl Edit for ExtendApi {
     fn title(&self) -> String {
-        format!("Extend API `{}` with `{}`", self.api, self.api_path)
+        format!("Include `{}` in API `{}`", self.api_path, self.api)
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -592,6 +598,31 @@ impl Edit for ExtendApi {
     fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
         let table = editor.table(["api", self.api.name.as_ref()].into_iter())?;
         add_to_array(table, "include", &[&self.api_path])?;
+        Ok(())
+    }
+}
+
+struct ExcludeFromApi {
+    api: ApiName,
+    api_path: ApiPath,
+}
+
+impl Edit for ExcludeFromApi {
+    fn title(&self) -> String {
+        format!("Exclude `{}` from API `{}`", self.api_path, self.api)
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        format!(
+            "Don't classify paths starting with `{}` as the API `{}`",
+            self.api_path, self.api
+        )
+        .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+        let table = editor.table(["api", self.api.name.as_ref()].into_iter())?;
+        add_to_array(table, "exclude", &[&self.api_path])?;
         Ok(())
     }
 }

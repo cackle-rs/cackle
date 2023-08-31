@@ -68,7 +68,8 @@ pub(crate) struct ApiUsages {
 pub(crate) struct OffTreeApiUsage {
     pub(crate) usages: ApiUsages,
     pub(crate) referenced_pkg_id: PackageId,
-    pub(crate) common_prefixes: Vec<String>,
+    pub(crate) common_from_prefixes: Vec<String>,
+    pub(crate) common_to_prefixes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -98,6 +99,7 @@ pub(crate) struct PossibleExportedApi {
     pub(crate) api: ApiName,
     pub(crate) symbol: Symbol<'static>,
 }
+
 impl PossibleExportedApi {
     pub(crate) fn api_path(&self) -> ApiPath {
         ApiPath {
