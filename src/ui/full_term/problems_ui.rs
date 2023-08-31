@@ -1051,7 +1051,9 @@ fn problem_details(problem: &Problem) -> String {
             format!(
                 "Although `{pkg}` doesn't depend on `{non_dep}`, we found code that used the \
                 `{api}` API. Most likely there's a generic parameter being used that allows \
-                access to this API, but which hasn't been declared as belonging to this API."
+                access to this API, but which hasn't been declared as belonging to this API. \
+                It can also be due to a false-positive when a macro defines a symbol, then \
+                an inlined function references that symbol."
             )
         }
         _ => {
