@@ -420,10 +420,10 @@ impl Checker {
 
     fn record_crate_paths(&mut self, info: &rpc::RustcOutput) -> Result<()> {
         for path in &info.source_paths {
-            self.path_to_crate
-                .entry(path.to_owned())
-                .or_default()
-                .push(info.crate_sel.clone());
+            let selectors = &mut self.path_to_crate.entry(path.to_owned()).or_default();
+            if !selectors.contains(&info.crate_sel) {
+                selectors.push(info.crate_sel.clone());
+            }
         }
         Ok(())
     }
