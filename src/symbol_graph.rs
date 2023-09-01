@@ -16,7 +16,6 @@ use crate::config::ApiName;
 use crate::config::CrateName;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
-use crate::lazy::Lazy;
 use crate::location::SourceLocation;
 use crate::names::DebugName;
 use crate::names::Name;
@@ -188,7 +187,7 @@ fn scan_object_with_bin_bytes(
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for f in debug_artifacts.inlined_functions {
-        let mut lazy_location = crate::lazy::lazy(|| f.location());
+        let location_fetcher = LocationFetcher::InlinedFunction(&f);
         let debug_data = if checker.args.debug {
             Some(UsageDebugData::Inlined(InlinedDebugData::from_offset(
                 Some(f.bin_location.address),
@@ -202,7 +201,7 @@ fn scan_object_with_bin_bytes(
             &f.from,
             &f.to,
             checker,
-            &mut lazy_location,
+            &location_fetcher,
             debug_data.as_ref(),
         )?;
     }
@@ -326,11 +325,10 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                     .next()?
                     .map(|frame| (frame.function, frame.location))
                     .unwrap_or((None, None));
-                let mut lazy_location = crate::lazy::lazy(|| {
-                    Ok(frame_location
-                        .and_then(|l| l.try_into().ok())
-                        .unwrap_or_else(|| fallback_source_location.clone()))
-                });
+                let location_fetcher = LocationFetcher::FrameWithFallback {
+                    frame_location,
+                    fallback: &fallback_source_location,
+                };
                 let frame_symbol = frame_fn_name
                     .as_ref()
                     .map(|fn_name| Symbol::borrowed(&fn_name.name));
@@ -351,7 +349,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                         &from,
                         &target,
                         checker,
-                        &mut lazy_location,
+                        &location_fetcher,
                         debug_data.as_ref(),
                     )?;
                 }
@@ -366,7 +364,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
         from: &SymbolAndName,
         target: &SymbolAndName,
         checker: &Checker,
-        lazy_location: &mut impl Lazy<SourceLocation>,
+        location_fetcher: &LocationFetcher,
         debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
         trace!("{from} -> {target}");
@@ -376,13 +374,17 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
             from_apis.extend(apis.iter());
             Ok(())
         })?;
+        let mut lazy_location = None;
         let mut lazy_crate_names = None;
         let bin_path = self.bin.filename.clone();
         self.bin
             .names_and_apis_do(target, checker, |name, name_source, apis| {
                 // For the majority of references we expect no APIs to match. We defer computation
                 // of a source location and crate names until we know that an API matched.
-                let location = lazy_location.get()?;
+                if lazy_location.is_none() {
+                    lazy_location = Some(location_fetcher.location()?);
+                }
+                let location = lazy_location.as_ref().unwrap();
                 if lazy_crate_names.is_none() {
                     lazy_crate_names =
                         Some(checker.crate_names_from_source_path(location.filename())?);
@@ -501,6 +503,28 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                         });
                 }
             }
+        }
+    }
+}
+
+enum LocationFetcher<'a> {
+    FrameWithFallback {
+        frame_location: Option<addr2line::Location<'a>>,
+        fallback: &'a SourceLocation,
+    },
+    InlinedFunction(&'a dwarf::InlinedFunction<'a>),
+}
+impl<'a> LocationFetcher<'a> {
+    fn location(&self) -> Result<SourceLocation> {
+        match self {
+            LocationFetcher::FrameWithFallback {
+                frame_location,
+                fallback,
+            } => Ok(frame_location
+                .as_ref()
+                .and_then(|l| l.try_into().ok())
+                .unwrap_or_else(|| (*fallback).clone())),
+            LocationFetcher::InlinedFunction(inlined_function) => inlined_function.location(),
         }
     }
 }
@@ -635,9 +659,9 @@ impl<'symbol, 'input: 'symbol> BinInfo<'input> {
     }
 }
 
-impl<'a> TryFrom<addr2line::Location<'a>> for SourceLocation {
+impl<'a> TryFrom<&addr2line::Location<'a>> for SourceLocation {
     type Error = ();
-    fn try_from(value: addr2line::Location) -> std::result::Result<Self, ()> {
+    fn try_from(value: &addr2line::Location) -> std::result::Result<Self, ()> {
         let addr2line::Location {
             file: Some(file),
             line: Some(line),
@@ -646,7 +670,7 @@ impl<'a> TryFrom<addr2line::Location<'a>> for SourceLocation {
         else {
             return Err(());
         };
-        Ok(SourceLocation::new(Path::new(file), line, column))
+        Ok(SourceLocation::new(Path::new(file), *line, *column))
     }
 }
 

@@ -68,7 +68,7 @@ impl Backtracer {
                     .unwrap_or_else(|| "??".to_owned());
                 let source_location = frame
                     .location
-                    .and_then(|location| SourceLocation::try_from(location).ok());
+                    .and_then(|location| SourceLocation::try_from(&location).ok());
                 if first {
                     first = false;
                 } else {
