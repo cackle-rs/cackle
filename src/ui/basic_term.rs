@@ -63,7 +63,7 @@ impl super::UserInterface for BasicTermUi {
                     continue;
                 }
                 println!("{problem}");
-                let fixes = config_editor::fixes_for_problem(problem);
+                let fixes = config_editor::fixes_for_problem(problem, None);
                 // We don't want to hold the mutex for any significant time, so we drop it now
                 // that we're done with `problem`, which was the only thing borrowed from the
                 // store. We certainly don't want to hold the lock while we prompt for user

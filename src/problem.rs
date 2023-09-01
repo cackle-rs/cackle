@@ -69,7 +69,6 @@ pub(crate) struct OffTreeApiUsage {
     pub(crate) usages: ApiUsages,
     pub(crate) referenced_pkg_id: PackageId,
     pub(crate) common_from_prefixes: Vec<String>,
-    pub(crate) common_to_prefixes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

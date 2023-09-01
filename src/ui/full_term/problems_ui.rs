@@ -6,6 +6,7 @@ use super::update_counter;
 use crate::checker::ApiUsage;
 use crate::checker::BinLocation;
 use crate::checker::Checker;
+use crate::config::Config;
 use crate::config::CrateName;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
@@ -286,7 +287,7 @@ impl ProblemsUi {
             pstore
                 .deduplicated_into_iter()
                 .find_map(|(index, problem)| {
-                    let mut edits = config_editor::fixes_for_problem(problem);
+                    let mut edits = config_editor::fixes_for_problem(problem, None);
                     if edits.len() == 1 {
                         Some((index, edits.pop().unwrap()))
                     } else {
@@ -322,11 +323,12 @@ impl ProblemsUi {
             Some(Mode::Backtrace(frames)) => Some(frames),
             _ => None,
         };
+        let config = self.checker.lock().unwrap().config.clone();
         for (index, (_, problem)) in pstore_lock.deduplicated_into_iter().enumerate() {
             items.push(ListItem::new(format!("{problem}")));
             if index == self.problem_index {
                 if is_edit_mode {
-                    let edits = edits_for_problem(pstore_lock, self.problem_index);
+                    let edits = edits_for_problem(pstore_lock, self.problem_index, &config);
                     items.extend(
                         edits
                             .iter()
@@ -406,7 +408,8 @@ impl ProblemsUi {
     }
 
     fn edits(&self) -> Vec<Box<dyn Edit>> {
-        edits_for_problem(&self.problem_store.lock(), self.problem_index)
+        let config = self.checker.lock().unwrap().config.clone();
+        edits_for_problem(&self.problem_store.lock(), self.problem_index, &config)
     }
 
     fn usages(&self) -> Vec<Box<dyn DisplayUsage>> {
@@ -509,7 +512,8 @@ impl ProblemsUi {
     /// Applies the currently selected edit and resolves the problem that produced that edit.
     fn apply_selected_edit(&self) -> Result<()> {
         let mut pstore_lock = self.problem_store.lock();
-        let edits = edits_for_problem(&pstore_lock, self.problem_index);
+        let config = self.checker.lock().unwrap().config.clone();
+        let edits = edits_for_problem(&pstore_lock, self.problem_index, &config);
         let Some(edit) = edits.get(self.edit_index) else {
             return Ok(());
         };
@@ -820,11 +824,12 @@ fn active_block() -> Block<'static> {
 fn edits_for_problem(
     pstore_lock: &MutexGuard<ProblemStore>,
     problem_index: usize,
+    config: &Config,
 ) -> Vec<Box<dyn Edit>> {
     let Some((_, problem)) = pstore_lock.deduplicated_into_iter().nth(problem_index) else {
         return Vec::new();
     };
-    config_editor::fixes_for_problem(problem)
+    config_editor::fixes_for_problem(problem, Some(config))
 }
 
 fn usages_for_problem(

@@ -1,7 +1,9 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
+use crate::checker::common_prefix::common_to_prefixes;
 use crate::config::ApiName;
 use crate::config::ApiPath;
+use crate::config::Config;
 use crate::config::CrateName;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
@@ -50,8 +52,9 @@ pub(crate) trait Edit {
     }
 }
 
-/// Returns possible fixes for `problem`.
-pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
+/// Returns possible fixes for `problem`. The applicability of some fixes depends on the current
+/// configuration. Such fixes will only be available if `config` is supplied.
+pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> Vec<Box<dyn Edit>> {
     let mut edits: Vec<Box<dyn Edit>> = Vec::new();
     match problem {
         Problem::MissingConfiguration(_) => {
@@ -120,11 +123,10 @@ pub(crate) fn fixes_for_problem(problem: &Problem) -> Vec<Box<dyn Edit>> {
                     api_path: ApiPath::from_str(prefix),
                 }));
             }
-            for prefix in &info.common_to_prefixes {
-                edits.push(Box::new(ExcludeFromApi {
-                    api: info.usages.api_name.clone(),
-                    api_path: ApiPath::from_str(prefix),
-                }));
+            if let Some(config) = config {
+                // Ignore errors while adding excludes. Any errors here will likely already have shown
+                // up elsewhere and it seems nicer to just degrade to not show those edits.
+                let _ = info.usages.add_exclude_fixes(&mut edits, config);
             }
             edits.push(Box::new(AllowApiUsage {
                 usage: info.usages.clone(),
@@ -258,6 +260,42 @@ impl ConfigEditor {
         };
         self.table(["sandbox"].into_iter())?
             .insert("kind", toml_edit::value(sandbox_kind));
+        Ok(())
+    }
+}
+
+impl ApiUsages {
+    fn add_exclude_fixes(&self, edits: &mut Vec<Box<dyn Edit>>, config: &Config) -> Result<()> {
+        let api_config = config
+            .apis
+            .get(&self.api_name)
+            .ok_or_else(|| anyhow!("Missing API config for `{}`", self.api_name))?;
+        let common_to_prefixes = common_to_prefixes(self)?;
+        for prefix in common_to_prefixes {
+            if api_config
+                .include
+                .iter()
+                .any(|inc| inc.prefix.as_ref() == prefix)
+            {
+                // Adding an exclude that exactly matches an include doesn't make sense - you'd be
+                // better off removing the include instead.
+                continue;
+            }
+            // Only propose excluding a path if it's an extension of an existing inclusion. e.g. if
+            // we have an include of `std::path` then we can exclude `std::path::Path`, but not
+            // `std::collections::HashMap`.
+            if api_config.include.iter().any(|inc| {
+                prefix
+                    .strip_prefix(inc.prefix.as_ref())
+                    .map(|remaining| remaining.starts_with("::"))
+                    .unwrap_or(false)
+            }) {
+                edits.push(Box::new(ExcludeFromApi {
+                    api: self.api_name.clone(),
+                    api_path: ApiPath::from_str(&prefix),
+                }));
+            }
+        }
         Ok(())
     }
 }
@@ -925,7 +963,7 @@ mod tests {
     fn check(initial_config: &str, problems: &[(usize, Problem)], expected: &str) {
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
         for (index, problem) in problems {
-            let edit = &fixes_for_problem(problem)[*index];
+            let edit = &fixes_for_problem(problem, None)[*index];
             edit.apply(&mut editor).unwrap();
         }
         assert_eq!(editor.to_toml(), expected);
