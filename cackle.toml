@@ -355,3 +355,6 @@ allow_unsafe = true
 
 [pkg.itertools]
 allow_unsafe = true
+
+[pkg.tui-input]
+allow_unsafe = true

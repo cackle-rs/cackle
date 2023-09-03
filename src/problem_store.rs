@@ -100,7 +100,9 @@ impl ProblemStore {
                     continue;
                 }
                 let mut editor_copy = editor.clone();
-                if edit.apply(&mut editor_copy).is_ok() && editor_copy.to_toml() == current_toml {
+                if edit.apply(&mut editor_copy, &Default::default()).is_ok()
+                    && editor_copy.to_toml() == current_toml
+                {
                     empty_indexes.push(index);
                     info!(
                         "Resolved problem ({problem}) because diff for edit ({edit}) became empty"

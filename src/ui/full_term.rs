@@ -91,6 +91,11 @@ impl super::UserInterface for FullTermUi {
                 let _ = self.abort_sender.send(());
             }
             if needs_redraw {
+                if screen.needs_cursor() {
+                    self.terminal.show_cursor()?;
+                } else {
+                    self.terminal.hide_cursor()?;
+                }
                 self.terminal.draw(|f| {
                     screen.render(f);
                     if let Some(e) = error.as_ref() {

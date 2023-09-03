@@ -36,7 +36,7 @@ pub(crate) trait Edit {
     fn help(&self) -> Cow<'static, str>;
 
     /// Applies the edit to the editor.
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()>;
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()>;
 
     /// Returns a list of problems that should replace the current problem after this edit is
     /// applied. This can be used for follow-up actions that need to be performed in order to solve
@@ -50,6 +50,13 @@ pub(crate) trait Edit {
     fn resolve_problem_if_edit_is_empty(&self) -> bool {
         true
     }
+}
+
+#[derive(Default)]
+pub(crate) struct EditOpts {
+    /// A comment that the user requested be attached to an edit. Not all edits support adding
+    /// comments.
+    pub(crate) comment: Option<String>,
 }
 
 /// Returns possible fixes for `problem`. The applicability of some fixes depends on the current
@@ -246,7 +253,7 @@ impl ConfigEditor {
         if let Some((index, _)) = existing {
             imports.remove(index);
         } else {
-            imports.push_formatted(create_string(api.to_string()));
+            imports.push_formatted(create_string(api.to_string(), None));
         }
         Ok(())
     }
@@ -365,7 +372,7 @@ impl Edit for CreateCustomConfig {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         editor.set_version(crate::config::MAX_VERSION)
     }
 
@@ -392,7 +399,7 @@ impl Edit for CreateRecommendedConfig {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         editor.set_version(crate::config::MAX_VERSION)?;
         editor.toggle_std_import("fs")?;
         editor.toggle_std_import("net")?;
@@ -422,7 +429,7 @@ impl Edit for SelectSandbox {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         editor.set_sandbox_kind(self.0)
     }
 }
@@ -440,7 +447,7 @@ impl Edit for ImportStdApi {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         editor.toggle_std_import(self.0.name.borrow())
     }
 }
@@ -463,9 +470,14 @@ impl Edit for ImportApi {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
-        add_to_array(table, "import", &[&self.0.api.name])
+        add_to_array(
+            table,
+            "import",
+            &[&self.0.api.name],
+            opts.comment.as_deref(),
+        )
     }
 }
 
@@ -484,14 +496,14 @@ impl Edit for InlineStdApi {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         let table = editor.table(["api", self.0.name.as_ref()].into_iter())?;
         let built_ins = crate::config::built_in::get_built_ins();
         let api_config = built_ins
             .get(&self.0)
             .ok_or_else(|| anyhow!("Attempted to inline unknown API `{}`", self.0))?;
-        add_to_array(table, "include", &api_config.include)?;
-        add_to_array(table, "exclude", &api_config.exclude)?;
+        add_to_array(table, "include", &api_config.include, None)?;
+        add_to_array(table, "exclude", &api_config.exclude, None)?;
         Ok(())
     }
 }
@@ -516,12 +528,12 @@ impl Edit for InlineApi {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
-        add_to_array(table, "include", &self.0.config.include)?;
-        add_to_array(table, "exclude", &self.0.config.exclude)?;
+        add_to_array(table, "include", &self.0.config.include, None)?;
+        add_to_array(table, "exclude", &self.0.config.exclude, None)?;
         // We also need to ignore it, otherwise we'll keep warning about it.
-        IgnoreApi(self.0.clone()).apply(editor)
+        IgnoreApi(self.0.clone()).apply(editor, &Default::default())
     }
 }
 
@@ -529,6 +541,7 @@ fn add_to_array<S: AsRef<str>>(
     table: &mut toml_edit::Table,
     array_name: &str,
     values: &[S],
+    comment: Option<&str>,
 ) -> Result<()> {
     if values.is_empty() {
         return Ok(());
@@ -558,7 +571,7 @@ fn add_to_array<S: AsRef<str>>(
             // Value is already present in the array.
             continue;
         }
-        array.insert_formatted(index, create_string(value));
+        array.insert_formatted(index, create_string(value, comment));
     }
     Ok(())
 }
@@ -576,7 +589,7 @@ impl Edit for IgnoreStdApi {
             .into()
     }
 
-    fn apply(&self, _editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, _editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         Ok(())
     }
 
@@ -602,7 +615,7 @@ impl Edit for IgnoreApi {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         // Make sure the `import` table exists, otherwise we'll continue to warn about unused
         // imports.
         let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
@@ -633,9 +646,9 @@ impl Edit for ExtendApi {
         .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.table(["api", self.api.name.as_ref()].into_iter())?;
-        add_to_array(table, "include", &[&self.api_path])?;
+        add_to_array(table, "include", &[&self.api_path], opts.comment.as_deref())?;
         Ok(())
     }
 }
@@ -658,9 +671,9 @@ impl Edit for ExcludeFromApi {
         .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.table(["api", self.api.name.as_ref()].into_iter())?;
-        add_to_array(table, "exclude", &[&self.api_path])?;
+        add_to_array(table, "exclude", &[&self.api_path], opts.comment.as_deref())?;
         Ok(())
     }
 }
@@ -686,9 +699,14 @@ impl Edit for NoDetectApi {
         .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.table(["api", self.0.api.name.as_ref()].into_iter())?;
-        add_to_array(table, "no_auto_detect", &[self.0.pkg_id.name()])?;
+        add_to_array(
+            table,
+            "no_auto_detect",
+            &[self.0.pkg_id.name()],
+            opts.comment.as_deref(),
+        )?;
         Ok(())
     }
 }
@@ -710,9 +728,14 @@ impl Edit for AllowApiUsage {
         "Allow this package to use the specified category of API.".into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&CrateName::from(&self.usage.crate_sel))?;
-        add_to_array(table, "allow_apis", &[&self.usage.api_name])
+        add_to_array(
+            table,
+            "allow_apis",
+            &[&self.usage.api_name],
+            opts.comment.as_deref(),
+        )
     }
 }
 
@@ -729,7 +752,7 @@ impl Edit for RemoveUnusedAllowApis {
         "Remove these APIs from the list of APIs that this package is allowed to used.".into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         let Some(table) = editor.opt_pkg_table(&self.unused.crate_name)? else {
             return Ok(());
         };
@@ -765,7 +788,7 @@ impl Edit for RemoveUnusedPkgConfig {
         "Remove the configuration for this package.".into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         let mut path: Vec<_> = pkg_path(&self.crate_name).collect();
         let last_part = path.pop().unwrap();
         let parent_table = editor.table(path.into_iter())?;
@@ -802,8 +825,13 @@ fn get_or_create_array<'table>(
     Ok(array)
 }
 
-fn create_string(value: String) -> Value {
-    Value::String(Formatted::new(value)).decorated("\n    ", "")
+fn create_string(value: String, comment: Option<&str>) -> Value {
+    let string = Value::String(Formatted::new(value));
+    if let Some(comment) = comment {
+        string.decorated(format!("\n    # {comment}\n    "), "")
+    } else {
+        string.decorated("\n    ", "")
+    }
 }
 
 struct AllowProcMacro {
@@ -821,9 +849,9 @@ impl Edit for AllowProcMacro {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&self.crate_name)?;
-        table["allow_proc_macro"] = toml_edit::value(true);
+        set_table_value(table, "allow_proc_macro", toml_edit::value(true), opts);
         Ok(())
     }
 }
@@ -848,9 +876,14 @@ impl Edit for AllowBuildInstruction {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&self.crate_name)?;
-        add_to_array(table, "allow_build_instructions", &[&self.instruction])
+        add_to_array(
+            table,
+            "allow_build_instructions",
+            &[&self.instruction],
+            opts.comment.as_deref(),
+        )
     }
 }
 
@@ -870,9 +903,9 @@ impl Edit for DisableSandbox {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_sandbox_table(&self.crate_name)?;
-        table["kind"] = toml_edit::value("Disabled");
+        set_table_value(table, "kind", toml_edit::value("Disabled"), opts);
         Ok(())
     }
 }
@@ -895,9 +928,9 @@ impl Edit for AllowUnsafe {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&self.crate_name)?;
-        table["allow_unsafe"] = toml_edit::value(true);
+        set_table_value(table, "allow_unsafe", toml_edit::value(true), opts);
         Ok(())
     }
 }
@@ -917,9 +950,9 @@ impl Edit for SandboxAllowNetwork {
             .into()
     }
 
-    fn apply(&self, editor: &mut ConfigEditor) -> Result<()> {
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_sandbox_table(&self.crate_name)?;
-        table["allow_network"] = toml_edit::value(true);
+        set_table_value(table, "allow_network", toml_edit::value(true), opts);
         Ok(())
     }
 }
@@ -927,6 +960,20 @@ impl Edit for SandboxAllowNetwork {
 impl Display for dyn Edit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.title())
+    }
+}
+
+fn set_table_value(
+    table: &mut toml_edit::Table,
+    key: &str,
+    item: toml_edit::Item,
+    opts: &EditOpts,
+) {
+    table[key] = item;
+    if let Some(comment) = &opts.comment {
+        if let Some(decor) = table.key_decor_mut(key) {
+            *decor = toml_edit::Decor::new(format!("# {comment}\n"), " ");
+        }
     }
 }
 
@@ -964,7 +1011,7 @@ mod tests {
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
         for (index, problem) in problems {
             let edit = &fixes_for_problem(problem, None)[*index];
-            edit.apply(&mut editor).unwrap();
+            edit.apply(&mut editor, &Default::default()).unwrap();
         }
         assert_eq!(editor.to_toml(), expected);
     }
@@ -1233,7 +1280,7 @@ mod tests {
 
     fn apply_edit_and_parse(toml: &str, edit: &InlineStdApi) -> Arc<Config> {
         let mut editor = ConfigEditor::from_toml_string(toml).unwrap();
-        edit.apply(&mut editor).unwrap();
+        edit.apply(&mut editor, &Default::default()).unwrap();
         crate::config::testing::parse(&editor.to_toml()).unwrap()
     }
 

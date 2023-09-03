@@ -152,7 +152,7 @@ impl BasicTermUi {
             match self.get_action(fixes.len()) {
                 Ok(Action::ApplyFix(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
-                    fixes[n].apply(&mut editor)?;
+                    fixes[n].apply(&mut editor, &Default::default())?;
                     editor.write(&self.config_path)?;
                     self.config_last_modified = config_modification_time(&self.config_path);
                     return Ok(Outcome::Continue);
@@ -160,7 +160,7 @@ impl BasicTermUi {
                 Ok(Action::ShowDiff(n)) => {
                     let mut editor = ConfigEditor::from_file(&self.config_path)?;
                     let fix = &fixes[n];
-                    fix.apply(&mut editor)?;
+                    fix.apply(&mut editor, &Default::default())?;
                     println!("Diff for {}:", fix.title());
                     show_diff(
                         &std::fs::read_to_string(&self.config_path).with_context(|| {

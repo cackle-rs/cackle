@@ -11,6 +11,7 @@ use crate::config::CrateName;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
+use crate::config_editor::EditOpts;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::PackageId;
 use crate::location::SourceLocation;
@@ -52,6 +53,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use tui_input::backend::crossterm::EventHandler;
 
 mod diff;
 mod syntax_styling;
@@ -68,13 +70,16 @@ pub(super) struct ProblemsUi {
     accept_single_enabled: bool,
     show_package_details: bool,
     checker: Arc<Mutex<Checker>>,
+    comment: Option<String>,
+    previous_comments: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum Mode {
     SelectProblem,
     SelectEdit,
     SelectUsage,
+    SetComment(tui_input::Input),
     Backtrace(Vec<backtrace::Frame>),
     PromptAutoAccept,
     ShowPackageTree,
@@ -106,7 +111,7 @@ impl ProblemsUi {
                     if !self
                         .modes
                         .iter()
-                        .any(|mode| [Mode::SelectEdit, Mode::SelectUsage].contains(mode))
+                        .any(|mode| matches!(mode, Mode::SelectEdit | Mode::SelectUsage))
                     {
                         self.render_details(f, middle);
                         if let Some(bottom) = chunks.get(2) {
@@ -135,6 +140,7 @@ impl ProblemsUi {
                 Mode::PromptAutoAccept => render_auto_accept(f),
                 Mode::ShowPackageTree => self.render_package_tree(f),
                 Mode::ShowInternalDiagnostics => self.render_internal_diagnostics(f),
+                Mode::SetComment(input) => self.render_comment_input(input, f),
                 Mode::Help => render_help(f, previous_mode),
             }
             previous_mode = Some(mode);
@@ -142,10 +148,47 @@ impl ProblemsUi {
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
-        let Some(mode) = self.modes.last() else {
+        let Some(mode) = self.modes.last_mut() else {
             return Ok(());
         };
         match (mode, key.code) {
+            (Mode::SetComment(_), KeyCode::Esc) => {
+                self.modes.pop();
+            }
+            (Mode::SetComment(input), KeyCode::Up | KeyCode::Down) => {
+                let value = input.value();
+                let mut index = self
+                    .previous_comments
+                    .iter()
+                    .position(|p| p == value)
+                    .unwrap_or(self.previous_comments.len());
+                index = match key.code {
+                    KeyCode::Up => index.saturating_sub(1),
+                    KeyCode::Down => index.saturating_add(1),
+                    _ => unreachable!(),
+                };
+                match self.previous_comments.get(index) {
+                    Some(value) => *input = tui_input::Input::from(value.as_str()),
+                    None => *input = tui_input::Input::default(),
+                }
+            }
+            (Mode::SetComment(input), KeyCode::Enter) => {
+                let value = input.value();
+                if value.is_empty() {
+                    self.comment = None;
+                } else {
+                    let value = value.to_owned();
+                    if self.previous_comments.last() != Some(&value) {
+                        self.previous_comments.retain(|p| p != &value);
+                        self.previous_comments.push(value.clone());
+                    }
+                    self.comment = Some(value);
+                }
+                self.modes.pop();
+            }
+            (Mode::SetComment(input), _) => {
+                input.handle_event(&crossterm::event::Event::Key(key));
+            }
             (_, KeyCode::Char('q')) => self.modes.clear(),
             (Mode::SelectProblem, KeyCode::Up | KeyCode::Down) => {
                 update_counter(
@@ -207,10 +250,19 @@ impl ProblemsUi {
             }
             (Mode::SelectEdit, KeyCode::Char(' ' | 'f') | KeyCode::Enter) => {
                 self.apply_selected_edit()?;
+                self.comment = None;
                 if self.problem_index >= self.problem_store.lock().len() {
                     self.problem_index = 0;
                 }
                 self.modes.pop();
+            }
+            (Mode::SelectEdit, KeyCode::Char('c')) => {
+                if !self.current_edit_supports_comments() {
+                    bail!("Sorry, this automatic edit doesn't support comments");
+                }
+                self.modes.push(Mode::SetComment(
+                    self.comment.as_deref().unwrap_or_default().into(),
+                ));
             }
             (Mode::SelectProblem, KeyCode::Char('a')) => {
                 if !self.accept_single_enabled {
@@ -240,7 +292,7 @@ impl ProblemsUi {
     }
 
     fn enter_usage_mode(&mut self) {
-        while self.modes.last() != Some(&Mode::SelectProblem) {
+        while !matches!(self.modes.last(), Some(&Mode::SelectProblem)) {
             self.modes.pop();
         }
         self.modes.push(Mode::SelectUsage);
@@ -270,6 +322,8 @@ impl ProblemsUi {
             accept_single_enabled: false,
             show_package_details: true,
             checker,
+            comment: None,
+            previous_comments: Default::default(),
         }
     }
 
@@ -299,7 +353,7 @@ impl ProblemsUi {
         let mut pstore = self.problem_store.lock();
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
         while let Some((index, edit)) = first_single_edit(&pstore) {
-            edit.apply(&mut editor)?;
+            edit.apply(&mut editor, &Default::default())?;
             pstore.resolve(index);
         }
         self.write_config(&editor)?;
@@ -317,8 +371,8 @@ impl ProblemsUi {
             return;
         }
         let mut items = Vec::new();
-        let is_edit_mode = self.modes.contains(&Mode::SelectEdit);
-        let is_usage_mode = self.modes.contains(&Mode::SelectUsage);
+        let is_edit_mode = self.modes.iter().any(|m| matches!(m, &Mode::SelectEdit));
+        let is_usage_mode = self.modes.iter().any(|m| matches!(m, &Mode::SelectUsage));
         let backtrace_frames = match self.modes.last() {
             Some(Mode::Backtrace(frames)) => Some(frames),
             _ => None,
@@ -426,7 +480,8 @@ impl ProblemsUi {
             return;
         };
 
-        let lines = config_diff_lines(&self.config_path, &**edit).unwrap_or_else(error_lines);
+        let lines = config_diff_lines(&self.config_path, &**edit, &self.edit_opts())
+            .unwrap_or_else(error_lines);
 
         let block = Block::default().title("Edit details").borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
@@ -518,7 +573,7 @@ impl ProblemsUi {
             return Ok(());
         };
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
-        edit.apply(&mut editor)?;
+        edit.apply(&mut editor, &self.edit_opts())?;
         self.write_config(&editor)?;
 
         // Resolve the currently selected problem.
@@ -533,6 +588,26 @@ impl ProblemsUi {
         // Resolve any other problems that now have no-op edits.
         pstore_lock.resolve_problems_with_empty_diff(&editor);
         Ok(())
+    }
+
+    fn current_edit_supports_comments(&self) -> bool {
+        let pstore_lock = self.problem_store.lock();
+        let config = self.checker.lock().unwrap().config.clone();
+        let edits = edits_for_problem(&pstore_lock, self.problem_index, &config);
+        let Some(edit) = edits.get(self.edit_index) else {
+            return false;
+        };
+        let Ok(mut editor) = ConfigEditor::from_file(&self.config_path) else {
+            return false;
+        };
+        const PLACEHOLDER_COMMENT: &str = "CACKLE PLACEHOLDER COMMENT";
+        let _ = edit.apply(
+            &mut editor,
+            &EditOpts {
+                comment: Some(PLACEHOLDER_COMMENT.to_owned()),
+            },
+        );
+        editor.to_toml().contains(PLACEHOLDER_COMMENT)
     }
 
     fn render_package_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
@@ -612,6 +687,28 @@ impl ProblemsUi {
         };
         backtracer.backtrace(bin_location)
     }
+
+    fn render_comment_input(
+        &self,
+        input: &tui_input::Input,
+        f: &mut Frame<CrosstermBackend<Stdout>>,
+    ) {
+        let area = centre_area(f.size(), 80, 3);
+        let paragraph = Paragraph::new(input.value()).block(active_block().title("Set comment"));
+        f.render_widget(Clear, area);
+        f.render_widget(paragraph, area);
+        f.set_cursor(area.x + 1 + input.visual_cursor() as u16, area.y + 1);
+    }
+
+    pub(crate) fn needs_cursor(&self) -> bool {
+        matches!(self.modes.last(), Some(Mode::SetComment(..)))
+    }
+
+    fn edit_opts(&self) -> EditOpts {
+        EditOpts {
+            comment: self.comment.clone(),
+        }
+    }
 }
 
 fn render_source_location(
@@ -638,12 +735,16 @@ fn error_lines(error: anyhow::Error) -> Vec<Line<'static>> {
     ))]
 }
 
-fn config_diff_lines(config_path: &Path, edit: &dyn Edit) -> Result<Vec<Line<'static>>> {
+fn config_diff_lines(
+    config_path: &Path,
+    edit: &dyn Edit,
+    opts: &EditOpts,
+) -> Result<Vec<Line<'static>>> {
     let mut lines = Vec::new();
     lines.push(Line::from(edit.help().to_string()));
     let original = std::fs::read_to_string(config_path).unwrap_or_default();
     let mut editor = ConfigEditor::from_toml_string(&original)?;
-    if let Err(error) = edit.apply(&mut editor) {
+    if let Err(error) = edit.apply(&mut editor, opts) {
         lines.push(Line::from(""));
         lines.push(Line::from(error.to_string()));
     }
@@ -692,7 +793,6 @@ fn usage_source_lines(
 }
 
 fn format_line(out: &mut Vec<Span>, column: Option<u32>, line: &str) {
-    let mut rev = false;
     let mut offset = 0;
     let column_offset = column.map(|c| (c as usize).saturating_sub(1));
     for token in rustc_ap_rustc_lexer::tokenize(line) {
@@ -706,13 +806,11 @@ fn format_line(out: &mut Vec<Span>, column: Option<u32>, line: &str) {
             .map(|c| (offset..new_offset).contains(&c))
             .unwrap_or(false)
         {
-            rev = true;
             style = style.add_modifier(Modifier::REVERSED);
         }
         out.push(Span::styled(token_text.to_owned(), style));
         offset = new_offset;
     }
-    log::info!("col={column:?} line.len={} rev={rev:?}", line.len());
 }
 
 fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
@@ -738,6 +836,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
             keys.extend([
                 ("space/enter/f", "Apply this edit"),
                 ("d", "Jump to usage details (API/unsafe only)"),
+                ("c", "Add comment to edit (supported edits only)"),
                 ("up", "Select previous edit"),
                 ("down", "Select next edit"),
                 ("esc", "Return to problem list"),
