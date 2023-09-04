@@ -87,6 +87,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> V
             edits.push(Box::new(AllowApiUsage {
                 usage: usage.clone(),
             }));
+            if let Some(config) = config {
+                let _ = usage.add_exclude_fixes(&mut edits, config);
+            }
         }
         Problem::IsProcMacro(pkg_id) => {
             edits.push(Box::new(AllowProcMacro {
