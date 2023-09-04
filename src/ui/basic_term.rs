@@ -1,6 +1,7 @@
 //! A basic text-based terminal UI. Doesn't use curses, just prints stuff and prompts for what to
 //! do.
 
+use crate::checker::Checker;
 use crate::config;
 use crate::config::ApiName;
 use crate::config::SandboxKind;
@@ -25,6 +26,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use std::time::SystemTime;
 
@@ -32,6 +35,7 @@ pub(crate) struct BasicTermUi {
     config_path: PathBuf,
     stdin_recv: Receiver<String>,
     config_last_modified: Option<SystemTime>,
+    checker: Arc<Mutex<Checker>>,
 }
 
 impl super::UserInterface for BasicTermUi {
@@ -63,7 +67,8 @@ impl super::UserInterface for BasicTermUi {
                     continue;
                 }
                 println!("{problem}");
-                let fixes = config_editor::fixes_for_problem(problem, None);
+                let config = self.checker.lock().unwrap().config.clone();
+                let fixes = config_editor::fixes_for_problem(problem, &config);
                 // We don't want to hold the mutex for any significant time, so we drop it now
                 // that we're done with `problem`, which was the only thing borrowed from the
                 // store. We certainly don't want to hold the lock while we prompt for user
@@ -90,11 +95,12 @@ impl super::UserInterface for BasicTermUi {
 }
 
 impl BasicTermUi {
-    pub(crate) fn new(config_path: PathBuf) -> Self {
+    pub(crate) fn new(config_path: PathBuf, checker: &Arc<Mutex<Checker>>) -> Self {
         Self {
             config_last_modified: config_modification_time(&config_path),
             config_path,
             stdin_recv: start_stdin_channel(),
+            checker: checker.clone(),
         }
     }
 

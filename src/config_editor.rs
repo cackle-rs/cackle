@@ -61,7 +61,7 @@ pub(crate) struct EditOpts {
 
 /// Returns possible fixes for `problem`. The applicability of some fixes depends on the current
 /// configuration. Such fixes will only be available if `config` is supplied.
-pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> Vec<Box<dyn Edit>> {
+pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<dyn Edit>> {
     let mut edits: Vec<Box<dyn Edit>> = Vec::new();
     match problem {
         Problem::MissingConfiguration(_) => {
@@ -87,9 +87,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> V
             edits.push(Box::new(AllowApiUsage {
                 usage: usage.clone(),
             }));
-            if let Some(config) = config {
-                let _ = usage.add_exclude_fixes(&mut edits, config);
-            }
+            let _ = usage.add_exclude_fixes(&mut edits, config);
         }
         Problem::IsProcMacro(pkg_id) => {
             edits.push(Box::new(AllowProcMacro {
@@ -127,13 +125,10 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> V
             edits.push(Box::new(NoDetectApi(info.clone())));
         }
         Problem::OffTreeApiUsage(info) => {
-            if let Some(config) = config {
-                // Ignore errors while adding includes/excludes. Any errors here will likely already
-                // have shown up elsewhere and it seems nicer to just degrade to not show those
-                // edits.
-                let _ = info.usages.add_include_fixes(&mut edits, config);
-                let _ = info.usages.add_exclude_fixes(&mut edits, config);
-            }
+            // Ignore errors while adding includes/excludes. Any errors here will likely already
+            // have shown up elsewhere and it seems nicer to just degrade to not show those edits.
+            let _ = info.usages.add_include_fixes(&mut edits, config);
+            let _ = info.usages.add_exclude_fixes(&mut edits, config);
             edits.push(Box::new(AllowApiUsage {
                 usage: info.usages.clone(),
             }))
@@ -1040,9 +1035,10 @@ mod tests {
 
     #[track_caller]
     fn check(initial_config: &str, problems: &[(usize, Problem)], expected: &str) {
+        let config = crate::config::testing::parse(initial_config).unwrap();
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
         for (index, problem) in problems {
-            let edit = &fixes_for_problem(problem, None)[*index];
+            let edit = &fixes_for_problem(problem, &config)[*index];
             edit.apply(&mut editor, &Default::default()).unwrap();
         }
         assert_eq!(editor.to_toml(), expected);
@@ -1101,6 +1097,9 @@ mod tests {
     fn fix_missing_api_existing_config() {
         check(
             indoc! {r#"
+                [api.env]
+                [api.net]
+                [api.fs]
                 [pkg.crab1]
                 allow_apis = [
                     "env",
@@ -1109,6 +1108,9 @@ mod tests {
             "#},
             &[(0, disallowed_api("crab1", "fs"))],
             indoc! {r#"
+                [api.env]
+                [api.net]
+                [api.fs]
                 [pkg.crab1]
                 allow_apis = [
                     "env",
@@ -1217,6 +1219,9 @@ mod tests {
         });
         check(
             indoc! {r#"
+                [api.fs]
+                [api.env]
+                [api.net]
                 [pkg.crab1.build]
                 allow_apis = [
                     "fs",
@@ -1226,6 +1231,9 @@ mod tests {
             "#},
             &[(0, failure)],
             indoc! {r#"
+                [api.fs]
+                [api.env]
+                [api.net]
                 [pkg.crab1.build]
                 allow_apis = [
                     "env",
@@ -1243,6 +1251,8 @@ mod tests {
         });
         check(
             indoc! {r#"
+                [api.fs]
+                [api.net]
                 [pkg.crab1.build]
                 allow_unsafe = true
                 allow_apis = [
@@ -1252,6 +1262,8 @@ mod tests {
             "#},
             &[(0, failure)],
             indoc! {r#"
+                [api.fs]
+                [api.net]
                 [pkg.crab1.build]
                 allow_unsafe = true
             "#,
@@ -1295,6 +1307,7 @@ mod tests {
         let failure = Problem::UnusedPackageConfig("crab2".into());
         check(
             indoc! {r#"
+                [api.fs]
                 [pkg.crab1]
                 allow_unsafe = true
 
@@ -1303,6 +1316,7 @@ mod tests {
             "#},
             &[(0, failure)],
             indoc! {r#"
+                [api.fs]
                 [pkg.crab1]
                 allow_unsafe = true
             "#,

@@ -91,11 +91,12 @@ impl ProblemStore {
     pub(crate) fn resolve_problems_with_empty_diff(
         &mut self,
         editor: &crate::config_editor::ConfigEditor,
+        config: &crate::config::Config,
     ) {
         let current_toml = editor.to_toml();
         let mut empty_indexes = Vec::new();
         for (index, problem) in self.deduplicated_into_iter() {
-            for edit in crate::config_editor::fixes_for_problem(problem, None) {
+            for edit in crate::config_editor::fixes_for_problem(problem, config) {
                 if !edit.resolve_problem_if_edit_is_empty() {
                     continue;
                 }

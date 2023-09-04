@@ -337,11 +337,12 @@ impl ProblemsUi {
     fn accept_all_single_edits(&mut self) -> Result<()> {
         fn first_single_edit(
             pstore: &MutexGuard<ProblemStore>,
+            config: &Config,
         ) -> Option<(ProblemId, Box<dyn Edit>)> {
             pstore
                 .deduplicated_into_iter()
                 .find_map(|(index, problem)| {
-                    let mut edits = config_editor::fixes_for_problem(problem, None);
+                    let mut edits = config_editor::fixes_for_problem(problem, config);
                     if edits.len() == 1 {
                         Some((index, edits.pop().unwrap()))
                     } else {
@@ -350,9 +351,10 @@ impl ProblemsUi {
                 })
         }
 
+        let config = self.checker.lock().unwrap().config.clone();
         let mut pstore = self.problem_store.lock();
         let mut editor = ConfigEditor::from_file(&self.config_path)?;
-        while let Some((index, edit)) = first_single_edit(&pstore) {
+        while let Some((index, edit)) = first_single_edit(&pstore, &config) {
             edit.apply(&mut editor, &Default::default())?;
             pstore.resolve(index);
         }
@@ -586,7 +588,8 @@ impl ProblemsUi {
         }
 
         // Resolve any other problems that now have no-op edits.
-        pstore_lock.resolve_problems_with_empty_diff(&editor);
+        let config = self.checker.lock().unwrap().config.clone();
+        pstore_lock.resolve_problems_with_empty_diff(&editor, &config);
         Ok(())
     }
 
@@ -928,7 +931,7 @@ fn edits_for_problem(
     let Some((_, problem)) = pstore_lock.deduplicated_into_iter().nth(problem_index) else {
         return Vec::new();
     };
-    config_editor::fixes_for_problem(problem, Some(config))
+    config_editor::fixes_for_problem(problem, config)
 }
 
 fn usages_for_problem(

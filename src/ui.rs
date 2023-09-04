@@ -65,7 +65,10 @@ pub(crate) fn start_ui(
         #[cfg(feature = "ui")]
         Kind::Basic => {
             info!("Starting basic terminal UI");
-            Box::new(basic_term::BasicTermUi::new(config_path.to_owned()))
+            Box::new(basic_term::BasicTermUi::new(
+                config_path.to_owned(),
+                checker,
+            ))
         }
         #[cfg(feature = "ui")]
         Kind::Full => {
