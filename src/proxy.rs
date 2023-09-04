@@ -69,7 +69,12 @@ pub(crate) struct CargoRunner<'a> {
 pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()> {
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
     // to carefully track changes to things we care about, like cackle.toml.
-    run_command(&mut cargo::command("clean", dir, args, config))?;
+    let mut command = cargo::command("clean", dir, args, config);
+    if args.should_capture_cargo_output() {
+        command.stdout(Stdio::null());
+        command.stderr(Stdio::null());
+    }
+    run_command(&mut command)?;
     Ok(())
 }
 
