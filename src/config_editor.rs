@@ -127,15 +127,11 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: Option<&Config>) -> V
             edits.push(Box::new(NoDetectApi(info.clone())));
         }
         Problem::OffTreeApiUsage(info) => {
-            for prefix in &info.common_from_prefixes {
-                edits.push(Box::new(ExtendApi {
-                    api: info.usages.api_name.clone(),
-                    api_path: ApiPath::from_str(prefix),
-                }));
-            }
             if let Some(config) = config {
-                // Ignore errors while adding excludes. Any errors here will likely already have shown
-                // up elsewhere and it seems nicer to just degrade to not show those edits.
+                // Ignore errors while adding includes/excludes. Any errors here will likely already
+                // have shown up elsewhere and it seems nicer to just degrade to not show those
+                // edits.
+                let _ = info.usages.add_include_fixes(&mut edits, config);
                 let _ = info.usages.add_exclude_fixes(&mut edits, config);
             }
             edits.push(Box::new(AllowApiUsage {
@@ -275,11 +271,44 @@ impl ConfigEditor {
 }
 
 impl ApiUsages {
+    pub(crate) fn add_include_fixes(
+        &self,
+        edits: &mut Vec<Box<dyn Edit>>,
+        config: &crate::config::Config,
+    ) -> Result<()> {
+        let api_config = config.get_api_config(&self.api_name)?;
+        let common_from_prefixes = crate::checker::common_prefix::common_from_prefixes(self)?;
+        for prefix in &common_from_prefixes {
+            if api_config
+                .exclude
+                .iter()
+                .any(|p| p.prefix.as_ref() == prefix)
+            {
+                // Adding an include that exactly matches an exclude doesn't make sense - you'd be
+                // better off removing the exclude instead.
+                continue;
+            }
+            if api_config.include.iter().any(|p| {
+                p.prefix.as_ref() == prefix
+                    || prefix
+                        .strip_prefix(p.prefix.as_ref())
+                        .map(|remain| remain.starts_with("::"))
+                        .unwrap_or(false)
+            }) {
+                // We already have this prefix or a prefix that would subsume this one, so don't
+                // suggest adding it.
+                continue;
+            }
+            edits.push(Box::new(ExtendApi {
+                api: self.api_name.clone(),
+                api_path: ApiPath::from_str(prefix),
+            }));
+        }
+        Ok(())
+    }
+
     fn add_exclude_fixes(&self, edits: &mut Vec<Box<dyn Edit>>, config: &Config) -> Result<()> {
-        let api_config = config
-            .apis
-            .get(&self.api_name)
-            .ok_or_else(|| anyhow!("Missing API config for `{}`", self.api_name))?;
+        let api_config = config.get_api_config(&self.api_name)?;
         let common_to_prefixes = common_to_prefixes(self)?;
         for prefix in common_to_prefixes {
             if api_config

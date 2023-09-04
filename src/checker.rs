@@ -381,11 +381,9 @@ impl Checker {
         // Report off-tree problems for each off-tree package that we appear to reference.
         for (pkg_id, off_tree_usages) in off_tree {
             let usages = api_usage.with_usages(off_tree_usages);
-            let common_from_prefixes = common_prefix::common_from_prefixes(&usages)?;
             problems.push(Problem::OffTreeApiUsage(OffTreeApiUsage {
                 usages,
                 referenced_pkg_id: pkg_id.clone(),
-                common_from_prefixes,
             }));
         }
 

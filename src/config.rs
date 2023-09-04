@@ -186,6 +186,12 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
 }
 
 impl Config {
+    pub(crate) fn get_api_config(&self, api_name: &ApiName) -> Result<&ApiConfig> {
+        self.apis
+            .get(api_name)
+            .ok_or_else(|| anyhow!("Missing API config for `{api_name}`"))
+    }
+
     fn load_imports(&mut self, crate_index: &CrateIndex) -> Result<()> {
         for (crate_name, pkg_config) in &mut self.packages {
             // If imports are specified, then we leave an empty list of imports. This ensures that
