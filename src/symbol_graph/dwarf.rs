@@ -43,26 +43,22 @@ pub(crate) struct InlinedFunction<'input> {
     pub(crate) bin_location: BinLocation,
     pub(crate) from: SymbolAndName<'input>,
     pub(crate) to: SymbolAndName<'input>,
-    call_location: CallLocation<'input>,
+    pub(crate) call_location: CallLocation<'input>,
 }
 
-impl<'input> InlinedFunction<'input> {
+impl<'input> CallLocation<'input> {
     pub(crate) fn location(&self) -> Result<SourceLocation> {
-        let line = self.call_location.line.ok_or_else(|| {
-            anyhow!(
-                "Inlined call without line numbers are not supported {} -> {}",
-                self.from,
-                self.to
-            )
-        })?;
-        let mut path = self.call_location.compdir.to_owned();
-        if let Some(dir) = self.call_location.directory {
+        let line = self
+            .line
+            .ok_or_else(|| anyhow!("Inlined call without line numbers are not supported"))?;
+        let mut path = self.compdir.to_owned();
+        if let Some(dir) = self.directory {
             path.push(dir);
         }
-        if let Some(filename) = self.call_location.filename {
+        if let Some(filename) = self.filename {
             path.push(filename);
         }
-        Ok(SourceLocation::new(path, line, self.call_location.column))
+        Ok(SourceLocation::new(path, line, self.column))
     }
 }
 
@@ -460,7 +456,7 @@ struct InlinedFunctionScanner<'input> {
 }
 
 #[derive(Clone)]
-struct CallLocation<'input> {
+pub(crate) struct CallLocation<'input> {
     // TODO: Do we need both compdir and directory?
     compdir: &'input Path,
     directory: Option<&'input OsStr>,

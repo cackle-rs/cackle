@@ -187,7 +187,10 @@ fn scan_object_with_bin_bytes(
     collector.bin.load_symbols(&obj)?;
     let start = checker.timings.add_timing(start, "Load symbols from bin");
     for f in debug_artifacts.inlined_functions {
-        let location_fetcher = LocationFetcher::InlinedFunction(&f);
+        let from = Node {
+            names: f.from,
+            location_fetcher: LocationFetcher::InlinedFunction(&f.call_location),
+        };
         let debug_data = if checker.args.debug {
             Some(UsageDebugData::Inlined(InlinedDebugData::from_offset(
                 Some(f.bin_location.address),
@@ -196,14 +199,7 @@ fn scan_object_with_bin_bytes(
         } else {
             None
         };
-        collector.process_reference(
-            f.bin_location,
-            &f.from,
-            &f.to,
-            checker,
-            &location_fetcher,
-            debug_data.as_ref(),
-        )?;
+        collector.process_reference(f.bin_location, &from, &f.to, checker, debug_data.as_ref())?;
     }
     let start = checker
         .timings
@@ -338,7 +334,10 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 };
 
                 let from_symbol = frame_symbol.as_ref().unwrap_or(&first_sym_info.symbol);
-                let from = self.bin.get_symbol_and_name(from_symbol);
+                let from = Node {
+                    names: self.bin.get_symbol_and_name(from_symbol),
+                    location_fetcher,
+                };
                 for target_symbol in target_symbols {
                     if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol) {
                         self.backtracer.add_reference(bin_location, *target_address);
@@ -349,7 +348,6 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                         &from,
                         &target,
                         checker,
-                        &location_fetcher,
                         debug_data.as_ref(),
                     )?;
                 }
@@ -361,19 +359,19 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
     fn process_reference(
         &mut self,
         bin_location: BinLocation,
-        from: &SymbolAndName,
+        from: &Node,
         target: &SymbolAndName,
         checker: &Checker,
-        location_fetcher: &LocationFetcher,
         debug_data: Option<&UsageDebugData>,
     ) -> Result<(), anyhow::Error> {
-        trace!("{from} -> {target}");
+        trace!("{} -> {target}", from.names);
 
         let mut from_apis = FxHashSet::default();
-        self.bin.names_and_apis_do(from, checker, |_, _, apis| {
-            from_apis.extend(apis.iter());
-            Ok(())
-        })?;
+        self.bin
+            .names_and_apis_do(&from.names, checker, |_, _, apis| {
+                from_apis.extend(apis.iter());
+                Ok(())
+            })?;
         let mut lazy_location = None;
         let mut lazy_crate_names = None;
         let bin_path = self.bin.filename.clone();
@@ -382,7 +380,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 // For the majority of references we expect no APIs to match. We defer computation
                 // of a source location and crate names until we know that an API matched.
                 if lazy_location.is_none() {
-                    lazy_location = Some(location_fetcher.location()?);
+                    lazy_location = Some(from.location_fetcher.location()?);
                 }
                 let location = lazy_location.as_ref().unwrap();
                 if lazy_crate_names.is_none() {
@@ -414,7 +412,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                                 bin_location,
                                 bin_path: bin_path.clone(),
                                 source_location: location.clone(),
-                                from: from.symbol_or_debug_name()?,
+                                from: from.names.symbol_or_debug_name()?,
                                 to: target.symbol_or_debug_name()?,
                                 to_name: name.clone(),
                                 to_source: name_source.to_owned(),
@@ -507,12 +505,17 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
     }
 }
 
+struct Node<'a> {
+    names: SymbolAndName<'a>,
+    location_fetcher: LocationFetcher<'a>,
+}
+
 enum LocationFetcher<'a> {
     FrameWithFallback {
         frame_location: Option<addr2line::Location<'a>>,
         fallback: &'a SourceLocation,
     },
-    InlinedFunction(&'a dwarf::InlinedFunction<'a>),
+    InlinedFunction(&'a dwarf::CallLocation<'a>),
 }
 impl<'a> LocationFetcher<'a> {
     fn location(&self) -> Result<SourceLocation> {
@@ -524,7 +527,7 @@ impl<'a> LocationFetcher<'a> {
                 .as_ref()
                 .and_then(|l| l.try_into().ok())
                 .unwrap_or_else(|| (*fallback).clone())),
-            LocationFetcher::InlinedFunction(inlined_function) => inlined_function.location(),
+            LocationFetcher::InlinedFunction(call_location) => call_location.location(),
         }
     }
 }
