@@ -15,6 +15,7 @@ to the `rustc` command line are:
 
 * We add `-Funsafe-code` unless `cackle.toml` says that the crate is allowed to use unsafe.
 * We override the linker used by rustc so that we can wrap that as well.
+* We force emitting of debug info, which is needed for later analysis.
 
 We run `rustc` twice. The first time, we ask it to only emit `deps`. i.e. not to link the final
 output. We do this because the parent cackle process needs the contents of the `deps` files before
@@ -22,7 +23,7 @@ the linker is invoked.
 
 The second invocation of `rustc` is the same, but this time it also links.
 
-In addition to telling the parent process about the `deps` file, we also use it to location source
+In addition to telling the parent process about the `deps` file, we also use it to locate source
 files which we parse looking for the `unsafe` token. This is an additional layer of unsafe detection
 besides adding `-Funsafe-code` since `-Funsafe-code` is insufficient to prevent some uses of unsafe.
 
@@ -36,11 +37,11 @@ arguments passed to the linker to determine:
 * What object files and rlibs are being linked
 * What binary output (executable or shared object) is being produced
 
-We pass this information to main cackle process. It then analyses these to determine what APIs were
-used and by which crates. For more details on this analysis, see [API analysis](#api-analysis).
+We pass this information to the main cackle process. It then analyses these to determine what APIs
+were used and by which crates. For more details on this analysis, see [API analysis](#api-analysis).
 
-If the output of the linker is a build script (we're compiling a build.rs), then we rename the
-output and copy the cackle binary in its place. This lets us wrap build scripts.
+If the output of the linker is a build script or a test, then we rename the output and put a shell
+script in its place. This lets us wrap build scripts and tests.
 
 If the main cackle process reports that all API permission checks passed, then our linker proxy
 exits with success. Otherwise it fails and cargo aborts the build process.
@@ -49,9 +50,10 @@ exits with success. Otherwise it fails and cargo aborts the build process.
 
 The code for this is `proxy_build_script` in src/proxy/subprocess.rs.
 
-When cackle is invoked as a build script, we check cackle.toml to see if a sandbox configuration is
-defined. If it is, then we invoke the build script via the sandbox, otherwise we invoke the build
-script directly.
+When cargo invokes a build script or test, it's actually running a shell script that we put in its
+place. This shell script invokes cackle, telling it what kind of binary is being invoked and where
+the actual binary is located. Cackle then checks to see if the binary being invoked needs to be run
+in a sandbox.
 
 ## API analysis
 
@@ -88,12 +90,11 @@ We determine what API was referenced as follows:
 * Look at the target of the relocation. If it's a section that doesn't define a symbol, then collect
   all symbols referenced by that section recursively until we have just a list of referenced symbols.
 * For each symbol, use both the demangled name of the symbol and the name provided by the debug
-  information for that symbol. These provide different bits of information. For example the symbol
-  name might give us `foo::bar::Baz` while the debug information name might give us
-  `Baz<std::path::PathBuf>`. So the symbol gives us better information about the fully path to the
-  item, while the debug info gives us information about generics parameters.
-* We then split these names into names and look for any defined APIs in `cackle.toml` that are the
-  prefix of these names.
+  information for that symbol. For most symbols, the symbol name is redundant as the debug name
+  generally provides more information. There are however a few cases where the symbol contains
+  information that the debug name doesn't, so we still need to process both.
+* We then split the debug name and symbol into names and look for any defined APIs in `cackle.toml`
+  that are the prefix of these names.
 * Where a function uses an API and also has a name that matches that same API, we ignore the usage
   by that function. The usage will be attributed to whatever uses that function. The idea here is
   that if a crate defines a generic function, we don't want API usage to be attributed to that crate
