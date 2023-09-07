@@ -1,0 +1,31 @@
+#!/bin/bash
+set -e
+
+if [ $(git diff HEAD --name-only | wc -l) -ne 0 ]; then
+    echo "Please commit all changes first" >&2
+    exit 1
+fi
+
+VERSION=$(grep ^version Cargo.toml | cut -d'"' -f2)
+if ! head -1 RELEASE_NOTES.md | grep "# Version ${VERSION}$" >/dev/null; then
+    echo "RELEASE_NOTES.md doesn't have Version ${VERSION} at start" >&2
+    exit 1
+fi
+
+MIN_RUST_VER=$(grep ^rust-version Cargo.toml | cut -d'"' -f2)
+if [ -z "$MIN_RUST_VER" ]; then
+  echo "Failed to determine minimum rust version" >&2
+  exit 1
+fi
+
+echo "Releasing version ${VERSION} with minimum rust version ${MIN_RUST_VER}"
+
+cargo clippy -- -D warnings
+cargo clippy --no-default-features -- -D warnings
+cargo test
+cargo run --release -- --save-requests --fail-on-warnings check
+cargo +${MIN_RUST_VER}-x86_64-unknown-linux-gnu test --all
+
+git tag v${VERSION}
+git push origin
+git push origin refs/tags/v${VERSION}
