@@ -416,7 +416,7 @@ impl Checker {
                 .crate_names_from_source_path(outer_location.filename())?
                 .as_ref()
             {
-                let crate_name = CrateName::from(crate_sel);
+                let crate_name = crate_sel.pkg_id.crate_name();
                 if usage.to_name.starts_with(crate_name.as_ref()) {
                     return Ok(true);
                 }
