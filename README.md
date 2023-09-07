@@ -20,7 +20,7 @@ cargo install --locked cackle
 Or if you'd like to install from git:
 
 ```sh
-cargo install --locked --git https://github.com/davidlattimore/cackle.git cackle
+cargo install --locked --git https://github.com/cackle-rs/cackle.git cackle
 ```
 
 Installing `bubblewrap` is recommended as it allows build scripts (build.rs) and tests to be run
