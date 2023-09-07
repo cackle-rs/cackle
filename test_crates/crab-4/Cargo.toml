@@ -1,0 +1,11 @@
+[package]
+name = "crab-4"
+version = "0.1.0"
+edition = "2021"
+description = "Has multiple uses of an API"
+documentation = "Not published, so has no docs"
+
+[dependencies]
+
+[build-dependencies]
+crab-5 = { path = "../crab-5" }

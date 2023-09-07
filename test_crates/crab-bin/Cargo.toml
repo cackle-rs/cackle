@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-crab1 = { path = "../crab1" }
-crab2 = { path = "../crab2" }
-crab3 = { path = "../crab3v2" }
-crab4 = { path = "../crab4" }
-crab6 = { path = "../crab6" }
-crab7 = { path = "../crab7" }
-crab8 = { path = "../crab8" }
-pmacro1 = { path = "../pmacro1" }
-res1 = { path = "../res1" }
+crab-1 = { path = "../crab-1" }
+crab-2 = { path = "../crab-2" }
+crab-3 = { path = "../crab-3v2" }
+crab-4 = { path = "../crab-4" }
+crab-6 = { path = "../crab-6" }
+crab-7 = { path = "../crab-7" }
+crab-8 = { path = "../crab-8" }
+pmacro-1 = { path = "../pmacro-1" }
+res-1 = { path = "../res-1" }
 
 [features]
-crash-if-not-sandboxed = [ "crab2/crash-if-not-sandboxed" ]
+crash-if-not-sandboxed = [ "crab-2/crash-if-not-sandboxed" ]
 foo = []

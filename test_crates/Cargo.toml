@@ -1,23 +1,23 @@
 [workspace]
 members = [
-    "crab1",
-    "crab2",
-    "crab3",
-    "crab4",
-    "crab5",
-    "crab6",
-    "crab7",
-    "crab8",
-    "crab9",
-    "crab10",
-    "crab11",
+    "crab-1",
+    "crab-2",
+    "crab-3",
+    "crab-4",
+    "crab-5",
+    "crab-6",
+    "crab-7",
+    "crab-8",
+    "crab-9",
+    "crab-10",
+    "crab-11",
     "crab-bin",
-    "pmacro1",
-    "shared1",
-    "res1",
+    "pmacro-1",
+    "shared-1",
+    "res-1",
 ]
 exclude = [
-    "crab3v2",
+    "crab-3v2",
 ]
 resolver = "2"
 

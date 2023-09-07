@@ -1,0 +1,11 @@
+[package]
+name = "crab-3"
+version = "0.1.0"
+edition = "2021"
+build = "build/main.rs"
+
+[dependencies]
+crab-1 = { path = "../crab-1" }
+
+[features]
+crash-if-not-sandboxed = []

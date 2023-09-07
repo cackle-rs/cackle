@@ -443,13 +443,13 @@ fn test_crate_index() {
     let test_crates_dir = crate_root.join("test_crates");
     let index = CrateIndex::new(&test_crates_dir).unwrap();
 
-    check(&index, "crab2", &["crab1", "crab3"]);
-    check(&index, "crab4", &[]);
+    check(&index, "crab_2", &["crab_1", "crab_3"]);
+    check(&index, "crab_4", &[]);
     check(
         &index,
         "crab_bin",
         &[
-            "crab1", "crab2", "crab3", "crab4", "crab5", "crab6", "crab7", "crab8", "res1",
+            "crab_1", "crab_2", "crab_3", "crab_4", "crab_5", "crab_6", "crab_7", "crab_8", "res_1",
         ],
     );
 }

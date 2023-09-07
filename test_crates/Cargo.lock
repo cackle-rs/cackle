@@ -3,102 +3,102 @@
 version = 3
 
 [[package]]
-name = "crab-bin"
+name = "crab-1"
 version = "0.1.0"
 dependencies = [
- "crab1",
- "crab2",
- "crab3 2.0.0",
- "crab4",
- "crab6",
- "crab7",
- "crab8",
- "pmacro1",
- "res1",
+ "crab-5",
 ]
 
 [[package]]
-name = "crab1"
+name = "crab-10"
+version = "0.1.0"
+
+[[package]]
+name = "crab-11"
+version = "0.1.0"
+
+[[package]]
+name = "crab-2"
 version = "0.1.0"
 dependencies = [
- "crab5",
+ "crab-3 0.1.0",
 ]
 
 [[package]]
-name = "crab10"
-version = "0.1.0"
-
-[[package]]
-name = "crab11"
-version = "0.1.0"
-
-[[package]]
-name = "crab2"
+name = "crab-3"
 version = "0.1.0"
 dependencies = [
- "crab3 0.1.0",
+ "crab-1",
 ]
 
 [[package]]
-name = "crab3"
-version = "0.1.0"
-dependencies = [
- "crab1",
-]
-
-[[package]]
-name = "crab3"
+name = "crab-3"
 version = "2.0.0"
 
 [[package]]
-name = "crab4"
+name = "crab-4"
 version = "0.1.0"
 dependencies = [
- "crab5",
+ "crab-5",
 ]
 
 [[package]]
-name = "crab5"
+name = "crab-5"
 version = "0.1.0"
 
 [[package]]
-name = "crab6"
+name = "crab-6"
 version = "0.1.0"
 dependencies = [
- "crab5",
+ "crab-5",
 ]
 
 [[package]]
-name = "crab7"
+name = "crab-7"
 version = "0.1.0"
 
 [[package]]
-name = "crab8"
+name = "crab-8"
 version = "0.1.0"
 dependencies = [
- "crab1",
- "crab6",
+ "crab-1",
+ "crab-6",
 ]
 
 [[package]]
-name = "crab9"
+name = "crab-9"
 version = "0.1.0"
 
 [[package]]
-name = "pmacro1"
-version = "0.1.0"
-
-[[package]]
-name = "res1"
+name = "crab-bin"
 version = "0.1.0"
 dependencies = [
- "crab6",
+ "crab-1",
+ "crab-2",
+ "crab-3 2.0.0",
+ "crab-4",
+ "crab-6",
+ "crab-7",
+ "crab-8",
+ "pmacro-1",
+ "res-1",
 ]
 
 [[package]]
-name = "shared1"
+name = "pmacro-1"
+version = "0.1.0"
+
+[[package]]
+name = "res-1"
 version = "0.1.0"
 dependencies = [
- "crab1",
- "crab2",
+ "crab-6",
+]
+
+[[package]]
+name = "shared-1"
+version = "0.1.0"
+dependencies = [
+ "crab-1",
+ "crab-2",
 ]

@@ -1,0 +1,7 @@
+[common]
+version = 1
+
+[api.fs]
+include = [
+    "crab_1::read_file",
+]

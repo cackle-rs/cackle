@@ -1,0 +1,10 @@
+[package]
+name = "crab-8"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crab-6 = { path = "../crab-6" }
+
+[build-dependencies]
+crab-1 = { path = "../crab-1" }
