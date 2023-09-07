@@ -25,7 +25,10 @@ cargo clippy --no-default-features -- -D warnings
 cargo test
 cargo run --release -- --save-requests --fail-on-warnings check
 cargo +${MIN_RUST_VER}-x86_64-unknown-linux-gnu test --all
+cargo package
 
 git tag v${VERSION}
 git push origin
 git push origin refs/tags/v${VERSION}
+
+cargo publish
