@@ -51,3 +51,6 @@ unsupported-os = []
 inherits = "dev"
 incremental = false
 debug = 0
+
+[profile.release]
+strip = true
