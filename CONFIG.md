@@ -100,7 +100,6 @@ sandbox.kind = "Disabled"
 Tests and build scripts already have write access to a temporary directory, however, if for some
 reason they need to write to some directory in your source folder, this can be permitted as follows:
 
-
 ```toml
 [pkg.foo.test]
 sandbox.bind_writable = [
@@ -173,10 +172,10 @@ profile = "cackle-release"
 
 You can also override with the `--profile` flag, which takes precidence over the config file.
 
-Cackle supports analysing references even when inlining occurs, so it should work even with
-optimisations enabled, however it's more likely that you'll run into false attribution bugs, where
-an API usage is attributed to the wrong package. So unless you really need optimisation for some
-reason, it's recommended to set `opt-level = 0`.
+Cackle supports analysing references even when inlining occurs, so it can work to some extent even
+with optimisations enabled, however it's more likely that you'll run into false attribution bugs,
+where an API usage is attributed to the wrong package. So unless you really need optimisation for
+some reason, it's recommended to set `opt-level = 0`.
 
 Split debug info is not yet supported, so you should turn it off.
 
