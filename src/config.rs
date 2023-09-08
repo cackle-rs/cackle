@@ -77,6 +77,9 @@ pub(crate) struct SandboxConfig {
 
     #[serde(default)]
     pub(crate) bind_writable: Vec<PathBuf>,
+
+    #[serde(default)]
+    pub(crate) make_writable: Vec<PathBuf>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]
@@ -274,7 +277,11 @@ impl Config {
     fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
         for pkg_config in self.packages.values_mut() {
             if let Some(sandbox_config) = pkg_config.sandbox.as_mut() {
-                for path in &mut sandbox_config.bind_writable {
+                for path in sandbox_config
+                    .bind_writable
+                    .iter_mut()
+                    .chain(sandbox_config.make_writable.iter_mut())
+                {
                     if !path.is_absolute() {
                         // When we process the config file in the main cackle process, we should
                         // always have a workspace root. At that point all paths should be made
@@ -373,6 +380,9 @@ impl Config {
         config
             .bind_writable
             .extend(pkg_sandbox_config.bind_writable.iter().cloned());
+        config
+            .make_writable
+            .extend(pkg_sandbox_config.make_writable.iter().cloned());
         if let Some(allow_network) = pkg_sandbox_config.allow_network {
             config.allow_network = Some(allow_network);
         }

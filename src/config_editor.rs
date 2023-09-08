@@ -1185,6 +1185,7 @@ mod tests {
                     extra_args: vec![],
                     allow_network: None,
                     bind_writable: vec![],
+                    make_writable: vec![],
                 },
                 build_script: PathBuf::new(),
                 sandbox_config_display: None,

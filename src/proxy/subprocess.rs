@@ -132,8 +132,10 @@ fn proxy_binary(
 ) -> Result<ExitCode> {
     loop {
         let config = get_config_from_env()?;
-        let sandbox_config = config.sandbox_config_for_package(&CrateName::from(crate_sel));
-        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin)? else {
+        let crate_name = CrateName::from(crate_sel);
+        let sandbox_config = config.sandbox_config_for_package(&crate_name);
+        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &crate_name)?
+        else {
             // Config says to run without a sandbox.
             return Ok(Command::new(&orig_bin).status()?.into());
         };

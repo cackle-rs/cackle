@@ -1,5 +1,7 @@
+use crate::config::CrateName;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use std::ffi::OsStr;
@@ -56,6 +58,7 @@ pub(crate) trait Sandbox {
 pub(crate) fn from_config(
     config: &SandboxConfig,
     bin_path: &Path,
+    crate_name: &CrateName,
 ) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
         SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
@@ -98,8 +101,21 @@ pub(crate) fn from_config(
     sandbox.pass_cargo_env();
 
     for dir in &config.bind_writable {
-        // Create directories that need to be writable, otherwise they won't get bound and the code
-        // running in the sandbox won't be able to create them, nor write to them.
+        if !dir.exists() {
+            bail!(
+                "Sandbox config for `{crate_name}` says to bind directory `{}`, but that doesn't exist",
+                dir.display()
+            );
+        }
+        if !dir.is_dir() {
+            bail!(
+                "Sandbox config for `{crate_name}` says to bind directory `{}`, but that isn't a directory",
+                dir.display()
+            );
+        }
+        sandbox.writable_bind(dir);
+    }
+    for dir in &config.make_writable {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
         sandbox.writable_bind(dir);

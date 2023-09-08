@@ -108,7 +108,17 @@ sandbox.bind_writable = [
 ```
 
 This will allow tests to write to the "test_outputs" subdirectory within the directory containing
-your `Cargo.toml`.
+your `Cargo.toml`. All directories listed in `bind_writable` must exist.
+
+If you'd like to automatically create a writable directory if it doesn't already exist, then
+`make_writable` behaves the same, but will create the directory before starting the sandbox.
+
+```toml
+[pkg.foo.test]
+sandbox.make_writable = [
+    "test_outputs",
+]
+```
 
 ## Importing API definitions from an external crate
 

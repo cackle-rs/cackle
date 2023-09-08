@@ -295,10 +295,12 @@ allow_apis = [
 
 [pkg.cackle.test.sandbox]
 bind_writable = [
-    "test_crates/target",
     "test_crates/crab-bin/scratch",
     "test_crates/crab-9/scratch",
     "test_crates/crab-11/scratch",
+]
+make_writable = [
+    "test_crates/target",
 ]
 allow_network = true
 
