@@ -98,7 +98,11 @@ pub(crate) fn from_config(
     sandbox.pass_cargo_env();
 
     for dir in &config.bind_writable {
-        sandbox.writable_bind(Path::new(dir));
+        // Create directories that need to be writable, otherwise they won't get bound and the code
+        // running in the sandbox won't be able to create them, nor write to them.
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("Failed to create directory `{}`", dir.display()))?;
+        sandbox.writable_bind(dir);
     }
     for arg in &config.extra_args {
         sandbox.raw_arg(OsStr::new(arg));
