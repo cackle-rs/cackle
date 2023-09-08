@@ -66,3 +66,13 @@ jobs:
       with:
         components: rustfmt
     - run: cargo fmt --all -- --check
+
+  cackle:
+    name: Cackle check and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: cackle-rs/cackle-action@main
+      - run: cargo acl -n
+      - run: cargo acl -n test
