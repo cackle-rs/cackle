@@ -297,8 +297,8 @@ allow_apis = [
 bind_writable = [
     "test_crates/target",
     "test_crates/crab-bin/scratch",
-    "test_crates/crab9/scratch",
-    "test_crates/crab11/scratch",
+    "test_crates/crab-9/scratch",
+    "test_crates/crab-11/scratch",
 ]
 allow_network = true
 
