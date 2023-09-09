@@ -66,13 +66,11 @@ use crate::proxy::subprocess::PROXY_BIN_ARG;
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
 struct Args {
-    /// Directory containing crate to analyze. Defaults to current working
-    /// directory.
+    /// Directory containing crate to analyze. Defaults to current working directory.
     #[clap(short, long)]
     path: Option<PathBuf>,
 
-    /// Path to cackle.toml. If not specified, looks in the directory containing
-    /// the crate to be analyzed.
+    /// Path to cackle.toml. Defaults to cackle.toml in the directory containing Cargo.toml.
     #[clap(short, long)]
     cackle_path: Option<PathBuf>,
 
@@ -80,8 +78,7 @@ struct Args {
     #[clap(long, hide = true)]
     print_path_to_crate_map: bool,
 
-    /// If set, warnings (e.g. due to unused permissions) will cause termination with a non-zero
-    /// exit value.
+    /// Promotes warnings (e.g. due to unused permissions) to errors.
     #[clap(long)]
     fail_on_warnings: bool,
 
@@ -93,9 +90,7 @@ struct Args {
     #[clap(long)]
     quiet: bool,
 
-    /// Override the target used when compiling. e.g. specify "x86_64-apple-darwin" to compile for
-    /// x86 Mac. Note that build scripts and procedural macros will still be compiled for the host
-    /// target.
+    /// Override the target used when compiling. e.g. "x86_64-unknown-linux-gnu".
     #[clap(long)]
     target: Option<String>,
 
