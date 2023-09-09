@@ -46,9 +46,10 @@ think about which crates export APIs that you'd like to restrict. e.g. if you're
 provides network APIs, you should declare this in your config. See [CONFIG.md](CONFIG.md) for more
 details.
 
-## Configuration file format
+## Running from CI
 
-See [CONFIG.md](CONFIG.md).
+Cackle can be run from GitHub actions. See the instructions in the
+[cackle-action](https://github.com/cackle-rs/cackle-action) repository.
 
 ## Limitations and precautions
 
