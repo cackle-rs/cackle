@@ -183,7 +183,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     if std::env::args().any(|arg| arg == "--test") {
         crate_sel.kind = CrateKind::Test;
     }
-    let mut runner = RustcRunner::new(crate_sel)?;
+    let mut runner = RustcRunner::new(crate_sel);
     rpc_client.rustc_started(&runner.crate_sel)?;
     loop {
         match runner.run(rpc_client)? {
@@ -200,10 +200,6 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
 
 struct RustcRunner {
     crate_sel: CrateSel,
-    linking_requested: bool,
-    /// The paths of the sources for the crate being compiled. This is obtained by parsing the deps
-    /// file written by rustc the first time we run it.
-    source_paths: Option<Vec<PathBuf>>,
 }
 
 enum RustcRunStatus {
@@ -213,50 +209,35 @@ enum RustcRunStatus {
 }
 
 impl RustcRunner {
-    fn new(crate_sel: CrateSel) -> Result<Self> {
-        let linking_requested = Self::linking_requested();
-        Ok(Self {
-            crate_sel,
-            linking_requested,
-            source_paths: None,
-        })
+    fn new(crate_sel: CrateSel) -> Self {
+        Self { crate_sel }
     }
 
     fn run(&mut self, rpc_client: &RpcClient) -> Result<RustcRunStatus> {
-        // Until source_paths has been filled, we don't allow linking, since linking requires that
-        // we have already given this information to the parent cackle process.
-        let allow_linking = self.source_paths.is_some();
         // We need to parse the configuration each time, since it might have changed. Specifically
         // it might have been changed to allow unsafe.
         let config = get_config_from_env()?;
         let unsafe_permitted = config.unsafe_permitted_for_crate(&self.crate_sel);
-        let mut command = self.get_command(allow_linking, unsafe_permitted)?;
+        let mut command = self.get_command(unsafe_permitted)?;
         let output = command.output()?;
         let mut unsafe_locations = Vec::new();
 
         if output.status.code() == Some(0) {
-            if !allow_linking {
-                let source_paths = crate::deps::source_files_from_rustc_args(std::env::args())?;
-                // Tell the main process what source paths this rustc invocation made use of. It needs
-                // these so that it can attribute source files to a particular crate. We ignore the
-                // response, since we don't need it.
-                rpc_client.rustc_complete(RustcOutput {
-                    crate_sel: self.crate_sel.clone(),
-                    source_paths: source_paths.clone(),
-                })?;
-                self.source_paths = Some(source_paths);
-                if self.linking_requested {
-                    // Retry with linking allowed.
-                    return Ok(RustcRunStatus::Retry);
-                }
+            let source_paths = crate::deps::source_files_from_rustc_args(std::env::args())?;
+            // Tell the main process that rustc has completed. If the linker was invoked, then
+            // this will trigger checking of the linker inputs/outputs.
+            let response = rpc_client.rustc_complete(RustcOutput {
+                crate_sel: self.crate_sel.clone(),
+                source_paths: source_paths.clone(),
+            })?;
+            if response != Outcome::Continue {
+                return Ok(RustcRunStatus::GiveUp);
+            }
+            if !unsafe_permitted {
+                unsafe_locations.extend(find_unsafe_in_sources(&source_paths)?);
             }
         } else {
             unsafe_locations.extend(get_disallowed_unsafe_locations(&output)?);
-        }
-        if !unsafe_permitted {
-            unsafe_locations.extend(find_unsafe_in_sources(
-                self.source_paths.as_deref().unwrap_or_default(),
-            )?);
         }
         if !unsafe_locations.is_empty() {
             unsafe_locations.sort();
@@ -272,16 +253,7 @@ impl RustcRunner {
         Ok(RustcRunStatus::Done(output))
     }
 
-    /// Returns whether rustc was asked to link as indicated by --emit=*,link,*.
-    fn linking_requested() -> bool {
-        std::env::args().any(|arg| {
-            arg.strip_prefix("--emit=")
-                .map(|emit| emit.split(',').any(|p| p == "link"))
-                .unwrap_or(false)
-        })
-    }
-
-    fn get_command(&self, allow_linking: bool, unsafe_permitted: bool) -> Result<Command> {
+    fn get_command(&self, unsafe_permitted: bool) -> Result<Command> {
         let mut args = std::env::args().skip(2).peekable();
         let mut command = Command::new("rustc");
         let mut linker_arg = OsString::new();
@@ -311,18 +283,6 @@ impl RustcRunner {
             }
             if arg.starts_with("--error-format") {
                 continue;
-            }
-            if let Some(emit) = arg.strip_prefix("--emit=") {
-                if self.linking_requested && !allow_linking {
-                    command.arg(format!(
-                        "--emit={}",
-                        emit.split(',')
-                            .filter(|p| *p != "link")
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ));
-                    continue;
-                }
             }
             // For all other arguments, pass them through.
             command.arg(arg);
@@ -362,17 +322,17 @@ fn proxy_linker(
     mut link_info: LinkInfo,
     rpc_client: RpcClient,
     args: std::iter::Peekable<std::env::Args>,
-) -> Result<ExitCode, anyhow::Error> {
+) -> Result<ExitCode> {
     // Invoke the actual linker first, since the parent process uses the output file to aid with
     // analysis.
     let exit_status = invoke_real_linker(args)?;
     if exit_status.is_ok() && link_info.is_executable() {
         setup_bin_wrapper(&mut link_info)?;
     }
-    match rpc_client.linker_invoked(link_info)? {
-        Outcome::Continue => Ok(exit_status),
-        Outcome::GiveUp => std::process::exit(1),
-    }
+    // We ignore the return value here since this is an infallible operation. The parent process
+    // just stores the LinkInfo for later processing when rustc completes.
+    rpc_client.linker_invoked(link_info)?;
+    Ok(exit_status)
 }
 
 fn invoke_real_linker(

@@ -369,7 +369,7 @@ impl Cackle {
         // We only check if the build failed if there were no ACL check errors.
         build_result?;
 
-        let unused_problems = self.checker.lock().unwrap().check_unused();
+        let unused_problems = self.checker.lock().unwrap().check_unused()?;
         let resolution = self.problem_store.fix_problems(unused_problems);
         if resolution != Outcome::Continue {
             return Ok(outcome::FAILURE);

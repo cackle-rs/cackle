@@ -17,15 +17,13 @@ to the `rustc` command line are:
 * We override the linker used by rustc so that we can wrap that as well.
 * We force emitting of debug info, which is needed for later analysis.
 
-We run `rustc` twice. The first time, we ask it to only emit `deps`. i.e. not to link the final
-output. We do this because the parent cackle process needs the contents of the `deps` files before
-the linker is invoked.
+Once `rustc` completes, we parse the emitted `deps` file to get a list of the source files that were
+used. We then notify the parent process that `rustc` completed, telling it what source files were
+used.
 
-The second invocation of `rustc` is the same, but this time it also links.
-
-In addition to telling the parent process about the `deps` file, we also use it to locate source
-files which we parse looking for the `unsafe` token. This is an additional layer of unsafe detection
-besides adding `-Funsafe-code` since `-Funsafe-code` is insufficient to prevent some uses of unsafe.
+In addition to telling the parent process what source files were used, we also parse the source
+files, looking for the `unsafe` token. This is an additional layer of unsafe detection besides
+adding `-Funsafe-code` since `-Funsafe-code` is insufficient to prevent some uses of unsafe.
 
 ## Wrapping the linker
 
@@ -37,14 +35,16 @@ arguments passed to the linker to determine:
 * What object files and rlibs are being linked
 * What binary output (executable or shared object) is being produced
 
-We pass this information to the main cackle process. It then analyses these to determine what APIs
-were used and by which crates. For more details on this analysis, see [API analysis](#api-analysis).
+We pass this information to the main cackle process. The main process stores this information for
+later analysis when the current `rustc` invocation finishes. The reason it doesn't analyse the
+linker invocation is because it needs the list of source files for the current crate, which we get
+from the deps file, which is written by rustc.
+
+When `rustc` does finish, the parent process the analyses the `LinkInfo` to determine what APIs were
+used and by which crates. For more details on this analysis, see [API analysis](#api-analysis).
 
 If the output of the linker is a build script or a test, then we rename the output and put a shell
 script in its place. This lets us wrap build scripts and tests.
-
-If the main cackle process reports that all API permission checks passed, then our linker proxy
-exits with success. Otherwise it fails and cargo aborts the build process.
 
 ## Wrapping build scripts
 

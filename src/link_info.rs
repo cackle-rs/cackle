@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use crate::crate_index::CrateSel;
 
 /// Information about a linker invocation.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub(crate) struct LinkInfo {
     pub(crate) crate_sel: CrateSel,
     pub(crate) object_paths: Vec<PathBuf>,

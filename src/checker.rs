@@ -26,6 +26,7 @@ use crate::tmpdir::TempDir;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use fxhash::FxHashMap;
@@ -59,6 +60,11 @@ pub(crate) struct Checker {
     pub(crate) timings: TimingCollector,
 
     backtracers: FxHashMap<Arc<Path>, Backtracer>,
+
+    /// Information obtained when the linker was invoked, but for which we haven't yet received a
+    /// corresponding notification that rustc has completed. We defer processing of these until
+    /// rustc completes because we need information from the .deps file that rustc writes.
+    outstanding_linker_invocations: Vec<LinkInfo>,
 }
 
 #[derive(Default, Debug)]
@@ -114,6 +120,7 @@ impl Checker {
             path_to_crate: Default::default(),
             timings,
             backtracers: Default::default(),
+            outstanding_linker_invocations: Default::default(),
         }
     }
 
@@ -213,11 +220,16 @@ impl Checker {
         match request {
             rpc::Request::CrateUsesUnsafe(usage) => Ok(self.crate_uses_unsafe(usage)),
             rpc::Request::LinkerInvoked(link_info) => {
-                self.check_linker_invocation(link_info, check_state)
+                self.outstanding_linker_invocations.push(link_info.clone());
+                Ok(ProblemList::default())
             }
             rpc::Request::BinExecutionComplete(output) => self.check_build_script_output(output),
             rpc::Request::RustcComplete(info) => {
                 self.record_crate_paths(info)?;
+                if let Some(link_info) = self.get_link_info(info) {
+                    return self.check_linker_invocation(&link_info, check_state);
+                }
+
                 Ok(ProblemList::default())
             }
             rpc::Request::RustcStarted(crate_sel) => {
@@ -425,7 +437,14 @@ impl Checker {
         Ok(false)
     }
 
-    pub(crate) fn check_unused(&self) -> ProblemList {
+    pub(crate) fn check_unused(&self) -> Result<ProblemList> {
+        if !self.outstanding_linker_invocations.is_empty() {
+            bail!(
+                "Linker invocations with no matching rustc completion: {}",
+                self.outstanding_linker_invocations.len()
+            );
+        }
+
         let mut problems = ProblemList::default();
         let crate_names_in_index: FxHashSet<_> = self.crate_index.crate_names().collect();
         for (crate_name, crate_info) in &self.crate_infos {
@@ -444,7 +463,7 @@ impl Checker {
                 problems.push(Problem::UnusedSandboxConfiguration(crate_name.clone()));
             }
         }
-        problems
+        Ok(problems)
     }
 
     fn record_crate_paths(&mut self, info: &rpc::RustcOutput) -> Result<()> {
@@ -488,6 +507,16 @@ impl Checker {
             }
             problems.push(Problem::PossibleExportedApi(p.clone()));
         }
+    }
+
+    /// Returns the outstanding LinkInfo for when the linker was invoked corresponding to the
+    /// supplied rustc completion event.
+    fn get_link_info(&mut self, info: &rpc::RustcOutput) -> Option<LinkInfo> {
+        let index = self
+            .outstanding_linker_invocations
+            .iter()
+            .position(|link_info| link_info.crate_sel == info.crate_sel)?;
+        Some(self.outstanding_linker_invocations.remove(index))
     }
 }
 
@@ -607,10 +636,10 @@ mod tests {
         }
 
         assert!(problems.is_empty());
-        assert!(checker.check_unused().is_empty());
+        assert!(checker.check_unused().unwrap().is_empty());
 
         // Now reload the config and make that we still don't report any unused configuration.
         checker.update_config(config);
-        assert!(checker.check_unused().is_empty());
+        assert!(checker.check_unused().unwrap().is_empty());
     }
 }
