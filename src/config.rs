@@ -1,4 +1,5 @@
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
 use crate::problem::Problem;
@@ -353,9 +354,9 @@ impl ApiName {
 }
 
 impl Config {
-    pub(crate) fn unsafe_permitted_for_crate(&self, crate_name: &CrateName) -> bool {
+    pub(crate) fn unsafe_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
         self.packages
-            .get(crate_name)
+            .get(&crate_sel.non_sandbox_crate_name())
             .map(|crate_config| crate_config.allow_unsafe)
             .unwrap_or(false)
     }

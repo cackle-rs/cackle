@@ -348,7 +348,7 @@ impl Checker {
         let api = &api_usage.api_name;
         if let Some(crate_info) = self
             .crate_infos
-            .get_mut(&CrateName::from(&api_usage.crate_sel))
+            .get_mut(&api_usage.crate_sel.non_sandbox_crate_name())
         {
             if crate_info.allowed_apis.contains(api) {
                 crate_info.unused_allowed_apis.remove(api);

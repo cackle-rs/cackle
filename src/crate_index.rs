@@ -279,13 +279,6 @@ impl CrateSel {
         }
     }
 
-    pub(crate) fn test(pkg_id: PackageId) -> Self {
-        Self {
-            pkg_id,
-            kind: CrateKind::Test,
-        }
-    }
-
     pub(crate) fn from_env() -> Result<Self> {
         let pkg_id = PackageId::from_env()?;
         let is_build_script = std::env::var("CARGO_CRATE_NAME")
@@ -294,11 +287,7 @@ impl CrateSel {
         if is_build_script {
             Ok(CrateSel::build_script(pkg_id))
         } else if let Ok(crate_kind) = std::env::var(crate::proxy::subprocess::ENV_CRATE_KIND) {
-            if crate_kind == "test" {
-                Ok(CrateSel::test(pkg_id))
-            } else {
-                bail!("Unsupported crate_kind='{crate_kind}'");
-            }
+            CrateSel::primary(pkg_id).with_selector_token(&crate_kind)
         } else {
             Ok(CrateSel::primary(pkg_id))
         }
@@ -317,6 +306,15 @@ impl CrateSel {
             pkg_id: self.pkg_id.clone(),
             kind: CrateKind::from_token(token)?,
         })
+    }
+
+    /// Returns the crate name that should be used for everything except sandbox configuration.
+    pub(crate) fn non_sandbox_crate_name(&self) -> CrateName {
+        if self.kind == CrateKind::Test {
+            CrateName::for_primary(self.pkg_id.name())
+        } else {
+            CrateName::from(self)
+        }
     }
 }
 

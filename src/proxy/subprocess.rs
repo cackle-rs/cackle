@@ -11,6 +11,7 @@ use super::CONFIG_PATH_ENV;
 use crate::config::Config;
 use crate::config::CrateName;
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
@@ -178,7 +179,10 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             .status()?
             .into());
     };
-    let crate_sel = CrateSel::from_env()?;
+    let mut crate_sel = CrateSel::from_env()?;
+    if std::env::args().any(|arg| arg == "--test") {
+        crate_sel.kind = CrateKind::Test;
+    }
     let mut runner = RustcRunner::new(crate_sel)?;
     rpc_client.rustc_started(&runner.crate_sel)?;
     loop {
@@ -225,8 +229,7 @@ impl RustcRunner {
         // We need to parse the configuration each time, since it might have changed. Specifically
         // it might have been changed to allow unsafe.
         let config = get_config_from_env()?;
-        let crate_name = CrateName::from(&self.crate_sel);
-        let unsafe_permitted = config.unsafe_permitted_for_crate(&crate_name);
+        let unsafe_permitted = config.unsafe_permitted_for_crate(&self.crate_sel);
         let mut command = self.get_command(allow_linking, unsafe_permitted)?;
         let output = command.output()?;
         let mut unsafe_locations = Vec::new();
@@ -283,7 +286,6 @@ impl RustcRunner {
         let mut command = Command::new("rustc");
         let mut linker_arg = OsString::new();
         let mut orig_linker_arg = None;
-        let mut crate_kind = None;
         while let Some(arg) = args.next() {
             // Look for `-C linker=...`. If we find it, note the value for later use and drop the
             // argument.
@@ -322,9 +324,6 @@ impl RustcRunner {
                     continue;
                 }
             }
-            if arg == "--test" {
-                crate_kind = Some("test");
-            }
             // For all other arguments, pass them through.
             command.arg(arg);
         }
@@ -339,9 +338,7 @@ impl RustcRunner {
         command.arg("-C").arg(linker_arg);
         command.arg("-C").arg("save-temps");
         command.arg("-Ccodegen-units=1");
-        if let Some(crate_kind) = crate_kind {
-            command.env(ENV_CRATE_KIND, crate_kind);
-        }
+        command.env(ENV_CRATE_KIND, self.crate_sel.selector_token());
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
         }
