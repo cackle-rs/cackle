@@ -22,6 +22,7 @@ use crate::symbol_graph::backtrace::Backtracer;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
 use crate::timing::TimingCollector;
+use crate::tmpdir::TempDir;
 use crate::Args;
 use crate::CheckState;
 use anyhow::anyhow;
@@ -34,7 +35,6 @@ use std::borrow::Cow;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tempfile::TempDir;
 
 mod api_map;
 pub(crate) mod common_prefix;
@@ -516,7 +516,7 @@ mod tests {
 
     fn checker_for_testing() -> Checker {
         Checker::new(
-            Arc::new(TempDir::new().unwrap()),
+            Arc::new(TempDir::new(None).unwrap()),
             PathBuf::default(),
             Arc::new(Args::default()),
             Arc::new(CrateIndex::default()),

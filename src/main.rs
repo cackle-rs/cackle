@@ -30,6 +30,7 @@ mod summary;
 pub(crate) mod symbol;
 mod symbol_graph;
 mod timing;
+mod tmpdir;
 mod ui;
 mod unsafe_checker;
 
@@ -62,6 +63,7 @@ use summary::SummaryOptions;
 use symbol_graph::ScanOutputs;
 
 use crate::proxy::subprocess::PROXY_BIN_ARG;
+use tmpdir::TempDir;
 
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
@@ -124,6 +126,10 @@ struct Args {
     #[clap(long, hide = true)]
     replay_requests: bool,
 
+    /// Temporary directory for Cackle to use. This is intended for testing purposes.
+    #[clap(long, hide = true)]
+    tmpdir: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -181,7 +187,7 @@ struct Cackle {
     root_path: PathBuf,
     config_path: PathBuf,
     checker: Arc<Mutex<Checker>>,
-    tmpdir: Arc<tempfile::TempDir>,
+    tmpdir: Arc<TempDir>,
     args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
@@ -208,7 +214,7 @@ impl Cackle {
 
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
         let target_dir = root_path.join("target");
-        let tmpdir = Arc::new(tempfile::TempDir::new()?);
+        let tmpdir = Arc::new(TempDir::new(args.tmpdir.as_deref())?);
         let checker = Arc::new(Mutex::new(Checker::new(
             tmpdir.clone(),
             target_dir.clone(),
