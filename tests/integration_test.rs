@@ -3,10 +3,11 @@ use anyhow::Result;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use tempfile::TempDir;
 
 #[test]
 fn integration_test() -> Result<()> {
-    fn run_with_args(args: &[&str]) -> Result<()> {
+    fn run_with_args(tmpdir: &TempDir, args: &[&str]) -> Result<()> {
         let mut command = Command::new(cackle_exe());
         // Remove cargo and rust-releated environment variables. In particular we want to remove
         // variables that cargo sets, but which won't always be set. For example CARGO_PKG_NAME is set
@@ -24,6 +25,11 @@ fn integration_test() -> Result<()> {
             .arg("--save-requests")
             .arg("--path")
             .arg(crate_root().join("test_crates"))
+            // Use the same tmpdir for all our runs. This speeds up this test because many of our
+            // tests depend on CACKLE_SOCKET_PATH, so would otherwise need to be rebuilt whenever it
+            // changes.
+            .arg("--tmpdir")
+            .arg(tmpdir.path())
             .args(args)
             .status()
             .with_context(|| format!("Failed to invoke `{}`", cackle_exe().display()))?;
@@ -31,8 +37,10 @@ fn integration_test() -> Result<()> {
         Ok(())
     }
 
-    run_with_args(&["check"])?;
-    run_with_args(&["cargo", "test"])?;
+    let tmpdir = TempDir::new()?;
+
+    run_with_args(&tmpdir, &["check"])?;
+    run_with_args(&tmpdir, &["cargo", "test", "-v"])?;
 
     Ok(())
 }
