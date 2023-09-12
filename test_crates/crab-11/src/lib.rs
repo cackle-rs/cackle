@@ -16,5 +16,10 @@ mod tests {
     #[test]
     fn it_works() {
         access_file();
+
+        // Verify that APIs used from the test itself are attributed as we expect.
+        if std::env::var("CACKLE_TEST_TERMINATE_1").is_ok() {
+            std::process::abort();
+        }
     }
 }

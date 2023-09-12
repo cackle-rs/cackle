@@ -176,6 +176,10 @@ allow_apis = [
 
 [pkg.crab-11.test]
 sandbox.kind = "Disabled"
+allow_apis = [
+    "env",
+    "terminate",
+]
 
 [pkg.crab-1.build.sandbox]
 allow_network = true
