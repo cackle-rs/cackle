@@ -821,8 +821,9 @@ impl Edit for RemoveUnusedPkgConfig {
     fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         let mut path: Vec<_> = pkg_path(&self.perm_sel).collect();
         let last_part = path.pop().unwrap();
-        let parent_table = editor.table(path.into_iter())?;
-        parent_table.remove(last_part);
+        if let Some(parent_table) = editor.opt_table(path.into_iter())? {
+            parent_table.remove(last_part);
+        }
         Ok(())
     }
 }
@@ -1046,13 +1047,17 @@ mod tests {
     }
 
     #[track_caller]
-    fn check(initial_config: &str, problems: &[(usize, Problem)], expected: &str) {
+    fn check(initial_config: &str, problem: &Problem, fix_index: usize, expected: &str) {
         let config = crate::config::testing::parse(initial_config).unwrap();
         let mut editor = ConfigEditor::from_toml_string(initial_config).unwrap();
-        for (index, problem) in problems {
-            let edit = &fixes_for_problem(problem, &config)[*index];
-            edit.apply(&mut editor, &Default::default()).unwrap();
-        }
+        let edit = &fixes_for_problem(problem, &config)[fix_index];
+        edit.apply(&mut editor, &Default::default()).unwrap();
+        let updated_toml = editor.to_toml();
+        assert_eq!(updated_toml, expected);
+
+        // Apply the edit a second time and make sure that the result doesn't change.
+        let mut editor = ConfigEditor::from_toml_string(&updated_toml).unwrap();
+        edit.apply(&mut editor, &Default::default()).unwrap();
         assert_eq!(editor.to_toml(), expected);
     }
 
@@ -1060,7 +1065,8 @@ mod tests {
     fn fix_missing_api_no_existing_config() {
         check(
             "",
-            &[(0, disallowed_api(primary("crab1"), "fs"))],
+            &disallowed_api(primary("crab1"), "fs"),
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -1075,7 +1081,8 @@ mod tests {
     fn fix_missing_api_build_script() {
         check(
             "",
-            &[(0, disallowed_api(build_script("crab1"), "fs"))],
+            &disallowed_api(build_script("crab1"), "fs"),
+            0,
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_apis = [
@@ -1094,7 +1101,8 @@ mod tests {
         });
         check(
             "",
-            &[(1, problem)],
+            &problem,
+            1,
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_build_instructions = [
@@ -1118,7 +1126,8 @@ mod tests {
                     "net",
                 ]
             "#},
-            &[(0, disallowed_api(primary("crab1"), "fs"))],
+            &disallowed_api(primary("crab1"), "fs"),
+            0,
             indoc! {r#"
                 [api.env]
                 [api.net]
@@ -1141,7 +1150,8 @@ mod tests {
                 allow_apis = [
                 ]
             "#},
-            &[(0, disallowed_api(primary("crab1"), "net"))],
+            &disallowed_api(primary("crab1"), "net"),
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -1155,7 +1165,8 @@ mod tests {
     fn fix_allow_proc_macro() {
         check(
             "",
-            &[(0, Problem::IsProcMacro(pkg_id("crab1")))],
+            &Problem::IsProcMacro(pkg_id("crab1")),
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 allow_proc_macro = true
@@ -1168,13 +1179,11 @@ mod tests {
     fn fix_allow_unsafe() {
         check(
             "",
-            &[(
-                0,
-                Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
-                    crate_sel: CrateSel::primary(pkg_id("crab1")),
-                    locations: vec![SourceLocation::new(Path::new("main.rs"), 10, None)],
-                }),
-            )],
+            &Problem::DisallowedUnsafe(crate::proxy::rpc::UnsafeUsage {
+                crate_sel: CrateSel::primary(pkg_id("crab1")),
+                locations: vec![SourceLocation::new(Path::new("main.rs"), 10, None)],
+            }),
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 allow_unsafe = true
@@ -1206,7 +1215,8 @@ mod tests {
         });
         check(
             "",
-            &[(0, failure.clone())],
+            &failure,
+            0,
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
                 allow_network = true
@@ -1215,7 +1225,8 @@ mod tests {
         );
         check(
             "",
-            &[(1, failure)],
+            &failure,
+            1,
             indoc! {r#"
                 [pkg.crab1.build.sandbox]
                 kind = "Disabled"
@@ -1242,7 +1253,8 @@ mod tests {
                     "net",
                 ]
             "#},
-            &[(0, failure)],
+            &failure,
+            0,
             indoc! {r#"
                 [api.fs]
                 [api.env]
@@ -1273,7 +1285,8 @@ mod tests {
                     "net",
                 ]
             "#},
-            &[(0, failure)],
+            &failure,
+            0,
             indoc! {r#"
                 [api.fs]
                 [api.net]
@@ -1292,7 +1305,7 @@ mod tests {
         });
         // If another edit (e.g. removal of an unused pkg config) removed our table, make sure we
         // don't recreate it.
-        check("", &[(0, failure)], "");
+        check("", &failure, 0, "");
     }
 
     #[test]
@@ -1306,12 +1319,24 @@ mod tests {
                 [pkg.crab1.build]
                 allow_unsafe = true
             "#},
-            &[(0, failure)],
+            &failure,
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 allow_unsafe = true
             "#,
             },
+        );
+
+        check(
+            indoc! {r#"
+                [pkg.crab1.build]
+                allow_unsafe = true
+            "#,
+            },
+            &failure,
+            0,
+            "",
         );
     }
 
@@ -1327,7 +1352,8 @@ mod tests {
                 [pkg.crab2]
                 allow_apis = ["fs"]
             "#},
-            &[(0, failure)],
+            &failure,
+            0,
             indoc! {r#"
                 [api.fs]
                 [pkg.crab1]
