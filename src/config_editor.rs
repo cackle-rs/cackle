@@ -4,7 +4,8 @@ use crate::checker::common_prefix::common_to_prefixes;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::Config;
-use crate::config::CrateName;
+use crate::config::PackageName;
+use crate::config::PermSel;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
@@ -91,31 +92,31 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
         }
         Problem::IsProcMacro(pkg_id) => {
             edits.push(Box::new(AllowProcMacro {
-                crate_name: pkg_id.into(),
+                perm_sel: pkg_id.into(),
             }));
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
-                let crate_name = CrateName::from(&failure.crate_sel);
+                let perm_sel = PermSel::from(&failure.crate_sel);
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
-                        crate_name: crate_name.clone(),
+                        perm_sel: perm_sel.clone(),
                     }));
                 }
-                edits.push(Box::new(DisableSandbox { crate_name }));
+                edits.push(Box::new(DisableSandbox { perm_sel }));
             }
         }
         Problem::DisallowedBuildInstruction(failure) => {
             edits.append(&mut edits_for_build_instruction(failure));
         }
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
-            crate_name: CrateName::from(&failure.crate_sel),
+            perm_sel: PermSel::from(&failure.crate_sel),
         })),
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
         })),
         Problem::UnusedPackageConfig(crate_name) => edits.push(Box::new(RemoveUnusedPkgConfig {
-            crate_name: crate_name.clone(),
+            perm_sel: crate_name.clone(),
         })),
         Problem::PossibleExportedApi(info) => {
             edits.push(Box::new(ExtendApi {
@@ -162,16 +163,16 @@ impl ConfigEditor {
         self.document.to_string()
     }
 
-    fn pkg_table(&mut self, crate_name: &CrateName) -> Result<&mut toml_edit::Table> {
-        self.table(pkg_path(crate_name))
+    fn pkg_table(&mut self, perm_sel: &PermSel) -> Result<&mut toml_edit::Table> {
+        self.table(pkg_path(perm_sel))
     }
 
-    fn opt_pkg_table(&mut self, crate_name: &CrateName) -> Result<Option<&mut toml_edit::Table>> {
-        self.opt_table(pkg_path(crate_name))
+    fn opt_pkg_table(&mut self, perm_sel: &PermSel) -> Result<Option<&mut toml_edit::Table>> {
+        self.opt_table(pkg_path(perm_sel))
     }
 
-    fn pkg_sandbox_table(&mut self, crate_name: &CrateName) -> Result<&mut toml_edit::Table> {
-        self.table(pkg_path(crate_name).chain(std::iter::once("sandbox")))
+    fn pkg_sandbox_table(&mut self, perm_sel: &PermSel) -> Result<&mut toml_edit::Table> {
+        self.table(pkg_path(perm_sel).chain(std::iter::once("sandbox")))
     }
 
     fn common_table(&mut self) -> Result<&mut toml_edit::Table> {
@@ -334,8 +335,10 @@ impl ApiUsages {
     }
 }
 
-fn pkg_path(crate_name: &CrateName) -> impl Iterator<Item = &str> + Clone {
-    std::iter::once("pkg").chain(crate_name.as_ref().split('.'))
+fn pkg_path(perm_sel: &PermSel) -> impl Iterator<Item = &str> + Clone {
+    std::iter::once("pkg")
+        .chain(std::iter::once(perm_sel.package_name.as_ref()))
+        .chain(perm_sel.kind.config_selector())
 }
 
 fn edits_for_build_instruction(
@@ -346,7 +349,7 @@ fn edits_for_build_instruction(
     let mut suffix = "";
     loop {
         out.push(Box::new(AllowBuildInstruction {
-            crate_name: CrateName::for_build_script(failure.pkg_id.name()),
+            perm_sel: PermSel::for_build_script(failure.pkg_id.name()),
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
@@ -486,7 +489,7 @@ impl Edit for ImportApi {
         format!(
             "Import API `{}` from package `{}`",
             self.0.api,
-            CrateName::from(&self.0.pkg_id)
+            PackageName::from(&self.0.pkg_id)
         )
     }
 
@@ -498,7 +501,7 @@ impl Edit for ImportApi {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
+        let table = editor.pkg_table(&PermSel::for_primary(self.0.pkg_id.name()))?;
         add_to_array(
             table,
             "import",
@@ -542,7 +545,7 @@ impl Edit for InlineApi {
         format!(
             "Inline API `{}` from package `{}`",
             self.0.api,
-            CrateName::from(&self.0.pkg_id)
+            PermSel::from(&self.0.pkg_id)
         )
     }
 
@@ -632,7 +635,7 @@ impl Edit for IgnoreApi {
         format!(
             "Ignore API `{}` provided by package `{}`",
             self.0.api,
-            CrateName::from(&self.0.pkg_id)
+            PermSel::from(&self.0.pkg_id)
         )
     }
 
@@ -645,7 +648,7 @@ impl Edit for IgnoreApi {
     fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         // Make sure the `import` table exists, otherwise we'll continue to warn about unused
         // imports.
-        let table = editor.pkg_table(&CrateName::from(&self.0.pkg_id))?;
+        let table = editor.pkg_table(&PermSel::from(&self.0.pkg_id))?;
         get_or_create_array(table, "import")?;
         Ok(())
     }
@@ -747,7 +750,7 @@ impl Edit for AllowApiUsage {
         let api = &self.usage.api_name;
         format!(
             "Allow `{}` to use API `{api}`",
-            CrateName::from(&self.usage.crate_sel),
+            PermSel::from(&self.usage.crate_sel),
         )
     }
 
@@ -756,7 +759,7 @@ impl Edit for AllowApiUsage {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&CrateName::from(&self.usage.crate_sel))?;
+        let table = editor.pkg_table(&PermSel::from(&self.usage.crate_sel))?;
         add_to_array(
             table,
             "allow_apis",
@@ -780,7 +783,7 @@ impl Edit for RemoveUnusedAllowApis {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
-        let Some(table) = editor.opt_pkg_table(&self.unused.crate_name)? else {
+        let Some(table) = editor.opt_pkg_table(&self.unused.perm_sel)? else {
             return Ok(());
         };
         let Some(allow_apis) = get_array(table, "allow_apis")? else {
@@ -803,7 +806,7 @@ impl Edit for RemoveUnusedAllowApis {
 }
 
 struct RemoveUnusedPkgConfig {
-    crate_name: CrateName,
+    perm_sel: PermSel,
 }
 
 impl Edit for RemoveUnusedPkgConfig {
@@ -816,7 +819,7 @@ impl Edit for RemoveUnusedPkgConfig {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
-        let mut path: Vec<_> = pkg_path(&self.crate_name).collect();
+        let mut path: Vec<_> = pkg_path(&self.perm_sel).collect();
         let last_part = path.pop().unwrap();
         let parent_table = editor.table(path.into_iter())?;
         parent_table.remove(last_part);
@@ -862,12 +865,12 @@ fn create_string(value: String, comment: Option<&str>) -> Value {
 }
 
 struct AllowProcMacro {
-    crate_name: CrateName,
+    perm_sel: PermSel,
 }
 
 impl Edit for AllowProcMacro {
     fn title(&self) -> String {
-        format!("Allow proc macro `{}`", self.crate_name)
+        format!("Allow proc macro `{}`", self.perm_sel)
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -877,14 +880,14 @@ impl Edit for AllowProcMacro {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&self.crate_name)?;
+        let table = editor.pkg_table(&self.perm_sel)?;
         set_table_value(table, "allow_proc_macro", toml_edit::value(true), opts);
         Ok(())
     }
 }
 
 struct AllowBuildInstruction {
-    crate_name: CrateName,
+    perm_sel: PermSel,
     instruction: String,
 }
 
@@ -892,7 +895,7 @@ impl Edit for AllowBuildInstruction {
     fn title(&self) -> String {
         format!(
             "Allow build script for `{}` to emit instruction `{}`",
-            self.crate_name, self.instruction
+            self.perm_sel, self.instruction
         )
     }
 
@@ -904,7 +907,7 @@ impl Edit for AllowBuildInstruction {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&self.crate_name)?;
+        let table = editor.pkg_table(&self.perm_sel)?;
         add_to_array(
             table,
             "allow_build_instructions",
@@ -915,12 +918,12 @@ impl Edit for AllowBuildInstruction {
 }
 
 struct DisableSandbox {
-    crate_name: CrateName,
+    perm_sel: PermSel,
 }
 
 impl Edit for DisableSandbox {
     fn title(&self) -> String {
-        format!("Disable sandbox for `{}`", self.crate_name)
+        format!("Disable sandbox for `{}`", self.perm_sel)
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -931,19 +934,19 @@ impl Edit for DisableSandbox {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_sandbox_table(&self.crate_name)?;
+        let table = editor.pkg_sandbox_table(&self.perm_sel)?;
         set_table_value(table, "kind", toml_edit::value("Disabled"), opts);
         Ok(())
     }
 }
 
 struct AllowUnsafe {
-    crate_name: CrateName,
+    perm_sel: PermSel,
 }
 
 impl Edit for AllowUnsafe {
     fn title(&self) -> String {
-        format!("Allow package `{}` to use unsafe code", self.crate_name)
+        format!("Allow package `{}` to use unsafe code", self.perm_sel)
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -956,19 +959,19 @@ impl Edit for AllowUnsafe {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&self.crate_name)?;
+        let table = editor.pkg_table(&self.perm_sel)?;
         set_table_value(table, "allow_unsafe", toml_edit::value(true), opts);
         Ok(())
     }
 }
 
 struct SandboxAllowNetwork {
-    crate_name: CrateName,
+    perm_sel: PermSel,
 }
 
 impl Edit for SandboxAllowNetwork {
     fn title(&self) -> String {
-        format!("Permit network from sandbox for `{}`", self.crate_name)
+        format!("Permit network from sandbox for `{}`", self.perm_sel)
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -978,7 +981,7 @@ impl Edit for SandboxAllowNetwork {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_sandbox_table(&self.crate_name)?;
+        let table = editor.pkg_sandbox_table(&self.perm_sel)?;
         set_table_value(table, "allow_network", toml_edit::value(true), opts);
         Ok(())
     }
@@ -1011,6 +1014,7 @@ mod tests {
     use super::InlineStdApi;
     use crate::config::ApiName;
     use crate::config::Config;
+    use crate::config::PermSel;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
     use crate::crate_index::testing::pkg_id;
@@ -1025,9 +1029,17 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    fn disallowed_api(pkg_name: &str, api: &'static str) -> Problem {
+    fn primary(pkg_name: &str) -> CrateSel {
+        CrateSel::primary(pkg_id(pkg_name))
+    }
+
+    fn build_script(pkg_name: &str) -> CrateSel {
+        CrateSel::build_script(pkg_id(pkg_name))
+    }
+
+    fn disallowed_api(crate_sel: CrateSel, api: &'static str) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
-            crate_sel: CrateSel::primary(pkg_id(pkg_name)),
+            crate_sel,
             api_name: ApiName::from(api),
             usages: Vec::new(),
         })
@@ -1048,7 +1060,7 @@ mod tests {
     fn fix_missing_api_no_existing_config() {
         check(
             "",
-            &[(0, disallowed_api("crab1", "fs"))],
+            &[(0, disallowed_api(primary("crab1"), "fs"))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -1063,7 +1075,7 @@ mod tests {
     fn fix_missing_api_build_script() {
         check(
             "",
-            &[(0, disallowed_api("crab1.build", "fs"))],
+            &[(0, disallowed_api(build_script("crab1"), "fs"))],
             indoc! {r#"
                 [pkg.crab1.build]
                 allow_apis = [
@@ -1106,7 +1118,7 @@ mod tests {
                     "net",
                 ]
             "#},
-            &[(0, disallowed_api("crab1", "fs"))],
+            &[(0, disallowed_api(primary("crab1"), "fs"))],
             indoc! {r#"
                 [api.env]
                 [api.net]
@@ -1129,7 +1141,7 @@ mod tests {
                 allow_apis = [
                 ]
             "#},
-            &[(0, disallowed_api("crab1", "net"))],
+            &[(0, disallowed_api(primary("crab1"), "net"))],
             indoc! {r#"
                 [pkg.crab1]
                 allow_apis = [
@@ -1215,7 +1227,7 @@ mod tests {
     #[test]
     fn unused_allow_api() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
-            crate_name: "crab1.build".into(),
+            perm_sel: PermSel::for_build_script("crab1"),
             apis: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
@@ -1247,7 +1259,7 @@ mod tests {
     #[test]
     fn unused_allow_api_empty() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
-            crate_name: "crab1.build".into(),
+            perm_sel: PermSel::for_build_script("crab1"),
             apis: vec![ApiName::new("fs"), ApiName::new("net")],
         });
         check(
@@ -1275,7 +1287,7 @@ mod tests {
     #[test]
     fn unused_allow_api_already_deleted() {
         let failure = Problem::UnusedAllowApi(crate::problem::UnusedAllowApi {
-            crate_name: "crab1".into(),
+            perm_sel: PermSel::for_primary("crab1"),
             apis: vec![ApiName::new("fs")],
         });
         // If another edit (e.g. removal of an unused pkg config) removed our table, make sure we
@@ -1285,7 +1297,7 @@ mod tests {
 
     #[test]
     fn unused_pkg_config_build_script() {
-        let failure = Problem::UnusedPackageConfig("crab1.build".into());
+        let failure = Problem::UnusedPackageConfig(PermSel::for_build_script("crab1"));
         check(
             indoc! {r#"
                 [pkg.crab1]
@@ -1305,7 +1317,7 @@ mod tests {
 
     #[test]
     fn unused_pkg_config() {
-        let failure = Problem::UnusedPackageConfig("crab2".into());
+        let failure = Problem::UnusedPackageConfig(PermSel::for_primary("crab2"));
         check(
             indoc! {r#"
                 [api.fs]
@@ -1337,6 +1349,6 @@ mod tests {
         let edit = &InlineStdApi(fs_api.clone());
         let config = apply_edit_and_parse("", edit);
         let built_ins = crate::config::built_in::get_built_ins();
-        assert_eq!(built_ins.get(&fs_api), config.apis.get(&fs_api));
+        assert_eq!(built_ins.get(&fs_api), config.raw.apis.get(&fs_api));
     }
 }

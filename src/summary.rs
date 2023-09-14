@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::config::CrateName;
 use crate::config::PackageConfig;
+use crate::config::PermSel;
 use crate::crate_index::CrateIndex;
 use clap::Parser;
 use fxhash::FxHashMap;
@@ -42,7 +42,7 @@ pub(crate) struct SummaryOptions {
 }
 
 struct PackageSummary {
-    name: CrateName,
+    name: PermSel,
     permissions: Vec<String>,
 }
 
@@ -58,14 +58,14 @@ impl PackageSummary {
 
 impl Summary {
     pub(crate) fn new(crate_index: &CrateIndex, config: &Config) -> Self {
-        let pkg_configs: FxHashMap<&CrateName, &PackageConfig> =
-            config.packages.iter().map(|(k, v)| (k, v)).collect();
+        let pkg_configs: FxHashMap<&PermSel, &PackageConfig> =
+            config.permissions.iter().map(|(k, v)| (k, v)).collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_ids()
             .map(|pkg_id| {
                 let mut permissions = Vec::new();
-                let pkg_name = CrateName::for_primary(pkg_id.name());
-                let build_script_name = CrateName::for_build_script(pkg_id.name());
+                let pkg_name = PermSel::for_primary(pkg_id.name());
+                let build_script_name = PermSel::for_build_script(pkg_id.name());
                 for (crate_name, suffix) in [(&pkg_name, ""), (&build_script_name, "[build]")] {
                     if let Some(pkg_config) = pkg_configs.get(&crate_name) {
                         if pkg_config.allow_proc_macro {
@@ -133,13 +133,13 @@ impl Summary {
     }
 
     fn print_by_permission(&self) {
-        let mut by_permission: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        let mut by_permission: BTreeMap<&str, Vec<String>> = BTreeMap::new();
         for pkg in &self.packages {
             for perm in &pkg.permissions {
                 by_permission
                     .entry(perm)
                     .or_default()
-                    .push(pkg.name.as_ref());
+                    .push(pkg.name.to_string());
             }
         }
         for (perm, packages) in by_permission {

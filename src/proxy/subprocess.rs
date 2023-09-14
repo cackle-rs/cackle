@@ -9,7 +9,7 @@ use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::Config;
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
@@ -133,9 +133,9 @@ fn proxy_binary(
 ) -> Result<ExitCode> {
     loop {
         let config = get_config_from_env()?;
-        let crate_name = CrateName::from(crate_sel);
-        let sandbox_config = config.sandbox_config_for_package(&crate_name);
-        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &crate_name)?
+        let perm_sel = PermSel::from(crate_sel);
+        let sandbox_config = config.sandbox_config_for_package(&perm_sel);
+        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
             return Ok(Command::new(&orig_bin).status()?.into());

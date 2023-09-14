@@ -7,7 +7,7 @@ use crate::checker::ApiUsage;
 use crate::checker::BinLocation;
 use crate::checker::Checker;
 use crate::config::Config;
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::config_editor;
 use crate::config_editor::ConfigEditor;
 use crate::config_editor::Edit;
@@ -619,7 +619,7 @@ impl ProblemsUi {
         let Some(pkg_id) = self.current_package_id() else {
             return;
         };
-        let pkg_name = CrateName::from(&pkg_id);
+        let pkg_name = PermSel::from(&pkg_id);
         let mut text = String::new();
         if let Some(crate_info) = self.crate_index.package_info(&pkg_id) {
             if let Some(description) = &crate_info.description {

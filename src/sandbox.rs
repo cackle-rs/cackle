@@ -1,4 +1,4 @@
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
 use anyhow::bail;
@@ -58,7 +58,7 @@ pub(crate) trait Sandbox {
 pub(crate) fn from_config(
     config: &SandboxConfig,
     bin_path: &Path,
-    crate_name: &CrateName,
+    perm_sel: &PermSel,
 ) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
         SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
@@ -103,13 +103,13 @@ pub(crate) fn from_config(
     for dir in &config.bind_writable {
         if !dir.exists() {
             bail!(
-                "Sandbox config for `{crate_name}` says to bind directory `{}`, but that doesn't exist",
+                "Sandbox config for `{perm_sel}` says to bind directory `{}`, but that doesn't exist",
                 dir.display()
             );
         }
         if !dir.is_dir() {
             bail!(
-                "Sandbox config for `{crate_name}` says to bind directory `{}`, but that isn't a directory",
+                "Sandbox config for `{perm_sel}` says to bind directory `{}`, but that isn't a directory",
                 dir.display()
             );
         }

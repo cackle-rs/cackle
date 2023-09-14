@@ -1,4 +1,5 @@
 use crate::crate_index::CrateIndex;
+use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
@@ -8,6 +9,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use fxhash::FxHashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -20,29 +22,39 @@ pub(crate) mod built_in;
 
 pub(crate) const MAX_VERSION: i64 = 1;
 
+#[derive(Default, Debug)]
+pub(crate) struct Config {
+    pub(crate) raw: RawConfig,
+
+    pub(crate) permissions: FxHashMap<PermSel, PackageConfig>,
+}
+
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Config {
+pub(crate) struct RawConfig {
     pub(crate) common: CommonConfig,
 
     #[serde(default, rename = "api")]
     pub(crate) apis: BTreeMap<ApiName, ApiConfig>,
 
     #[serde(default, rename = "pkg")]
-    pub(crate) packages: BTreeMap<CrateName, PackageConfig>,
+    packages: BTreeMap<PackageName, PackageConfig>,
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
 }
 
-/// Selects either the primary crate of a package or the build script of a crate. In the latter
-/// case, the format of the name is for example "foo.build" where foo is the name of the primary
-/// package. This struct is like CrateSel, but without any version information. We use this when
-/// we're referring to the cackle configuration, since we don't distinguish between different
-/// versions of crates when granting permissions.
+/// The name of a package. Doesn't include any version information.
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(transparent)]
-pub(crate) struct CrateName(pub(crate) Arc<str>);
+pub(crate) struct PackageName(pub(crate) Arc<str>);
+
+/// A permission selector. Identifies a group of permissions.
+#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
+pub(crate) struct PermSel {
+    pub(crate) package_name: PackageName,
+    pub(crate) kind: CrateKind,
+}
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -93,7 +105,7 @@ pub(crate) struct ApiConfig {
     pub(crate) exclude: Vec<ApiPath>,
 
     #[serde(default)]
-    pub(crate) no_auto_detect: Vec<CrateName>,
+    pub(crate) no_auto_detect: Vec<PackageName>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -150,25 +162,33 @@ pub(crate) struct PackageConfig {
 }
 
 pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Arc<Config>> {
-    let cackle: String = std::fs::read_to_string(cackle_path)
-        .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
-
-    let mut config =
-        parse(&cackle).with_context(|| format!("Failed to parse {}", cackle_path.display()))?;
-    config.load_imports(crate_index)?;
-    config.make_paths_absolute(crate_index.manifest_path.parent())?;
+    let mut raw_config = parse_file_raw(cackle_path)?;
+    raw_config.load_imports(crate_index)?;
+    raw_config.make_paths_absolute(crate_index.manifest_path.parent())?;
+    let permissions = permission_map(&raw_config);
+    let config = Config {
+        raw: raw_config,
+        permissions,
+    };
     crate::config_validation::validate(&config, cackle_path)?;
     Ok(Arc::new(config))
 }
 
-fn parse(cackle: &str) -> Result<Config> {
+fn parse_file_raw(cackle_path: &Path) -> Result<RawConfig> {
+    let cackle: String = std::fs::read_to_string(cackle_path)
+        .with_context(|| format!("Failed to open {}", cackle_path.display()))?;
+    let raw_config =
+        parse_raw(&cackle).with_context(|| format!("Failed to parse {}", cackle_path.display()))?;
+    Ok(raw_config)
+}
+
+fn parse_raw(cackle: &str) -> Result<RawConfig> {
     let mut config = toml::from_str(cackle)?;
     merge_built_ins(&mut config)?;
-    flatten(&mut config);
     Ok(config)
 }
 
-fn merge_built_ins(config: &mut Config) -> Result<()> {
+fn merge_built_ins(config: &mut RawConfig) -> Result<()> {
     if config.common.import_std.is_empty() {
         return Ok(());
     }
@@ -189,15 +209,9 @@ fn merge_built_ins(config: &mut Config) -> Result<()> {
     Ok(())
 }
 
-impl Config {
-    pub(crate) fn get_api_config(&self, api_name: &ApiName) -> Result<&ApiConfig> {
-        self.apis
-            .get(api_name)
-            .ok_or_else(|| anyhow!("Missing API config for `{api_name}`"))
-    }
-
+impl RawConfig {
     fn load_imports(&mut self, crate_index: &CrateIndex) -> Result<()> {
-        for (crate_name, pkg_config) in &mut self.packages {
+        for (pkg_name, pkg_config) in &mut self.packages {
             // If imports are specified, then we leave an empty list of imports. This ensures that
             // later in unused_imports, we can determine whether each package specified imports or
             // not. Although we leave an empty Vec, we can't leave a non-empty Vec, because then
@@ -211,11 +225,9 @@ impl Config {
                 continue;
             }
             let pkg_id = crate_index
-                .newest_package_id_with_name(crate_name)
+                .newest_package_id_with_name(pkg_name)
                 .ok_or_else(|| {
-                    anyhow!(
-                        "Attempted to import APIs from package `{crate_name}` that wasn't found"
-                    )
+                    anyhow!("Attempted to import APIs from package `{pkg_name}` that wasn't found")
                 })?;
             let pkg_exports = exported_config_for_package(pkg_id, crate_index)?;
             for (api_name, api_def) in &pkg_exports.apis {
@@ -224,25 +236,21 @@ impl Config {
                     continue;
                 }
                 let qualified_api_name = ApiName {
-                    name: format!("{}::{}", crate_name, api_name).into(),
+                    name: format!("{pkg_name}::{api_name}").into(),
                 };
                 if self
                     .apis
                     .insert(qualified_api_name.clone(), api_def.clone())
                     .is_some()
                 {
-                    bail!(
-                        "[pkg.{}.api.{}] is defined multiple times",
-                        crate_name,
-                        api_name
-                    );
+                    bail!("[pkg.{pkg_name}.api.{api_name}] is defined multiple times");
                 }
             }
         }
         Ok(())
     }
 
-    pub(crate) fn flattened_toml(&self) -> Result<String> {
+    pub(crate) fn toml_string(&self) -> Result<String> {
         Ok(toml::to_string(self)?)
     }
 
@@ -255,7 +263,7 @@ impl Config {
             // If our config lists any import for this package, even empty, then we skip this.
             if self
                 .packages
-                .get(&pkg_id.into())
+                .get(&PackageName(Arc::from(pkg_id.name())))
                 .map(|config| config.import.is_some())
                 .unwrap_or(false)
             {
@@ -274,57 +282,95 @@ impl Config {
         }
         problems
     }
+}
 
+impl RawConfig {
     fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
         for pkg_config in self.packages.values_mut() {
-            if let Some(sandbox_config) = pkg_config.sandbox.as_mut() {
-                for path in sandbox_config
-                    .bind_writable
-                    .iter_mut()
-                    .chain(sandbox_config.make_writable.iter_mut())
-                {
-                    if !path.is_absolute() {
-                        // When we process the config file in the main cackle process, we should
-                        // always have a workspace root. At that point all paths should be made
-                        // absolute. Subprocesses won't know the workspace root, but the paths
-                        // should already be absolute, since they should be reading a processed
-                        // version of the config written by the main process.
-                        let workspace_root = workspace_root.ok_or_else(|| {
-                            anyhow!("Internal error: relative path with no workspace root")
-                        })?;
-                        *path = workspace_root.join(&path);
-                    }
-                }
-            }
+            pkg_config.make_paths_absolute(workspace_root)?;
         }
         Ok(())
     }
 }
 
+impl PackageConfig {
+    fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
+        if let Some(sandbox_config) = self.sandbox.as_mut() {
+            sandbox_config.make_paths_absolute(workspace_root)?;
+        }
+        if let Some(sub_config) = self.build.as_mut() {
+            sub_config.make_paths_absolute(workspace_root)?;
+        }
+        if let Some(sub_config) = self.test.as_mut() {
+            sub_config.make_paths_absolute(workspace_root)?;
+        }
+        Ok(())
+    }
+}
+
+impl SandboxConfig {
+    fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
+        make_paths_absolute(&mut self.bind_writable, workspace_root)?;
+        make_paths_absolute(&mut self.make_writable, workspace_root)?;
+        Ok(())
+    }
+}
+
+fn make_paths_absolute(paths: &mut [PathBuf], workspace_root: Option<&Path>) -> Result<()> {
+    for path in paths {
+        if !path.is_absolute() {
+            // When we process the config file in the main cackle process, we should
+            // always have a workspace root. At that point all paths should be made
+            // absolute. Subprocesses won't know the workspace root, but the paths
+            // should already be absolute, since they should be reading a processed
+            // version of the config written by the main process.
+            let workspace_root = workspace_root
+                .ok_or_else(|| anyhow!("Internal error: relative path with no workspace root"))?;
+            *path = workspace_root.join(&path);
+        }
+    }
+    Ok(())
+}
+
 /// Attempts to load "cackle/export.toml" from the specified package.
-fn exported_config_for_package(
-    pkg_id: &PackageId,
-    crate_index: &CrateIndex,
-) -> Result<Arc<Config>> {
+fn exported_config_for_package(pkg_id: &PackageId, crate_index: &CrateIndex) -> Result<RawConfig> {
     let pkg_dir = crate_index
         .pkg_dir(pkg_id)
         .ok_or_else(|| anyhow!("Missing pkg_dir for package `{pkg_id}`"))?;
-    parse_file(&pkg_dir.join("cackle").join("export.toml"), crate_index)
+    parse_file_raw(&pkg_dir.join("cackle").join("export.toml"))
 }
 
-fn flatten(config: &mut Config) {
-    let mut crates_by_name = BTreeMap::new();
+pub(crate) fn permission_map(config: &RawConfig) -> FxHashMap<PermSel, PackageConfig> {
+    let mut packages = FxHashMap::default();
     for (name, crate_config) in &config.packages {
         let mut crate_config = crate_config.clone();
         if let Some(sub_cfg) = crate_config.build.take() {
-            crates_by_name.insert(format!("{name}.build").as_str().into(), *sub_cfg);
+            packages.insert(
+                PermSel {
+                    package_name: name.clone(),
+                    kind: CrateKind::BuildScript,
+                },
+                *sub_cfg,
+            );
         }
         if let Some(sub_cfg) = crate_config.test.take() {
-            crates_by_name.insert(format!("{name}.test").as_str().into(), *sub_cfg);
+            packages.insert(
+                PermSel {
+                    package_name: name.clone(),
+                    kind: CrateKind::Test,
+                },
+                *sub_cfg,
+            );
         }
-        crates_by_name.insert(name.clone(), crate_config);
+        packages.insert(
+            PermSel {
+                package_name: name.clone(),
+                kind: CrateKind::Primary,
+            },
+            crate_config,
+        );
     }
-    config.packages = crates_by_name;
+    packages
 }
 
 impl Display for ApiName {
@@ -354,20 +400,27 @@ impl ApiName {
 }
 
 impl Config {
+    pub(crate) fn get_api_config(&self, api_name: &ApiName) -> Result<&ApiConfig> {
+        self.raw
+            .apis
+            .get(api_name)
+            .ok_or_else(|| anyhow!("Missing API config for `{api_name}`"))
+    }
+
     pub(crate) fn unsafe_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
-        self.packages
-            .get(&crate_sel.non_sandbox_crate_name())
+        self.permissions
+            .get(&crate_sel.non_sandbox_perm_sel())
             .map(|crate_config| crate_config.allow_unsafe)
             .unwrap_or(false)
     }
 
-    /// Returns the configuration for `package_name`, inheriting options from the default sandbox
+    /// Returns the configuration for `perm_sel`, inheriting options from the default sandbox
     /// configuration as appropriate.
-    pub(crate) fn sandbox_config_for_package(&self, package_name: &CrateName) -> SandboxConfig {
-        let mut config = self.sandbox.clone();
+    pub(crate) fn sandbox_config_for_package(&self, perm_sel: &PermSel) -> SandboxConfig {
+        let mut config = self.raw.sandbox.clone();
         let Some(pkg_sandbox_config) = self
-            .packages
-            .get(package_name)
+            .permissions
+            .get(perm_sel)
             .and_then(|c| c.sandbox.as_ref())
         else {
             return config;
@@ -415,48 +468,72 @@ impl AsRef<str> for ApiPath {
     }
 }
 
-impl From<&str> for CrateName {
+impl From<&str> for PackageName {
     fn from(value: &str) -> Self {
         Self(Arc::from(value))
     }
 }
 
-impl AsRef<str> for CrateName {
+impl AsRef<str> for PackageName {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl CrateName {
-    pub(crate) fn for_primary(crate_name: &str) -> Self {
-        Self(Arc::from(crate_name))
+impl PermSel {
+    // TODO: Some of the callers of this function already have an Arc<str>, but we're currently
+    // doing an unnecessary heap allocation.
+    pub(crate) fn for_primary(pkg_name: &str) -> Self {
+        Self {
+            package_name: PackageName(Arc::from(pkg_name)),
+            kind: CrateKind::Primary,
+        }
     }
 
-    pub(crate) fn for_build_script(crate_name: &str) -> Self {
-        Self(Arc::from(format!("{crate_name}.build").as_str()))
+    pub(crate) fn for_build_script(pkg_name: &str) -> Self {
+        Self {
+            package_name: PackageName(Arc::from(pkg_name)),
+            kind: CrateKind::BuildScript,
+        }
     }
 
-    pub(crate) fn for_test(crate_name: &str) -> Self {
-        Self(Arc::from(format!("{crate_name}.test").as_str()))
+    pub(crate) fn for_test(pkg_name: &str) -> Self {
+        Self {
+            package_name: PackageName(Arc::from(pkg_name)),
+            kind: CrateKind::Test,
+        }
     }
 
     pub(crate) fn is_build_script(&self) -> bool {
-        self.0.ends_with(".build")
+        self.kind == CrateKind::BuildScript
     }
 
     pub(crate) fn is_test(&self) -> bool {
-        self.0.ends_with(".test")
+        self.kind == CrateKind::Test
     }
 }
 
-impl Display for CrateName {
+impl Display for PackageName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
+impl Display for PermSel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.package_name.fmt(f)?;
+        if let Some(kind_str) = self.kind.config_selector() {
+            '.'.fmt(f)?;
+            kind_str.fmt(f)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod testing {
+    use super::permission_map;
+    use super::Config;
     use crate::config_validation::validate;
     use std::sync::Arc;
 
@@ -466,15 +543,18 @@ pub(crate) mod testing {
             {cackle}
         "
         );
-        let config = Arc::new(super::parse(&cackle_with_header)?);
+        let raw = super::parse_raw(&cackle_with_header)?;
+        let permissions = permission_map(&raw);
+        let config = Config { raw, permissions };
         validate(&config, std::path::Path::new("/dev/null"))?;
-        Ok(config)
+        Ok(Arc::new(config))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::testing::parse;
+    use crate::config::PermSel;
     use crate::config::SandboxKind;
     use crate::crate_index::CrateIndex;
     use std::path::PathBuf;
@@ -483,8 +563,8 @@ mod tests {
     #[test]
     fn empty() {
         let config = parse("").unwrap();
-        assert!(config.apis.is_empty());
-        assert!(config.packages.is_empty());
+        assert!(config.raw.apis.is_empty());
+        assert!(config.permissions.is_empty());
     }
 
     #[track_caller]
@@ -545,7 +625,9 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(config.packages.contains_key(&"foo.build".into()));
+        assert!(config
+            .permissions
+            .contains_key(&PermSel::for_build_script("foo")));
     }
 
     #[test]
@@ -569,11 +651,11 @@ mod tests {
         )
         .unwrap();
 
-        let sandbox_a = config.sandbox_config_for_package(&"a.build".into());
+        let sandbox_a = config.sandbox_config_for_package(&PermSel::for_build_script("a"));
         assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
         assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
 
-        let sandbox_b = config.sandbox_config_for_package(&"b.build".into());
+        let sandbox_b = config.sandbox_config_for_package(&PermSel::for_build_script("b"));
         assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
     }
 
@@ -585,8 +667,8 @@ mod tests {
         let config = super::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
 
         let roundtripped_config =
-            Arc::new(super::parse(&config.flattened_toml().unwrap()).unwrap());
-        assert_eq!(config, roundtripped_config);
+            Arc::new(super::parse_raw(&config.raw.toml_string().unwrap()).unwrap());
+        assert_eq!(config.raw, *roundtripped_config);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::checker::ApiUsage;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
@@ -36,13 +36,13 @@ pub(crate) enum Problem {
     OffTreeApiUsage(OffTreeApiUsage),
     BuildScriptFailed(BinExecutionFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
-    UnusedPackageConfig(CrateName),
+    UnusedPackageConfig(PermSel),
     UnusedAllowApi(UnusedAllowApi),
     SelectSandbox,
     ImportStdApi(ApiName),
     AvailableApi(AvailableApi),
     PossibleExportedApi(PossibleExportedApi),
-    UnusedSandboxConfiguration(CrateName),
+    UnusedSandboxConfiguration(PermSel),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -72,7 +72,7 @@ pub(crate) struct OffTreeApiUsage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct UnusedAllowApi {
-    pub(crate) crate_name: CrateName,
+    pub(crate) perm_sel: PermSel,
     pub(crate) apis: Vec<ApiName>,
 }
 
@@ -352,12 +352,12 @@ impl Display for ApiUsages {
 impl Display for UnusedAllowApi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            writeln!(f, "`pkg.{}` allows APIs that aren't used:", self.crate_name)?;
+            writeln!(f, "`pkg.{}` allows APIs that aren't used:", self.perm_sel)?;
             for api in &self.apis {
                 writeln!(f, "    {api}")?;
             }
         } else {
-            write!(f, "`pkg.{}` allows APIs that aren't used", self.crate_name)?;
+            write!(f, "`pkg.{}` allows APIs that aren't used", self.perm_sel)?;
         }
         Ok(())
     }

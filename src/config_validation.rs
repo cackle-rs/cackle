@@ -21,11 +21,11 @@ enum Problem {
 
 pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
     let mut problems = Vec::new();
-    if config.common.version < 1 || config.common.version > MAX_VERSION {
-        problems.push(Problem::UnsupportedVersion(config.common.version));
+    if config.raw.common.version < 1 || config.raw.common.version > MAX_VERSION {
+        problems.push(Problem::UnsupportedVersion(config.raw.common.version));
     }
-    let permission_names: FxHashSet<_> = config.apis.keys().collect();
-    for crate_config in config.packages.values() {
+    let permission_names: FxHashSet<_> = config.raw.apis.keys().collect();
+    for crate_config in config.permissions.values() {
         let mut used = FxHashSet::default();
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {

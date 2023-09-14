@@ -2,7 +2,8 @@
 //! to which crates, which are proc macros etc.
 
 use self::lib_tree::LibTree;
-use crate::config::CrateName;
+use crate::config::PackageName;
+use crate::config::PermSel;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -47,7 +48,7 @@ pub(crate) struct CrateSel {
     pub(crate) kind: CrateKind,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, PartialOrd, Ord)]
 pub(crate) enum CrateKind {
     Primary,
     BuildScript,
@@ -59,9 +60,9 @@ pub(crate) struct PackageInfo {
     pub(crate) directory: Utf8PathBuf,
     pub(crate) description: Option<String>,
     pub(crate) documentation: Option<String>,
-    crate_name: CrateName,
-    build_script_name: Option<CrateName>,
-    test_name: Option<CrateName>,
+    perm_sel: PermSel,
+    build_script_sel: Option<PermSel>,
+    test_sel: Option<PermSel>,
     is_proc_macro: bool,
 }
 
@@ -104,7 +105,7 @@ impl CrateIndex {
                 has_test |= target.test;
             }
             if let Some(dir) = package.manifest_path.parent() {
-                let crate_name: CrateName = package.name.as_str().into();
+                let perm_sel = PermSel::for_primary(package.name.as_str());
                 direct_deps.insert(
                     pkg_id.clone(),
                     package
@@ -120,10 +121,10 @@ impl CrateIndex {
                         directory: dir.to_path_buf(),
                         description: package.description.clone(),
                         documentation: package.documentation.clone(),
-                        crate_name: crate_name.clone(),
-                        build_script_name: has_build_script
-                            .then(|| CrateName::for_build_script(&package.name)),
-                        test_name: has_test.then(|| CrateName::for_test(&package.name)),
+                        perm_sel: perm_sel.clone(),
+                        build_script_sel: has_build_script
+                            .then(|| PermSel::for_build_script(&package.name)),
+                        test_sel: has_test.then(|| PermSel::for_test(&package.name)),
                         is_proc_macro,
                     },
                 );
@@ -160,9 +161,9 @@ impl CrateIndex {
         command.env(MULTIPLE_VERSION_PKG_NAMES_ENV, non_unique_names.join(","));
     }
 
-    pub(crate) fn newest_package_id_with_name(&self, crate_name: &CrateName) -> Option<&PackageId> {
+    pub(crate) fn newest_package_id_with_name(&self, pkg_name: &PackageName) -> Option<&PackageId> {
         self.pkg_name_to_ids
-            .get(crate_name.as_ref())
+            .get(pkg_name.as_ref())
             .and_then(|pkg_ids| pkg_ids.last())
     }
 
@@ -190,10 +191,10 @@ impl CrateIndex {
         })
     }
 
-    pub(crate) fn crate_names(&self) -> impl Iterator<Item = &CrateName> {
+    pub(crate) fn permission_selectors(&self) -> impl Iterator<Item = &PermSel> {
         self.package_infos.values().flat_map(|info| {
-            std::iter::once(&info.crate_name)
-                .chain(info.build_script_name.iter().chain(info.test_name.iter()))
+            std::iter::once(&info.perm_sel)
+                .chain(info.build_script_sel.iter().chain(info.test_sel.iter()))
         })
     }
 
@@ -308,18 +309,19 @@ impl CrateSel {
         })
     }
 
-    /// Returns the crate name that should be used for everything except sandbox configuration.
-    pub(crate) fn non_sandbox_crate_name(&self) -> CrateName {
+    /// Returns the permission selector that should be used for everything except sandbox
+    /// configuration.
+    pub(crate) fn non_sandbox_perm_sel(&self) -> PermSel {
         if self.kind == CrateKind::Test {
-            CrateName::for_primary(self.pkg_id.name())
+            PermSel::for_primary(self.pkg_id.name())
         } else {
-            CrateName::from(self)
+            PermSel::from(self)
         }
     }
 }
 
 impl CrateKind {
-    fn to_token(&self) -> &'static str {
+    fn to_token(self) -> &'static str {
         match self {
             CrateKind::Primary => "primary",
             CrateKind::BuildScript => "build-script",
@@ -335,11 +337,19 @@ impl CrateKind {
             other => bail!("Invalid crate selector token `{other}`"),
         })
     }
+
+    pub(crate) fn config_selector(self) -> Option<&'static str> {
+        match self {
+            CrateKind::Primary => None,
+            CrateKind::BuildScript => Some("build"),
+            CrateKind::Test => Some("test"),
+        }
+    }
 }
 
-impl From<&PackageId> for CrateName {
+impl From<&PackageId> for PackageName {
     fn from(pkg_id: &PackageId) -> Self {
-        CrateName(pkg_id.name.clone())
+        PackageName(pkg_id.name.clone())
     }
 }
 
@@ -364,12 +374,38 @@ impl Display for PackageId {
     }
 }
 
-impl From<&CrateSel> for CrateName {
+impl From<&CrateSel> for PermSel {
     fn from(value: &CrateSel) -> Self {
-        match value.kind {
-            CrateKind::Primary => CrateName::for_primary(&value.pkg_id.name),
-            CrateKind::BuildScript => CrateName::for_build_script(&value.pkg_id.name),
-            CrateKind::Test => CrateName::for_test(&value.pkg_id.name),
+        PermSel {
+            package_name: PackageName(value.pkg_id.name.clone()),
+            kind: value.kind,
+        }
+    }
+}
+
+impl From<CrateSel> for PermSel {
+    fn from(value: CrateSel) -> Self {
+        PermSel {
+            package_name: PackageName(value.pkg_id.name),
+            kind: value.kind,
+        }
+    }
+}
+
+impl From<PackageId> for PermSel {
+    fn from(value: PackageId) -> Self {
+        PermSel {
+            package_name: PackageName(value.name),
+            kind: CrateKind::Primary,
+        }
+    }
+}
+
+impl From<&PackageId> for PermSel {
+    fn from(value: &PackageId) -> Self {
+        PermSel {
+            package_name: PackageName(value.name.clone()),
+            kind: CrateKind::Primary,
         }
     }
 }
@@ -385,7 +421,7 @@ pub(crate) mod testing {
     use super::CrateIndex;
     use super::PackageId;
     use super::PackageInfo;
-    use crate::config::CrateName;
+    use crate::config::PermSel;
     use cargo_metadata::semver::Version;
     use std::sync::Arc;
 
@@ -407,9 +443,9 @@ pub(crate) mod testing {
                         directory: Default::default(),
                         description: Default::default(),
                         documentation: Default::default(),
-                        crate_name: CrateName(Arc::from(*name)),
-                        build_script_name: None,
-                        test_name: None,
+                        perm_sel: PermSel::for_primary(name),
+                        build_script_sel: None,
+                        test_sel: None,
                         is_proc_macro: Default::default(),
                     },
                 )

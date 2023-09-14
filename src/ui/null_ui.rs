@@ -89,6 +89,7 @@ impl super::UserInterface for NullUi {
 
 #[test]
 fn test_null_ui_with_warning() {
+    use crate::config::PermSel;
     use crate::problem::Problem::UnusedPackageConfig;
 
     let (abort_sender, _abort_recv) = std::sync::mpsc::channel();
@@ -102,8 +103,8 @@ fn test_null_ui_with_warning() {
         }
     });
     let mut problems = crate::problem::ProblemList::default();
-    problems.push(UnusedPackageConfig("crab1".into()));
-    problems.push(UnusedPackageConfig("crab2".into()));
+    problems.push(UnusedPackageConfig(PermSel::for_primary("crab1")));
+    problems.push(UnusedPackageConfig(PermSel::for_primary("crab2")));
     let outcome = problem_store.fix_problems(problems);
     assert_eq!(outcome, crate::outcome::Outcome::Continue);
     event_send.send(AppEvent::Shutdown).unwrap();

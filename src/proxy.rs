@@ -96,11 +96,16 @@ impl<'a> CargoRunner<'a> {
         let listener = UnixListener::bind(&ipc_path)
             .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
 
-        let mut command =
-            cargo::command("build", self.manifest_dir, self.args, &self.config.common);
+        let mut command = cargo::command(
+            "build",
+            self.manifest_dir,
+            self.args,
+            &self.config.raw.common,
+        );
         let default_build_flags = ["--all-targets".to_owned()];
         for flag in self
             .config
+            .raw
             .common
             .build_flags
             .as_deref()
@@ -111,9 +116,9 @@ impl<'a> CargoRunner<'a> {
         if let Some(target) = &self.args.target {
             command.arg("--target").arg(target);
         }
-        if !self.config.common.features.is_empty() {
+        if !self.config.raw.common.features.is_empty() {
             command.arg("--features");
-            command.arg(self.config.common.features.join(","));
+            command.arg(self.config.raw.common.features.join(","));
         }
         let config_path = crate::config::flattened_config_path(self.tmpdir);
         command

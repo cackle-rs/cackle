@@ -1,7 +1,7 @@
 use crate::build_script_checker;
 use crate::config::ApiName;
 use crate::config::Config;
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
@@ -44,7 +44,7 @@ pub(crate) struct Checker {
     /// For each name, the set of APIs active for that name and all names that have this name as a
     /// prefix.
     apis_by_prefix: api_map::ApiMap,
-    pub(crate) crate_infos: FxHashMap<CrateName, CrateInfo>,
+    pub(crate) crate_infos: FxHashMap<PermSel, CrateInfo>,
     config_path: PathBuf,
     pub(crate) config: Arc<Config>,
     target_dir: PathBuf,
@@ -139,7 +139,7 @@ impl Checker {
         // A subprocess might try to read the flattened config while we're updating it. It doesn't
         // matter if it sees the old or the new flattened config, but we don't want it to see a
         // partially written config, so we write first to a temporary file then rename it.
-        crate::fs::write_atomic(&flattened_path, &config.flattened_toml()?)?;
+        crate::fs::write_atomic(&flattened_path, &config.raw.toml_string()?)?;
 
         self.update_config(config);
         info!("Config (re)loaded");
@@ -156,13 +156,13 @@ impl Checker {
 
     fn update_config(&mut self, config: Arc<Config>) {
         self.apis_by_prefix.clear();
-        for api in config.apis.values() {
+        for api in config.raw.apis.values() {
             for path in api.include.iter().chain(api.exclude.iter()) {
                 self.apis_by_prefix
                     .create_entry(crate::names::split_simple(&path.prefix).parts())
             }
         }
-        for (api_name, api) in &config.apis {
+        for (api_name, api) in &config.raw.apis {
             for path in &api.include {
                 let name = &crate::names::split_simple(&path.prefix);
                 self.apis_by_prefix
@@ -172,7 +172,7 @@ impl Checker {
                     });
             }
         }
-        for (api_name, api_config) in &config.apis {
+        for (api_name, api_config) in &config.raw.apis {
             for path in &api_config.exclude {
                 let name = &crate::names::split_simple(&path.prefix);
                 self.apis_by_prefix
@@ -182,8 +182,8 @@ impl Checker {
                     });
             }
         }
-        for (crate_name, crate_config) in &config.packages {
-            let crate_info = self.crate_infos.entry(crate_name.clone()).or_default();
+        for (perm_sel, crate_config) in &config.permissions {
+            let crate_info = self.crate_infos.entry(perm_sel.clone()).or_default();
             for api in &crate_config.allow_apis {
                 if crate_info.allowed_apis.insert(api.clone()) {
                     crate_info.unused_allowed_apis.insert(api.clone());
@@ -198,8 +198,8 @@ impl Checker {
         for pkg_id in self.crate_index.proc_macros() {
             if !self
                 .config
-                .packages
-                .get(&pkg_id.into())
+                .permissions
+                .get(&CrateSel::primary(pkg_id.clone()).into())
                 .map(|pkg_config| pkg_config.allow_proc_macro)
                 .unwrap_or(false)
             {
@@ -273,7 +273,7 @@ impl Checker {
         if check_state
             .graph_outputs
             .as_ref()
-            .map(|outputs| outputs.apis != self.config.apis)
+            .map(|outputs| outputs.apis != self.config.raw.apis)
             .unwrap_or(false)
         {
             // APIs have changed, invalidate cache.
@@ -283,7 +283,7 @@ impl Checker {
             let exe_path = Arc::from(exe_path);
             let (mut graph_outputs, backtracer) =
                 crate::symbol_graph::scan_objects(paths, &exe_path, self)?;
-            graph_outputs.apis = self.config.apis.clone();
+            graph_outputs.apis = self.config.raw.apis.clone();
             check_state.graph_outputs = Some(graph_outputs);
             self.backtracers.insert(exe_path.clone(), backtracer);
         }
@@ -301,12 +301,12 @@ impl Checker {
     }
 
     pub(crate) fn verify_build_script_permitted(&mut self, pkg_id: &PackageId) -> ProblemList {
-        if !self.config.common.explicit_build_scripts {
+        if !self.config.raw.common.explicit_build_scripts {
             return ProblemList::default();
         }
         if self
             .crate_infos
-            .contains_key(&CrateName::for_build_script(pkg_id.name()))
+            .contains_key(&PermSel::for_build_script(pkg_id.name()))
         {
             return ProblemList::default();
         }
@@ -360,7 +360,7 @@ impl Checker {
         let api = &api_usage.api_name;
         if let Some(crate_info) = self
             .crate_infos
-            .get_mut(&api_usage.crate_sel.non_sandbox_crate_name())
+            .get_mut(&api_usage.crate_sel.non_sandbox_perm_sel())
         {
             if crate_info.allowed_apis.contains(api) {
                 crate_info.unused_allowed_apis.remove(api);
@@ -446,21 +446,21 @@ impl Checker {
         }
 
         let mut problems = ProblemList::default();
-        let crate_names_in_index: FxHashSet<_> = self.crate_index.crate_names().collect();
-        for (crate_name, crate_info) in &self.crate_infos {
-            if !crate_names_in_index.contains(crate_name) {
-                problems.push(Problem::UnusedPackageConfig(crate_name.clone()));
+        let perm_sels_in_index: FxHashSet<_> = self.crate_index.permission_selectors().collect();
+        for (perm_sel, crate_info) in &self.crate_infos {
+            if !perm_sels_in_index.contains(perm_sel) {
+                problems.push(Problem::UnusedPackageConfig(perm_sel.clone()));
             }
             if !crate_info.unused_allowed_apis.is_empty() {
                 problems.push(Problem::UnusedAllowApi(UnusedAllowApi {
-                    crate_name: crate_name.clone(),
+                    perm_sel: perm_sel.clone(),
                     apis: crate_info.unused_allowed_apis.iter().cloned().collect(),
                 }));
             }
         }
-        for (crate_name, config) in &self.config.packages {
-            if config.sandbox.is_some() && !crate_name.is_build_script() && !crate_name.is_test() {
-                problems.push(Problem::UnusedSandboxConfiguration(crate_name.clone()));
+        for (perm_sel, config) in &self.config.permissions {
+            if config.sandbox.is_some() && !perm_sel.is_build_script() && !perm_sel.is_test() {
+                problems.push(Problem::UnusedSandboxConfiguration(perm_sel.clone()));
             }
         }
         Ok(problems)
@@ -490,16 +490,16 @@ impl Checker {
         problems: &mut ProblemList,
     ) {
         for p in possible_exported_apis {
-            let crate_name = CrateName::from(&p.pkg_id);
-            if let Some(pkg_config) = self.config.packages.get(&crate_name) {
+            let perm_sel = PermSel::for_primary(p.pkg_id.name());
+            if let Some(pkg_config) = self.config.permissions.get(&perm_sel) {
                 // If we've imported any APIs, or ignored available APIs from the package, then we
                 // don't want to report a possible export.
                 if pkg_config.import.is_some() {
                     continue;
                 }
             }
-            if let Some(api_config) = self.config.apis.get(&p.api) {
-                if api_config.no_auto_detect.contains(&crate_name)
+            if let Some(api_config) = self.config.raw.apis.get(&p.api) {
+                if api_config.no_auto_detect.contains(&perm_sel.package_name)
                     || api_config.include.contains(&p.api_path())
                 {
                     continue;

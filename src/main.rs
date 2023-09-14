@@ -314,7 +314,7 @@ impl Cackle {
             checker.load_config()?;
 
             if !self.args.replay_requests && !matches!(self.args.command, Command::Cargo(..)) {
-                proxy::clean(&self.root_path, &self.args, &checker.config.common)?;
+                proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
             }
         }
 
@@ -323,7 +323,7 @@ impl Cackle {
         let crate_index = self.checker.lock().unwrap().crate_index.clone();
         initial_outcome = initial_outcome.and(
             self.problem_store
-                .fix_problems(config.unused_imports(&crate_index)),
+                .fix_problems(config.raw.unused_imports(&crate_index)),
         );
 
         {
@@ -401,7 +401,7 @@ impl Cackle {
             .join("target")
             .join(profile_name(
                 &self.args,
-                &self.checker.lock().unwrap().config.common,
+                &self.checker.lock().unwrap().config.raw.common,
             ))
             .join("saved-cackle-rpcs")
     }

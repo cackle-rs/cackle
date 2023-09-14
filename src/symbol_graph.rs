@@ -13,7 +13,7 @@ use crate::checker::BinLocation;
 use crate::checker::Checker;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
-use crate::config::CrateName;
+use crate::config::PermSel;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::location::SourceLocation;
@@ -408,10 +408,12 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 let crate_names = lazy_crate_names.as_ref().unwrap();
 
                 for crate_sel in crate_names.as_ref() {
-                    let crate_name = CrateName::from(crate_sel);
+                    let perm_sel = PermSel::from(crate_sel);
                     // If a package references another symbol within the same package,
                     // ignore it.
-                    if name.starts_with(crate_name.as_ref()) {
+                    // TODO: This should be use the crate name form (i.e. with underscores, not
+                    // hyphens).
+                    if name.starts_with(perm_sel.package_name.as_ref()) {
                         continue;
                     }
                     for api in apis {
@@ -479,6 +481,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
     fn find_possible_exports(&mut self, checker: &Checker) {
         let api_names: FxHashMap<&str, &ApiName> = checker
             .config
+            .raw
             .apis
             .keys()
             .map(|n| (n.name.as_ref(), n))
