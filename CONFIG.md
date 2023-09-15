@@ -41,7 +41,7 @@ import_std = [
 
 ## Package permissions
 
-Example:
+We can grant permissions to a package to use APIs or use unsafe. e.g.:
 
 ```toml
 [pkg.crab1]
@@ -54,6 +54,45 @@ allow_apis = [
 
 Here we declare a package called `crab1` and say that it is allowed to use the `fs` and `process`
 APIs. We also say that it's allowed to use unsafe code.
+
+We can also conditionally grant permissions to use APIs only from particular kinds of binaries. For
+example, if we wanted to allow `crab1` to use the `fs` API, but only in code that is only reachable
+from test code, we can do that as follows:
+
+```toml
+[pkg.crab1]
+dep.test.allow_apis = [
+    "fs",
+]
+```
+
+Similarly, we can allow the API to be used, but only in code that is reachable from build scripts:
+
+```toml
+[pkg.crab1]
+dep.build.allow_apis = [
+    "fs",
+]
+```
+
+If we want to allow an API to be used specifically by `crab1`'s build script, we can do that as follows:
+
+```toml
+[pkg.crab1]
+build.allow_apis = [
+    "fs",
+]
+```
+
+Allowed APIs inherit as follows:
+
+* pkg.N
+  * pkg.N.dep.build (any build script)
+    * pkg.N.build (N's build script)
+  * pkg.N.dep.test (any test)
+    * pkg.N.test (N's tests)
+
+So granting an API usage to `pkg.N` means it can be used in any kind of binary.
 
 ## Sandbox
 

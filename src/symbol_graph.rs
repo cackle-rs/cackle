@@ -11,11 +11,12 @@ use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::BinLocation;
 use crate::checker::Checker;
+use crate::config::permissions::PermissionScope;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
-use crate::config::PermSel;
-use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
+use crate::crate_index::PackageId;
+use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::names::DebugName;
 use crate::names::Name;
@@ -72,7 +73,8 @@ struct ApiUsageCollector<'input, 'backtracer> {
 }
 
 struct SingleApiUsage {
-    crate_sel: CrateSel,
+    pkg_id: PackageId,
+    scope: PermissionScope,
     api: ApiName,
     usage: ApiUsage,
 }
@@ -81,6 +83,7 @@ struct SingleApiUsage {
 /// object (so).
 struct BinInfo<'input> {
     filename: Arc<Path>,
+    crate_sel: CrateSel,
     symbol_addresses: FxHashMap<Symbol<'input>, u64>,
     /// Symbols that we've already determined have no APIs. This is an optimisation that lets us
     /// skip these symbols when we see them again.
@@ -92,7 +95,7 @@ struct BinInfo<'input> {
 
 #[derive(Default)]
 pub(crate) struct ScanOutputs {
-    api_usages: FxHashMap<(CrateSel, ApiName), ApiUsages>,
+    api_usages: FxHashMap<(PackageId, ApiName), ApiUsages>,
 
     /// Problems not related to api_usage. These can't be fixed by config changes via the UI, since
     /// once computed, they won't be recomputed.
@@ -127,18 +130,18 @@ struct SymbolInfo<'data> {
 
 pub(crate) fn scan_objects(
     paths: &[PathBuf],
-    bin_path: &Arc<Path>,
+    link_info: &LinkInfo,
     checker: &mut Checker,
 ) -> Result<(ScanOutputs, Backtracer)> {
-    log::info!("Scanning {}", bin_path.display());
+    log::info!("Scanning {}", link_info.output_file.display());
     let start = Instant::now();
-    let file_bytes = std::fs::read(bin_path)
-        .with_context(|| format!("Failed to read `{}`", bin_path.display()))?;
+    let file_bytes = std::fs::read(&link_info.output_file)
+        .with_context(|| format!("Failed to read `{}`", link_info.output_file.display()))?;
     checker.timings.add_timing(start, "Read bin file");
 
     let mut backtracer = Backtracer::default();
     let outputs =
-        scan_object_with_bin_bytes(&file_bytes, checker, &mut backtracer, bin_path, paths)?;
+        scan_object_with_bin_bytes(&file_bytes, checker, &mut backtracer, link_info, paths)?;
 
     backtracer.provide_bin_bytes(file_bytes);
     Ok((outputs, backtracer))
@@ -148,24 +151,28 @@ fn scan_object_with_bin_bytes(
     bin_file_bytes: &Vec<u8>,
     checker: &mut Checker,
     backtracer: &mut Backtracer,
-    bin_path: &Arc<Path>,
+    link_info: &LinkInfo,
     paths: &[PathBuf],
 ) -> Result<ScanOutputs> {
     let start = Instant::now();
     let obj = object::File::parse(bin_file_bytes.as_slice())
-        .with_context(|| format!("Failed to parse {}", bin_path.display()))?;
+        .with_context(|| format!("Failed to parse {}", link_info.output_file.display()))?;
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
     let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf).with_context(|| {
         format!(
             "Failed while processing debug info for `{}`",
-            bin_path.display()
+            link_info.output_file.display()
         )
     })?;
     let start = checker.timings.add_timing(start, "Read debug artifacts");
-    let ctx = addr2line::Context::from_dwarf(dwarf)
-        .with_context(|| format!("Failed in addr2line for `{}`", bin_path.display()))?;
+    let ctx = addr2line::Context::from_dwarf(dwarf).with_context(|| {
+        format!(
+            "Failed in addr2line for `{}`",
+            link_info.output_file.display()
+        )
+    })?;
     let start = checker.timings.add_timing(start, "Build addr2line context");
     let no_api_symbol_hashes = debug_artifacts
         .symbol_debug_info
@@ -176,7 +183,8 @@ fn scan_object_with_bin_bytes(
         outputs: Default::default(),
         backtracer,
         bin: BinInfo {
-            filename: bin_path.clone(),
+            filename: link_info.output_file.clone(),
+            crate_sel: link_info.crate_sel.clone(),
             symbol_addresses: Default::default(),
             symbol_debug_info: debug_artifacts.symbol_debug_info,
             symbol_has_no_apis: no_api_symbol_hashes,
@@ -393,6 +401,7 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
         let mut lazy_location = None;
         let mut lazy_crate_names = None;
         let bin_path = self.bin.filename.clone();
+        let bin_sel = self.bin.crate_sel.clone();
         self.bin
             .names_and_apis_do(target, checker, |name, name_source, apis| {
                 // For the majority of references we expect no APIs to match. We defer computation
@@ -402,18 +411,16 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 }
                 let location = lazy_location.as_ref().unwrap();
                 if lazy_crate_names.is_none() {
-                    lazy_crate_names =
-                        Some(checker.crate_names_from_source_path(location.filename())?);
+                    lazy_crate_names = Some(checker.pkg_ids_from_source_path(location.filename())?);
                 }
                 let crate_names = lazy_crate_names.as_ref().unwrap();
 
-                for crate_sel in crate_names.as_ref() {
-                    let perm_sel = PermSel::from(crate_sel);
+                for pkg_id in crate_names.as_ref() {
                     // If a package references another symbol within the same package,
                     // ignore it.
                     // TODO: This should be use the crate name form (i.e. with underscores, not
                     // hyphens).
-                    if name.starts_with(perm_sel.package_name.as_ref()) {
+                    if name.starts_with(pkg_id.name_str()) {
                         continue;
                     }
                     for api in apis {
@@ -424,11 +431,13 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                             .map(|n| n.location_fetcher.location())
                             .transpose()?;
                         let api_usage = SingleApiUsage {
-                            crate_sel: crate_sel.clone(),
+                            pkg_id: pkg_id.clone(),
+                            scope: PermissionScope::determine(pkg_id, &bin_sel),
                             api: api.clone(),
                             usage: ApiUsage {
                                 bin_location,
                                 bin_path: bin_path.clone(),
+                                permission_scope: PermissionScope::determine(pkg_id, &bin_sel),
                                 source_location: location.clone(),
                                 outer_location,
                                 from: from.names.symbol_or_debug_name()?,
@@ -464,11 +473,12 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 self.outputs
                     .api_usages
                     .entry((
-                        shortest_target_usage.crate_sel.clone(),
+                        shortest_target_usage.pkg_id.clone(),
                         shortest_target_usage.api.clone(),
                     ))
                     .or_insert_with(|| ApiUsages {
-                        crate_sel: shortest_target_usage.crate_sel.clone(),
+                        pkg_id: shortest_target_usage.pkg_id.clone(),
+                        scope: shortest_target_usage.scope,
                         api_name: shortest_target_usage.api.clone(),
                         usages: Default::default(),
                     })
@@ -495,16 +505,11 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 continue;
             };
             let location = debug_info.source_location();
-            for crate_sel in checker
-                .opt_crate_names_from_source_path(location.filename())
+            for pkg_id in checker
+                .opt_pkg_ids_from_source_path(location.filename())
                 .unwrap_or_else(|| Cow::Owned(Vec::new()))
                 .as_ref()
             {
-                // APIs can only be exported from the primary crate in a package.
-                if crate_sel.kind != CrateKind::Primary {
-                    continue;
-                };
-                let pkg_id = &crate_sel.pkg_id;
                 if found.insert((pkg_id.clone(), api_name)) {
                     // Macros can sometimes result in symbols being attributed to lower-level
                     // crates, so we only consider exported APIs that start with the crate name we
@@ -825,7 +830,8 @@ impl Filetype {
 /// it's probably unnecessary to show them all.
 #[derive(Hash, Eq, PartialEq)]
 pub(crate) struct ApiUsageGroupKey {
-    crate_sel: CrateSel,
+    pkg_id: PackageId,
+    scope: PermissionScope,
     api: ApiName,
     from: SymbolOrDebugName,
     source_location: SourceLocation,
@@ -834,7 +840,8 @@ pub(crate) struct ApiUsageGroupKey {
 impl SingleApiUsage {
     fn group_key(&self) -> ApiUsageGroupKey {
         ApiUsageGroupKey {
-            crate_sel: self.crate_sel.clone(),
+            pkg_id: self.pkg_id.clone(),
+            scope: self.scope,
             api: self.api.clone(),
             from: self.usage.from.clone(),
             source_location: self.usage.source_location.clone(),

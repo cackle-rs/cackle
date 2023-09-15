@@ -1,11 +1,11 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
 use crate::checker::common_prefix::common_to_prefixes;
+use crate::config::permissions::PermSel;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::Config;
 use crate::config::PackageName;
-use crate::config::PermSel;
 use crate::config::SandboxKind;
 use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
@@ -92,12 +92,12 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
         }
         Problem::IsProcMacro(pkg_id) => {
             edits.push(Box::new(AllowProcMacro {
-                perm_sel: pkg_id.into(),
+                perm_sel: PermSel::for_primary(pkg_id.pkg_name()),
             }));
         }
         Problem::BuildScriptFailed(failure) => {
             if failure.output.sandbox_config.kind != SandboxKind::Disabled {
-                let perm_sel = PermSel::from(&failure.crate_sel);
+                let perm_sel = PermSel::for_build_script(failure.crate_sel.pkg_name());
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
                         perm_sel: perm_sel.clone(),
@@ -110,7 +110,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
             edits.append(&mut edits_for_build_instruction(failure));
         }
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
-            perm_sel: PermSel::from(&failure.crate_sel),
+            perm_sel: PermSel::for_non_build_output(&failure.crate_sel),
         })),
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
@@ -338,7 +338,13 @@ impl ApiUsages {
 fn pkg_path(perm_sel: &PermSel) -> impl Iterator<Item = &str> + Clone {
     std::iter::once("pkg")
         .chain(std::iter::once(perm_sel.package_name.as_ref()))
-        .chain(perm_sel.kind.config_selector())
+        .chain(
+            perm_sel
+                .scope
+                .config_selector()
+                .into_iter()
+                .flat_map(|s| s.split('.')),
+        )
 }
 
 fn edits_for_build_instruction(
@@ -349,7 +355,7 @@ fn edits_for_build_instruction(
     let mut suffix = "";
     loop {
         out.push(Box::new(AllowBuildInstruction {
-            perm_sel: PermSel::for_build_script(failure.pkg_id.name()),
+            perm_sel: PermSel::for_build_script(failure.pkg_id.name_str()),
             instruction: format!("{instruction}{suffix}"),
         }));
         suffix = "*";
@@ -501,7 +507,7 @@ impl Edit for ImportApi {
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&PermSel::for_primary(self.0.pkg_id.name()))?;
+        let table = editor.pkg_table(&PermSel::for_primary(self.0.pkg_id.name_str()))?;
         add_to_array(
             table,
             "import",
@@ -544,8 +550,7 @@ impl Edit for InlineApi {
     fn title(&self) -> String {
         format!(
             "Inline API `{}` from package `{}`",
-            self.0.api,
-            PermSel::from(&self.0.pkg_id)
+            self.0.api, self.0.pkg_id
         )
     }
 
@@ -634,8 +639,7 @@ impl Edit for IgnoreApi {
     fn title(&self) -> String {
         format!(
             "Ignore API `{}` provided by package `{}`",
-            self.0.api,
-            PermSel::from(&self.0.pkg_id)
+            self.0.api, self.0.pkg_id
         )
     }
 
@@ -648,7 +652,7 @@ impl Edit for IgnoreApi {
     fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
         // Make sure the `import` table exists, otherwise we'll continue to warn about unused
         // imports.
-        let table = editor.pkg_table(&PermSel::from(&self.0.pkg_id))?;
+        let table = editor.pkg_table(&PermSel::for_primary(self.0.pkg_id.pkg_name()))?;
         get_or_create_array(table, "import")?;
         Ok(())
     }
@@ -715,7 +719,7 @@ impl Edit for NoDetectApi {
         format!(
             "Don't detect `{}` in `{}`",
             self.0.api,
-            self.0.pkg_id.name(),
+            self.0.pkg_id.name_str(),
         )
     }
 
@@ -723,7 +727,7 @@ impl Edit for NoDetectApi {
         format!(
             "Ignore this possible exported API. Select this if you've looked at `{}` and \
              determined that it doesn't export the API `{}`",
-            self.0.pkg_id.name(),
+            self.0.pkg_id.name_str(),
             self.0.api,
         )
         .into()
@@ -734,7 +738,7 @@ impl Edit for NoDetectApi {
         add_to_array(
             table,
             "no_auto_detect",
-            &[self.0.pkg_id.name()],
+            &[self.0.pkg_id.name_str()],
             opts.comment.as_deref(),
         )?;
         Ok(())
@@ -748,18 +752,33 @@ struct AllowApiUsage {
 impl Edit for AllowApiUsage {
     fn title(&self) -> String {
         let api = &self.usage.api_name;
-        format!(
-            "Allow `{}` to use API `{api}`",
-            PermSel::from(&self.usage.crate_sel),
-        )
+        format!("Allow `{}` to use API `{api}`", self.usage.perm_sel(),)
     }
 
     fn help(&self) -> Cow<'static, str> {
-        "Allow this package to use the specified category of API.".into()
+        let pkg = &self.usage.pkg_id;
+        let api = &self.usage.api_name;
+        match self.usage.scope {
+            crate::config::permissions::PermissionScope::All => {
+                format!("Allow `{pkg}` to use `{api}` in any binary").into()
+            }
+            crate::config::permissions::PermissionScope::Build => {
+                format!("Allow `{pkg}` to use `{api}` in its own build script").into()
+            }
+            crate::config::permissions::PermissionScope::Test => {
+                format!("Allow `{pkg}` to use `{api}` in its own tests").into()
+            }
+            crate::config::permissions::PermissionScope::DepBuild => {
+                format!("Allow `{pkg}` to use `{api}` in any build script").into()
+            }
+            crate::config::permissions::PermissionScope::DepTest => {
+                format!("Allow `{pkg}` to use `{api}` in any test").into()
+            }
+        }
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
-        let table = editor.pkg_table(&PermSel::from(&self.usage.crate_sel))?;
+        let table = editor.pkg_table(&self.usage.perm_sel())?;
         add_to_array(
             table,
             "allow_apis",
@@ -1013,13 +1032,15 @@ mod tests {
     use super::ConfigEditor;
     use super::Edit;
     use super::InlineStdApi;
+    use crate::config::permissions::PermSel;
+    use crate::config::permissions::PermissionScope;
     use crate::config::ApiName;
     use crate::config::Config;
-    use crate::config::PermSel;
     use crate::config::SandboxConfig;
     use crate::config_editor::fixes_for_problem;
     use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
+    use crate::crate_index::PackageId;
     use crate::location::SourceLocation;
     use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;
@@ -1030,17 +1051,10 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    fn primary(pkg_name: &str) -> CrateSel {
-        CrateSel::primary(pkg_id(pkg_name))
-    }
-
-    fn build_script(pkg_name: &str) -> CrateSel {
-        CrateSel::build_script(pkg_id(pkg_name))
-    }
-
-    fn disallowed_api(crate_sel: CrateSel, api: &'static str) -> Problem {
+    fn disallowed_api(pkg_id: PackageId, scope: PermissionScope, api: &'static str) -> Problem {
         Problem::DisallowedApiUsage(ApiUsages {
-            crate_sel,
+            pkg_id: pkg_id.clone(),
+            scope,
             api_name: ApiName::from(api),
             usages: Vec::new(),
         })
@@ -1065,7 +1079,7 @@ mod tests {
     fn fix_missing_api_no_existing_config() {
         check(
             "",
-            &disallowed_api(primary("crab1"), "fs"),
+            &disallowed_api(pkg_id("crab1"), PermissionScope::All, "fs"),
             0,
             indoc! {r#"
                 [pkg.crab1]
@@ -1081,7 +1095,7 @@ mod tests {
     fn fix_missing_api_build_script() {
         check(
             "",
-            &disallowed_api(build_script("crab1"), "fs"),
+            &disallowed_api(pkg_id("crab1"), PermissionScope::Build, "fs"),
             0,
             indoc! {r#"
                 [pkg.crab1.build]
@@ -1126,7 +1140,7 @@ mod tests {
                     "net",
                 ]
             "#},
-            &disallowed_api(primary("crab1"), "fs"),
+            &disallowed_api(pkg_id("crab1"), PermissionScope::All, "fs"),
             0,
             indoc! {r#"
                 [api.env]
@@ -1150,7 +1164,7 @@ mod tests {
                 allow_apis = [
                 ]
             "#},
-            &disallowed_api(primary("crab1"), "net"),
+            &disallowed_api(pkg_id("crab1"), PermissionScope::All, "net"),
             0,
             indoc! {r#"
                 [pkg.crab1]

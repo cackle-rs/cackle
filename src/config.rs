@@ -1,6 +1,5 @@
+use self::permissions::Permissions;
 use crate::crate_index::CrateIndex;
-use crate::crate_index::CrateKind;
-use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
 use crate::problem::Problem;
@@ -9,7 +8,6 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use fxhash::FxHashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -19,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub(crate) mod built_in;
+pub(crate) mod permissions;
 
 pub(crate) const MAX_VERSION: i64 = 1;
 
@@ -26,7 +25,13 @@ pub(crate) const MAX_VERSION: i64 = 1;
 pub(crate) struct Config {
     pub(crate) raw: RawConfig,
 
-    pub(crate) permissions: FxHashMap<PermSel, PackageConfig>,
+    /// Permissions with inheritance. This is what should be used when checking if something is
+    /// allowed.
+    pub(crate) permissions: Permissions,
+
+    /// Permissions without inheritance. This should only be used when checking for unused
+    /// configuration.
+    pub(crate) permissions_no_inheritance: Permissions,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -48,13 +53,6 @@ pub(crate) struct RawConfig {
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(transparent)]
 pub(crate) struct PackageName(pub(crate) Arc<str>);
-
-/// A permission selector. Identifies a group of permissions.
-#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
-pub(crate) struct PermSel {
-    pub(crate) package_name: PackageName,
-    pub(crate) kind: CrateKind,
-}
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -146,13 +144,11 @@ pub(crate) struct PackageConfig {
     #[serde(default)]
     pub(crate) allow_proc_macro: bool,
 
-    /// Configuration for this crate's build.rs. Only used during parsing, after which it's
-    /// flattened out.
-    build: Option<Box<PackageConfig>>,
+    pub(crate) build: Option<Box<PackageConfig>>,
+    pub(crate) test: Option<Box<PackageConfig>>,
 
-    /// Configuration for this crate's tests. Only used during parsing, after which it's flattened
-    /// out.
-    test: Option<Box<PackageConfig>>,
+    #[serde()]
+    pub(crate) dep: Option<DepConfig>,
 
     #[serde()]
     pub(crate) sandbox: Option<SandboxConfig>,
@@ -161,17 +157,33 @@ pub(crate) struct PackageConfig {
     pub(crate) import: Option<Vec<String>>,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DepConfig {
+    pub(crate) build: Option<Box<PackageConfig>>,
+    pub(crate) test: Option<Box<PackageConfig>>,
+}
+
 pub(crate) fn parse_file(cackle_path: &Path, crate_index: &CrateIndex) -> Result<Arc<Config>> {
     let mut raw_config = parse_file_raw(cackle_path)?;
     raw_config.load_imports(crate_index)?;
     raw_config.make_paths_absolute(crate_index.manifest_path.parent())?;
-    let permissions = permission_map(&raw_config);
-    let config = Config {
-        raw: raw_config,
-        permissions,
-    };
+    let config = Config::from_raw(raw_config, crate_index)?;
     crate::config_validation::validate(&config, cackle_path)?;
-    Ok(Arc::new(config))
+    Ok(config)
+}
+
+impl Config {
+    fn from_raw(raw_config: RawConfig, crate_index: &CrateIndex) -> Result<Arc<Config>> {
+        let permissions_no_inheritance = Permissions::from_config(&raw_config);
+        let permissions = Permissions::from_config_with_inheritance(&raw_config, crate_index);
+        let config = Config {
+            raw: raw_config,
+            permissions,
+            permissions_no_inheritance,
+        };
+        Ok(Arc::new(config))
+    }
 }
 
 fn parse_file_raw(cackle_path: &Path) -> Result<RawConfig> {
@@ -250,10 +262,6 @@ impl RawConfig {
         Ok(())
     }
 
-    pub(crate) fn toml_string(&self) -> Result<String> {
-        Ok(toml::to_string(self)?)
-    }
-
     /// Return warnings for all packages that export APIs but where we have no import for that
     /// package. Users can suppress this warning by either importing an API, or if they don't want
     /// to import any APIs from this package, by listing `import = []`.
@@ -263,7 +271,7 @@ impl RawConfig {
             // If our config lists any import for this package, even empty, then we skip this.
             if self
                 .packages
-                .get(&PackageName(Arc::from(pkg_id.name())))
+                .get(&PackageName(Arc::from(pkg_id.name_str())))
                 .map(|config| config.import.is_some())
                 .unwrap_or(false)
             {
@@ -340,39 +348,6 @@ fn exported_config_for_package(pkg_id: &PackageId, crate_index: &CrateIndex) -> 
     parse_file_raw(&pkg_dir.join("cackle").join("export.toml"))
 }
 
-pub(crate) fn permission_map(config: &RawConfig) -> FxHashMap<PermSel, PackageConfig> {
-    let mut packages = FxHashMap::default();
-    for (name, crate_config) in &config.packages {
-        let mut crate_config = crate_config.clone();
-        if let Some(sub_cfg) = crate_config.build.take() {
-            packages.insert(
-                PermSel {
-                    package_name: name.clone(),
-                    kind: CrateKind::BuildScript,
-                },
-                *sub_cfg,
-            );
-        }
-        if let Some(sub_cfg) = crate_config.test.take() {
-            packages.insert(
-                PermSel {
-                    package_name: name.clone(),
-                    kind: CrateKind::Test,
-                },
-                *sub_cfg,
-            );
-        }
-        packages.insert(
-            PermSel {
-                package_name: name.clone(),
-                kind: CrateKind::Primary,
-            },
-            crate_config,
-        );
-    }
-    packages
-}
-
 impl Display for ApiName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
@@ -394,7 +369,7 @@ impl From<&'static str> for ApiName {
 impl ApiName {
     pub(crate) fn new(name: &str) -> Self {
         Self {
-            name: name.to_owned().into(),
+            name: Arc::from(name),
         }
     }
 }
@@ -405,42 +380,6 @@ impl Config {
             .apis
             .get(api_name)
             .ok_or_else(|| anyhow!("Missing API config for `{api_name}`"))
-    }
-
-    pub(crate) fn unsafe_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
-        self.permissions
-            .get(&crate_sel.non_sandbox_perm_sel())
-            .map(|crate_config| crate_config.allow_unsafe)
-            .unwrap_or(false)
-    }
-
-    /// Returns the configuration for `perm_sel`, inheriting options from the default sandbox
-    /// configuration as appropriate.
-    pub(crate) fn sandbox_config_for_package(&self, perm_sel: &PermSel) -> SandboxConfig {
-        let mut config = self.raw.sandbox.clone();
-        let Some(pkg_sandbox_config) = self
-            .permissions
-            .get(perm_sel)
-            .and_then(|c| c.sandbox.as_ref())
-        else {
-            return config;
-        };
-        if pkg_sandbox_config.kind != SandboxKind::Inherit {
-            config.kind = pkg_sandbox_config.kind;
-        }
-        config
-            .extra_args
-            .extend(pkg_sandbox_config.extra_args.iter().cloned());
-        config
-            .bind_writable
-            .extend(pkg_sandbox_config.bind_writable.iter().cloned());
-        config
-            .make_writable
-            .extend(pkg_sandbox_config.make_writable.iter().cloned());
-        if let Some(allow_network) = pkg_sandbox_config.allow_network {
-            config.allow_network = Some(allow_network);
-        }
-        config
     }
 }
 
@@ -480,59 +419,20 @@ impl AsRef<str> for PackageName {
     }
 }
 
-impl PermSel {
-    // TODO: Some of the callers of this function already have an Arc<str>, but we're currently
-    // doing an unnecessary heap allocation.
-    pub(crate) fn for_primary(pkg_name: &str) -> Self {
-        Self {
-            package_name: PackageName(Arc::from(pkg_name)),
-            kind: CrateKind::Primary,
-        }
-    }
-
-    pub(crate) fn for_build_script(pkg_name: &str) -> Self {
-        Self {
-            package_name: PackageName(Arc::from(pkg_name)),
-            kind: CrateKind::BuildScript,
-        }
-    }
-
-    pub(crate) fn for_test(pkg_name: &str) -> Self {
-        Self {
-            package_name: PackageName(Arc::from(pkg_name)),
-            kind: CrateKind::Test,
-        }
-    }
-
-    pub(crate) fn is_build_script(&self) -> bool {
-        self.kind == CrateKind::BuildScript
-    }
-
-    pub(crate) fn is_test(&self) -> bool {
-        self.kind == CrateKind::Test
-    }
-}
-
 impl Display for PackageName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl Display for PermSel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.package_name.fmt(f)?;
-        if let Some(kind_str) = self.kind.config_selector() {
-            '.'.fmt(f)?;
-            kind_str.fmt(f)?;
-        }
-        Ok(())
+impl PartialEq<&str> for ApiName {
+    fn eq(&self, other: &&str) -> bool {
+        self.name.as_ref() == *other
     }
 }
 
 #[cfg(test)]
 pub(crate) mod testing {
-    use super::permission_map;
     use super::Config;
     use crate::config_validation::validate;
     use std::sync::Arc;
@@ -544,27 +444,25 @@ pub(crate) mod testing {
         "
         );
         let raw = super::parse_raw(&cackle_with_header)?;
-        let permissions = permission_map(&raw);
-        let config = Config { raw, permissions };
+        let package_names: Vec<_> = raw.packages.keys().map(|k| k.as_ref()).collect();
+        let crate_index = crate::crate_index::testing::index_with_package_names(&package_names);
+        let config = Config::from_raw(raw, &crate_index).unwrap();
         validate(&config, std::path::Path::new("/dev/null"))?;
-        Ok(Arc::new(config))
+        Ok(config)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::testing::parse;
-    use crate::config::PermSel;
+    use crate::config::permissions::PermSel;
     use crate::config::SandboxKind;
-    use crate::crate_index::CrateIndex;
-    use std::path::PathBuf;
-    use std::sync::Arc;
 
     #[test]
     fn empty() {
         let config = parse("").unwrap();
         assert!(config.raw.apis.is_empty());
-        assert!(config.permissions.is_empty());
+        assert!(config.permissions.packages.is_empty());
     }
 
     #[track_caller]
@@ -627,7 +525,8 @@ mod tests {
         .unwrap();
         assert!(config
             .permissions
-            .contains_key(&PermSel::for_build_script("foo")));
+            .get(&PermSel::for_build_script("foo"))
+            .is_some());
     }
 
     #[test]
@@ -651,24 +550,16 @@ mod tests {
         )
         .unwrap();
 
-        let sandbox_a = config.sandbox_config_for_package(&PermSel::for_build_script("a"));
+        let sandbox_a = config
+            .permissions
+            .sandbox_config_for_package(&PermSel::for_build_script("a"));
         assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
         assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
 
-        let sandbox_b = config.sandbox_config_for_package(&PermSel::for_build_script("b"));
+        let sandbox_b = config
+            .permissions
+            .sandbox_config_for_package(&PermSel::for_build_script("b"));
         assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
-    }
-
-    #[test]
-    fn flattened_config_roundtrips() {
-        let crate_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-        let test_crates_dir = crate_root.join("test_crates");
-        let crate_index = CrateIndex::new(&test_crates_dir).unwrap();
-        let config = super::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
-
-        let roundtripped_config =
-            Arc::new(super::parse_raw(&config.raw.toml_string().unwrap()).unwrap());
-        assert_eq!(config.raw, *roundtripped_config);
     }
 
     #[test]
@@ -688,5 +579,14 @@ mod tests {
         assert!(result.is_err());
         println!("{}", result.as_ref().unwrap_err());
         assert!(result.unwrap_err().to_string().contains("terminate"));
+    }
+
+    #[test]
+    fn invalid_nesting() {
+        assert!(parse("[pkg.x.dep.dep]").is_err());
+        assert!(parse("[pkg.x.build.dep]").is_err());
+        assert!(parse("[pkg.x.build.build]").is_err());
+        assert!(parse("[pkg.x.test.dep]").is_err());
+        assert!(parse("[pkg.x.test.test]").is_err());
     }
 }

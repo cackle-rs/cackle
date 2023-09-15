@@ -1,4 +1,4 @@
-use crate::config::PermSel;
+use crate::config::permissions::PermSel;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
 use anyhow::bail;

@@ -8,9 +8,8 @@ use super::rpc::RustcOutput;
 use super::run_command;
 use super::ExitCode;
 use super::CONFIG_PATH_ENV;
-use crate::config::Config;
-use crate::config::PermSel;
-use crate::crate_index::CrateIndex;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::Permissions;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
@@ -116,14 +115,17 @@ fn setup_bin_wrapper(link_info: &mut LinkInfo) -> Result<()> {
 }
 
 /// Returns the name of the real bin file after we've renamed it.
-fn orig_bin_path(path: &Path) -> PathBuf {
-    if let Some(extension) = path.extension() {
-        let mut new_extension = OsString::from("orig.");
-        new_extension.push(extension);
-        path.with_extension(new_extension)
-    } else {
-        path.with_extension("orig")
-    }
+fn orig_bin_path(path: &Path) -> Arc<Path> {
+    Arc::from(
+        if let Some(extension) = path.extension() {
+            let mut new_extension = OsString::from("orig.");
+            new_extension.push(extension);
+            path.with_extension(new_extension)
+        } else {
+            path.with_extension("orig")
+        }
+        .as_path(),
+    )
 }
 
 fn proxy_binary(
@@ -132,9 +134,9 @@ fn proxy_binary(
     rpc_client: &RpcClient,
 ) -> Result<ExitCode> {
     loop {
-        let config = get_config_from_env()?;
-        let perm_sel = PermSel::from(crate_sel);
-        let sandbox_config = config.sandbox_config_for_package(&perm_sel);
+        let permissions = get_permissions_from_env()?;
+        let perm_sel = PermSel::for_non_build_output(crate_sel);
+        let sandbox_config = permissions.sandbox_config_for_package(&perm_sel);
         let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
@@ -216,8 +218,8 @@ impl RustcRunner {
     fn run(&mut self, rpc_client: &RpcClient) -> Result<RustcRunStatus> {
         // We need to parse the configuration each time, since it might have changed. Specifically
         // it might have been changed to allow unsafe.
-        let config = get_config_from_env()?;
-        let unsafe_permitted = config.unsafe_permitted_for_crate(&self.crate_sel);
+        let permissions = get_permissions_from_env()?;
+        let unsafe_permitted = permissions.unsafe_permitted_for_crate(&self.crate_sel);
         let mut command = self.get_command(unsafe_permitted)?;
         let output = command.output()?;
         let mut unsafe_locations = Vec::new();
@@ -352,22 +354,21 @@ fn default_linker() -> String {
     "cc".to_owned()
 }
 
-fn get_config_from_env() -> Result<Arc<Config>> {
+fn get_permissions_from_env() -> Result<Permissions> {
     let Ok(config_path) = std::env::var(CONFIG_PATH_ENV) else {
         bail!("Internal env var `{}` not set", CONFIG_PATH_ENV);
     };
-    // We pass an empty crate index here. That means that the config file we load cannot load config
-    // from any other crates. It won't need to though, because the config file we pass will be one
-    // that the parent process wrote after it loaded any required crate-specific config files and
-    // then flattened them into a single file.
-    crate::config::parse_file(Path::new(&config_path), &CrateIndex::default())
+    Permissions::parse_file(Path::new(&config_path))
 }
 
 #[test]
 fn test_orig_bin_path() {
-    assert_eq!(orig_bin_path(Path::new("foo")), Path::new("foo.orig"));
     assert_eq!(
-        orig_bin_path(Path::new("foo.exe")),
+        orig_bin_path(Path::new("foo")).as_ref(),
+        Path::new("foo.orig")
+    );
+    assert_eq!(
+        orig_bin_path(Path::new("foo.exe")).as_ref(),
         Path::new("foo.orig.exe")
     );
 }

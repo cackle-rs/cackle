@@ -1,18 +1,18 @@
+use crate::crate_index::CrateSel;
 use anyhow::bail;
 use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
-
-use crate::crate_index::CrateSel;
+use std::sync::Arc;
 
 /// Information about a linker invocation.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub(crate) struct LinkInfo {
     pub(crate) crate_sel: CrateSel,
     pub(crate) object_paths: Vec<PathBuf>,
-    pub(crate) output_file: PathBuf,
+    pub(crate) output_file: Arc<Path>,
     is_shared: bool,
 }
 
@@ -47,12 +47,12 @@ impl LinkInfo {
     }
 }
 
-fn get_output_file() -> Result<PathBuf> {
+fn get_output_file() -> Result<Arc<Path>> {
     let mut args = std::env::args();
     while let Some(arg) = args.next() {
         if arg == "-o" {
             if let Some(output) = args.next() {
-                return Ok(PathBuf::from(output));
+                return Ok(Arc::from(Path::new(&output)));
             }
         }
     }

@@ -89,7 +89,7 @@ impl super::UserInterface for NullUi {
 
 #[test]
 fn test_null_ui_with_warning() {
-    use crate::config::PermSel;
+    use crate::config::permissions::PermSel;
     use crate::problem::Problem::UnusedPackageConfig;
 
     let (abort_sender, _abort_recv) = std::sync::mpsc::channel();

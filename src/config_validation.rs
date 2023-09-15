@@ -17,6 +17,7 @@ enum Problem {
     UnknownPermission(ApiName),
     DuplicateAllowedApi(ApiName),
     UnsupportedVersion(i64),
+    InvalidPkgSelector(String),
 }
 
 pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), InvalidConfig> {
@@ -25,7 +26,7 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
         problems.push(Problem::UnsupportedVersion(config.raw.common.version));
     }
     let permission_names: FxHashSet<_> = config.raw.apis.keys().collect();
-    for crate_config in config.permissions.values() {
+    for (perm_sel, crate_config) in &config.permissions_no_inheritance.packages {
         let mut used = FxHashSet::default();
         for permission_name in &crate_config.allow_apis {
             if !permission_names.contains(permission_name) {
@@ -34,6 +35,15 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
             if !used.insert(permission_name) {
                 problems.push(Problem::DuplicateAllowedApi(permission_name.clone()))
             }
+        }
+        if crate_config.build.is_some() {
+            problems.push(Problem::InvalidPkgSelector(format!("{perm_sel}.build")));
+        }
+        if crate_config.test.is_some() {
+            problems.push(Problem::InvalidPkgSelector(format!("{perm_sel}.test")));
+        }
+        if crate_config.dep.is_some() {
+            problems.push(Problem::InvalidPkgSelector(format!("{perm_sel}.dep")));
         }
     }
     if problems.is_empty() {
@@ -57,6 +67,9 @@ impl Display for InvalidConfig {
                 }
                 Problem::UnsupportedVersion(version) => {
                     write!(f, "  Unsupported version '{version}'")?
+                }
+                Problem::InvalidPkgSelector(sel) => {
+                    write!(f, "  Unsupported package selector `pkg.{sel}`")?
                 }
             }
         }

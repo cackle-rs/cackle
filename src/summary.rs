@@ -1,6 +1,6 @@
+use crate::config::permissions::PermSel;
 use crate::config::Config;
 use crate::config::PackageConfig;
-use crate::config::PermSel;
 use crate::crate_index::CrateIndex;
 use clap::Parser;
 use fxhash::FxHashMap;
@@ -58,14 +58,18 @@ impl PackageSummary {
 
 impl Summary {
     pub(crate) fn new(crate_index: &CrateIndex, config: &Config) -> Self {
-        let pkg_configs: FxHashMap<&PermSel, &PackageConfig> =
-            config.permissions.iter().map(|(k, v)| (k, v)).collect();
+        let pkg_configs: FxHashMap<&PermSel, &PackageConfig> = config
+            .permissions
+            .packages
+            .iter()
+            .map(|(k, v)| (k, v))
+            .collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_ids()
             .map(|pkg_id| {
                 let mut permissions = Vec::new();
-                let pkg_name = PermSel::for_primary(pkg_id.name());
-                let build_script_name = PermSel::for_build_script(pkg_id.name());
+                let pkg_name = PermSel::for_primary(pkg_id.name_str());
+                let build_script_name = PermSel::for_build_script(pkg_id.name_str());
                 for (crate_name, suffix) in [(&pkg_name, ""), (&build_script_name, "[build]")] {
                     if let Some(pkg_config) = pkg_configs.get(&crate_name) {
                         if pkg_config.allow_proc_macro {

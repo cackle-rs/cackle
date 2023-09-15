@@ -2,8 +2,9 @@
 //! to which crates, which are proc macros etc.
 
 use self::lib_tree::LibTree;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::PermissionScope;
 use crate::config::PackageName;
-use crate::config::PermSel;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -29,6 +30,7 @@ pub(crate) struct CrateIndex {
     dir_to_pkg_id: FxHashMap<PathBuf, PackageId>,
     pkg_name_to_ids: FxHashMap<Arc<str>, Vec<PackageId>>,
     lib_tree: LibTree,
+    pub(crate) permission_selectors: FxHashSet<PermSel>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,9 +62,6 @@ pub(crate) struct PackageInfo {
     pub(crate) directory: Utf8PathBuf,
     pub(crate) description: Option<String>,
     pub(crate) documentation: Option<String>,
-    perm_sel: PermSel,
-    build_script_sel: Option<PermSel>,
-    test_sel: Option<PermSel>,
     is_proc_macro: bool,
 }
 
@@ -105,7 +104,6 @@ impl CrateIndex {
                 has_test |= target.test;
             }
             if let Some(dir) = package.manifest_path.parent() {
-                let perm_sel = PermSel::for_primary(package.name.as_str());
                 direct_deps.insert(
                     pkg_id.clone(),
                     package
@@ -121,12 +119,14 @@ impl CrateIndex {
                         directory: dir.to_path_buf(),
                         description: package.description.clone(),
                         documentation: package.documentation.clone(),
-                        perm_sel: perm_sel.clone(),
-                        build_script_sel: has_build_script
-                            .then(|| PermSel::for_build_script(&package.name)),
-                        test_sel: has_test.then(|| PermSel::for_test(&package.name)),
                         is_proc_macro,
                     },
+                );
+                add_permission_selectors(
+                    &mut mapping.permission_selectors,
+                    package.name.as_str(),
+                    has_build_script,
+                    has_test,
                 );
                 mapping
                     .pkg_name_to_ids
@@ -191,13 +191,6 @@ impl CrateIndex {
         })
     }
 
-    pub(crate) fn permission_selectors(&self) -> impl Iterator<Item = &PermSel> {
-        self.package_infos.values().flat_map(|info| {
-            std::iter::once(&info.perm_sel)
-                .chain(info.build_script_sel.iter().chain(info.test_sel.iter()))
-        })
-    }
-
     /// Returns the ID of the package that contains the specified path, if any. This is used as a
     /// fallback if we can't locate a source file in the deps emitted by rustc. This can happen for
     /// example in the case of crates that compile C code, since the C code won't be in the deps
@@ -228,7 +221,29 @@ impl CrateIndex {
     }
 }
 
+fn add_permission_selectors(
+    permission_selectors: &mut FxHashSet<PermSel>,
+    pkg_name: &str,
+    has_build_script: bool,
+    has_test: bool,
+) {
+    let perm_sel = PermSel::for_primary(pkg_name);
+    permission_selectors.insert(perm_sel.clone());
+    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::DepBuild));
+    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::DepTest));
+    if has_build_script {
+        permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::Build));
+    }
+    if has_test {
+        permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::Test));
+    }
+}
+
 impl PackageId {
+    pub(crate) fn pkg_name(&self) -> Arc<str> {
+        self.name.clone()
+    }
+
     pub(crate) fn from_env() -> Result<Self> {
         let name = get_env("CARGO_PKG_NAME")?;
         let version_string = get_env("CARGO_PKG_VERSION")?;
@@ -266,6 +281,10 @@ fn get_env(key: &str) -> Result<String> {
 }
 
 impl CrateSel {
+    pub(crate) fn pkg_name(&self) -> Arc<str> {
+        self.pkg_id.name.clone()
+    }
+
     pub(crate) fn primary(pkg_id: PackageId) -> Self {
         Self {
             pkg_id,
@@ -308,16 +327,6 @@ impl CrateSel {
             kind: CrateKind::from_token(token)?,
         })
     }
-
-    /// Returns the permission selector that should be used for everything except sandbox
-    /// configuration.
-    pub(crate) fn non_sandbox_perm_sel(&self) -> PermSel {
-        if self.kind == CrateKind::Test {
-            PermSel::for_primary(self.pkg_id.name())
-        } else {
-            PermSel::from(self)
-        }
-    }
 }
 
 impl CrateKind {
@@ -336,14 +345,6 @@ impl CrateKind {
             "test" => CrateKind::Test,
             other => bail!("Invalid crate selector token `{other}`"),
         })
-    }
-
-    pub(crate) fn config_selector(self) -> Option<&'static str> {
-        match self {
-            CrateKind::Primary => None,
-            CrateKind::BuildScript => Some("build"),
-            CrateKind::Test => Some("test"),
-        }
     }
 }
 
@@ -374,44 +375,8 @@ impl Display for PackageId {
     }
 }
 
-impl From<&CrateSel> for PermSel {
-    fn from(value: &CrateSel) -> Self {
-        PermSel {
-            package_name: PackageName(value.pkg_id.name.clone()),
-            kind: value.kind,
-        }
-    }
-}
-
-impl From<CrateSel> for PermSel {
-    fn from(value: CrateSel) -> Self {
-        PermSel {
-            package_name: PackageName(value.pkg_id.name),
-            kind: value.kind,
-        }
-    }
-}
-
-impl From<PackageId> for PermSel {
-    fn from(value: PackageId) -> Self {
-        PermSel {
-            package_name: PackageName(value.name),
-            kind: CrateKind::Primary,
-        }
-    }
-}
-
-impl From<&PackageId> for PermSel {
-    fn from(value: &PackageId) -> Self {
-        PermSel {
-            package_name: PackageName(value.name.clone()),
-            kind: CrateKind::Primary,
-        }
-    }
-}
-
 impl PackageId {
-    pub(crate) fn name(&self) -> &str {
+    pub(crate) fn name_str(&self) -> &str {
         &self.name
     }
 }
@@ -421,8 +386,8 @@ pub(crate) mod testing {
     use super::CrateIndex;
     use super::PackageId;
     use super::PackageInfo;
-    use crate::config::PermSel;
     use cargo_metadata::semver::Version;
+    use fxhash::FxHashSet;
     use std::sync::Arc;
 
     pub(crate) fn pkg_id(name: &str) -> PackageId {
@@ -443,16 +408,18 @@ pub(crate) mod testing {
                         directory: Default::default(),
                         description: Default::default(),
                         documentation: Default::default(),
-                        perm_sel: PermSel::for_primary(name),
-                        build_script_sel: None,
-                        test_sel: None,
                         is_proc_macro: Default::default(),
                     },
                 )
             })
             .collect();
+        let mut permission_selectors = FxHashSet::default();
+        for pkg_name in package_names {
+            super::add_permission_selectors(&mut permission_selectors, pkg_name, false, false);
+        }
         Arc::new(CrateIndex {
             package_infos,
+            permission_selectors,
             ..CrateIndex::default()
         })
     }

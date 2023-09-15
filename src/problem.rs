@@ -2,10 +2,11 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::PermissionScope;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
-use crate::config::PermSel;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
@@ -59,7 +60,8 @@ pub(crate) struct BinExecutionFailed {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApiUsages {
-    pub(crate) crate_sel: CrateSel,
+    pub(crate) pkg_id: PackageId,
+    pub(crate) scope: PermissionScope,
     pub(crate) api_name: ApiName,
     pub(crate) usages: Vec<ApiUsage>,
 }
@@ -101,7 +103,7 @@ pub(crate) struct PossibleExportedApi {
 impl PossibleExportedApi {
     pub(crate) fn api_path(&self) -> ApiPath {
         ApiPath {
-            prefix: Arc::from(format!("{}::{}", self.pkg_id.name(), self.api).as_str()),
+            prefix: Arc::from(format!("{}::{}", self.pkg_id.name_str(), self.api).as_str()),
         }
     }
 }
@@ -186,7 +188,8 @@ impl Problem {
     pub(crate) fn deduplication_key(&self) -> Problem {
         match self {
             Problem::DisallowedApiUsage(api_usage) => Problem::DisallowedApiUsage(ApiUsages {
-                crate_sel: api_usage.crate_sel.clone(),
+                pkg_id: api_usage.pkg_id.clone(),
+                scope: api_usage.scope,
                 api_name: api_usage.api_name.clone(),
                 usages: Default::default(),
             }),
@@ -215,8 +218,8 @@ impl Problem {
             Problem::UsesBuildScript(pkg_id) => Some(pkg_id),
             Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
-            Problem::DisallowedApiUsage(d) => Some(d.crate_sel.pkg_id()),
-            Problem::OffTreeApiUsage(d) => Some(&d.usages.crate_sel.pkg_id),
+            Problem::DisallowedApiUsage(d) => Some(&d.pkg_id),
+            Problem::OffTreeApiUsage(d) => Some(&d.usages.pkg_id),
             Problem::BuildScriptFailed(d) => Some(d.crate_sel.pkg_id()),
             Problem::DisallowedBuildInstruction(d) => Some(&d.pkg_id),
             Problem::UnusedPackageConfig(_) => None,
@@ -266,9 +269,7 @@ impl Display for Problem {
                 write!(
                     f,
                     "`{}` uses `{}` API from non-dependency `{}`",
-                    info.usages.crate_sel.pkg_id(),
-                    info.usages.api_name,
-                    info.referenced_pkg_id
+                    info.usages.pkg_id, info.usages.api_name, info.referenced_pkg_id
                 )?;
                 if f.alternate() {
                     writeln!(f)?;
@@ -339,11 +340,18 @@ impl Display for ApiUsages {
             writeln!(
                 f,
                 "'{}' uses disallowed API `{}`",
-                self.crate_sel, self.api_name
+                self.pkg_id, self.api_name
             )?;
             display_usages(f, &self.usages)?;
         } else {
-            write!(f, "`{}` uses API `{}`", self.crate_sel, self.api_name)?;
+            write!(f, "`{}` uses API `{}`", self.pkg_id, self.api_name)?;
+            match self.scope {
+                PermissionScope::All => {}
+                PermissionScope::Build => " from its build script".fmt(f)?,
+                PermissionScope::Test => " from its test(s)".fmt(f)?,
+                PermissionScope::DepBuild => " via a build script in another package".fmt(f)?,
+                PermissionScope::DepTest => " via a test in another package".fmt(f)?,
+            }
         }
         Ok(())
     }
@@ -434,7 +442,8 @@ impl From<Problem> for ProblemList {
 
 impl std::hash::Hash for ApiUsages {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.crate_sel.hash(state);
+        self.pkg_id.hash(state);
+        self.scope.hash(state);
         // Out of laziness, we only hash the API name, not the usage information.
         self.api_name.hash(state);
     }
@@ -442,7 +451,7 @@ impl std::hash::Hash for ApiUsages {
 
 impl ApiUsages {
     fn merge(&mut self, mut b: ApiUsages) {
-        if self.crate_sel != b.crate_sel || self.api_name != b.api_name {
+        if self.pkg_id != b.pkg_id || self.api_name != b.api_name || self.scope != b.scope {
             panic!("Attempted to merge ApiUsages with incompatible attributes");
         }
         self.usages.append(&mut b.usages);
@@ -450,9 +459,14 @@ impl ApiUsages {
 
     pub(crate) fn with_usages(&self, usages: Vec<ApiUsage>) -> Self {
         Self {
-            crate_sel: self.crate_sel.clone(),
+            pkg_id: self.pkg_id.clone(),
+            scope: self.scope,
             api_name: self.api_name.clone(),
             usages,
         }
+    }
+
+    pub(crate) fn perm_sel(&self) -> PermSel {
+        PermSel::with_scope(&self.pkg_id, self.scope)
     }
 }

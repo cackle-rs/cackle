@@ -1,10 +1,10 @@
 use crate::build_script_checker;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::PermissionScope;
 use crate::config::ApiName;
 use crate::config::Config;
-use crate::config::PermSel;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateKind;
-use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
@@ -52,10 +52,10 @@ pub(crate) struct Checker {
     pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
 
-    /// Mapping from Rust source paths to the crate that contains them. Generally a source path will
-    /// map to a single crate, but in rare cases multiple crates within a package could use the same
-    /// source path.
-    path_to_crate: FxHashMap<PathBuf, Vec<CrateSel>>,
+    /// Mapping from Rust source paths to the packages that contains them. Generally a source path
+    /// will map to a single package, but in rare cases multiple packages could reference the same
+    /// path outside of their source tree.
+    path_to_pkg_ids: FxHashMap<PathBuf, Vec<PackageId>>,
 
     pub(crate) timings: TimingCollector,
 
@@ -81,6 +81,7 @@ pub(crate) struct CrateInfo {
 pub(crate) struct ApiUsage {
     pub(crate) bin_location: BinLocation,
     pub(crate) bin_path: Arc<Path>,
+    pub(crate) permission_scope: PermissionScope,
     pub(crate) source_location: SourceLocation,
     /// The source location of the outer (non-inlined) function or variable.
     pub(crate) outer_location: Option<SourceLocation>,
@@ -117,7 +118,7 @@ impl Checker {
             tmpdir,
             args,
             crate_index,
-            path_to_crate: Default::default(),
+            path_to_pkg_ids: Default::default(),
             timings,
             backtracers: Default::default(),
             outstanding_linker_invocations: Default::default(),
@@ -139,7 +140,7 @@ impl Checker {
         // A subprocess might try to read the flattened config while we're updating it. It doesn't
         // matter if it sees the old or the new flattened config, but we don't want it to see a
         // partially written config, so we write first to a temporary file then rename it.
-        crate::fs::write_atomic(&flattened_path, &config.raw.toml_string()?)?;
+        crate::fs::write_atomic(&flattened_path, &config.permissions.serialise()?)?;
 
         self.update_config(config);
         info!("Config (re)loaded");
@@ -182,12 +183,23 @@ impl Checker {
                     });
             }
         }
-        for (perm_sel, crate_config) in &config.permissions {
+        // First apply permissions without inheritance, updating our unused_allow_apis records for
+        // each selector.
+        for (perm_sel, crate_config) in &config.permissions_no_inheritance.packages {
             let crate_info = self.crate_infos.entry(perm_sel.clone()).or_default();
             for api in &crate_config.allow_apis {
                 if crate_info.allowed_apis.insert(api.clone()) {
                     crate_info.unused_allowed_apis.insert(api.clone());
                 }
+            }
+        }
+        // Then process with inheritance, but leaving unused_allow_apis alone. We don't want to get
+        // warnings that an allow_api was unused when it was inherited and was actually used
+        // elsewhere in the inheritance tree.
+        for (perm_sel, crate_config) in &config.permissions.packages {
+            let crate_info = self.crate_infos.entry(perm_sel.clone()).or_default();
+            for api in &crate_config.allow_apis {
+                crate_info.allowed_apis.insert(api.clone());
             }
         }
         self.config = config;
@@ -199,7 +211,7 @@ impl Checker {
             if !self
                 .config
                 .permissions
-                .get(&CrateSel::primary(pkg_id.clone()).into())
+                .get(&PermSel::for_primary(pkg_id.pkg_name()))
                 .map(|pkg_config| pkg_config.allow_proc_macro)
                 .unwrap_or(false)
             {
@@ -257,7 +269,7 @@ impl Checker {
         }
         problems.merge(self.check_object_paths(
             &info.object_paths_under(&self.target_dir),
-            &info.output_file,
+            info,
             check_state,
         )?);
         self.timings.add_timing(start, "Total object processing");
@@ -273,7 +285,7 @@ impl Checker {
     pub(crate) fn check_object_paths(
         &mut self,
         paths: &[PathBuf],
-        exe_path: &Path,
+        link_info: &LinkInfo,
         check_state: &mut CheckState,
     ) -> Result<ProblemList> {
         if check_state
@@ -286,12 +298,12 @@ impl Checker {
             check_state.graph_outputs = None;
         }
         if check_state.graph_outputs.is_none() {
-            let exe_path = Arc::from(exe_path);
             let (mut graph_outputs, backtracer) =
-                crate::symbol_graph::scan_objects(paths, &exe_path, self)?;
+                crate::symbol_graph::scan_objects(paths, link_info, self)?;
             graph_outputs.apis = self.config.raw.apis.clone();
             check_state.graph_outputs = Some(graph_outputs);
-            self.backtracers.insert(exe_path.clone(), backtracer);
+            self.backtracers
+                .insert(link_info.output_file.clone(), backtracer);
         }
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
         let problems = graph_outputs.problems(self)?;
@@ -312,26 +324,26 @@ impl Checker {
         }
         if self
             .crate_infos
-            .contains_key(&PermSel::for_build_script(pkg_id.name()))
+            .contains_key(&PermSel::for_build_script(pkg_id.name_str()))
         {
             return ProblemList::default();
         }
         Problem::UsesBuildScript(pkg_id.clone()).into()
     }
 
-    pub(crate) fn crate_names_from_source_path(
+    pub(crate) fn pkg_ids_from_source_path(
         &self,
         source_path: &Path,
-    ) -> Result<Cow<Vec<CrateSel>>> {
-        self.opt_crate_names_from_source_path(source_path)
+    ) -> Result<Cow<Vec<PackageId>>> {
+        self.opt_pkg_ids_from_source_path(source_path)
             .ok_or_else(|| anyhow!("Couldn't find crate name for {}", source_path.display(),))
     }
 
-    pub(crate) fn opt_crate_names_from_source_path(
+    pub(crate) fn opt_pkg_ids_from_source_path(
         &self,
         source_path: &Path,
-    ) -> Option<Cow<Vec<CrateSel>>> {
-        self.path_to_crate
+    ) -> Option<Cow<Vec<PackageId>>> {
+        self.path_to_pkg_ids
             .get(source_path)
             .map(Cow::Borrowed)
             .or_else(|| {
@@ -344,7 +356,7 @@ impl Checker {
                 // Fall-back to just finding the package that contains the source path.
                 self.crate_index
                     .package_id_for_path(source_path)
-                    .map(|pkg_id| Cow::Owned(vec![CrateSel::primary(pkg_id.clone())]))
+                    .map(|pkg_id| Cow::Owned(vec![pkg_id.clone()]))
             })
     }
 
@@ -364,12 +376,11 @@ impl Checker {
         problems: &mut ProblemList,
     ) -> Result<()> {
         let api = &api_usage.api_name;
-        if let Some(crate_info) = self
-            .crate_infos
-            .get_mut(&api_usage.crate_sel.non_sandbox_perm_sel())
-        {
+        let perm_sel = api_usage.perm_sel();
+        if let Some(crate_info) = self.crate_infos.get_mut(&perm_sel) {
             if crate_info.allowed_apis.contains(api) {
                 crate_info.unused_allowed_apis.remove(api);
+                self.mark_parent_allow_apis_used(api, &perm_sel);
                 return Ok(());
             }
         }
@@ -381,10 +392,7 @@ impl Checker {
         let mut off_tree: FxHashMap<&PackageId, Vec<ApiUsage>> = FxHashMap::default();
 
         let all_deps = self.crate_index.name_prefix_to_pkg_id();
-        if let Some(crate_deps) = self
-            .crate_index
-            .transitive_deps(&api_usage.crate_sel.pkg_id)
-        {
+        if let Some(crate_deps) = self.crate_index.transitive_deps(&api_usage.pkg_id) {
             for usage in &api_usage.usages {
                 if let Some(first_name_part) = usage.to_name.parts.first() {
                     if !crate_deps.contains(first_name_part) {
@@ -430,11 +438,11 @@ impl Checker {
     /// that defined the outer location of the usage.
     fn is_to_name_from_outer_location(&self, usage: &ApiUsage) -> Result<bool> {
         if let Some(outer_location) = usage.outer_location.as_ref() {
-            for crate_sel in self
-                .crate_names_from_source_path(outer_location.filename())?
+            for pkg_id in self
+                .pkg_ids_from_source_path(outer_location.filename())?
                 .as_ref()
             {
-                let crate_name = crate_sel.pkg_id.crate_name();
+                let crate_name = pkg_id.crate_name();
                 if usage.to_name.starts_with(crate_name.as_ref()) {
                     return Ok(true);
                 }
@@ -452,7 +460,7 @@ impl Checker {
         }
 
         let mut problems = ProblemList::default();
-        let perm_sels_in_index: FxHashSet<_> = self.crate_index.permission_selectors().collect();
+        let perm_sels_in_index = &self.crate_index.permission_selectors;
         for (perm_sel, crate_info) in &self.crate_infos {
             if !perm_sels_in_index.contains(perm_sel) {
                 problems.push(Problem::UnusedPackageConfig(perm_sel.clone()));
@@ -464,8 +472,13 @@ impl Checker {
                 }));
             }
         }
-        for (perm_sel, config) in &self.config.permissions {
-            if config.sandbox.is_some() && !perm_sel.is_build_script() && !perm_sel.is_test() {
+        for (perm_sel, config) in &self.config.permissions_no_inheritance.packages {
+            if config.sandbox.is_some()
+                && !matches!(
+                    perm_sel.scope,
+                    PermissionScope::Build | PermissionScope::Test
+                )
+            {
                 problems.push(Problem::UnusedSandboxConfiguration(perm_sel.clone()));
             }
         }
@@ -474,16 +487,16 @@ impl Checker {
 
     fn record_crate_paths(&mut self, info: &rpc::RustcOutput) -> Result<()> {
         for path in &info.source_paths {
-            let selectors = &mut self.path_to_crate.entry(path.to_owned()).or_default();
-            if !selectors.contains(&info.crate_sel) {
-                selectors.push(info.crate_sel.clone());
+            let selectors = &mut self.path_to_pkg_ids.entry(path.to_owned()).or_default();
+            if !selectors.contains(&info.crate_sel.pkg_id) {
+                selectors.push(info.crate_sel.pkg_id.clone());
             }
         }
         Ok(())
     }
 
     pub(crate) fn print_path_to_crate_map(&self) {
-        for (path, crates) in &self.path_to_crate {
+        for (path, crates) in &self.path_to_pkg_ids {
             for c in crates {
                 println!("{c} -> {}", path.display());
             }
@@ -496,7 +509,7 @@ impl Checker {
         problems: &mut ProblemList,
     ) {
         for p in possible_exported_apis {
-            let perm_sel = PermSel::for_primary(p.pkg_id.name());
+            let perm_sel = PermSel::for_primary(p.pkg_id.name_str());
             if let Some(pkg_config) = self.config.permissions.get(&perm_sel) {
                 // If we've imported any APIs, or ignored available APIs from the package, then we
                 // don't want to report a possible export.
@@ -523,6 +536,16 @@ impl Checker {
             .iter()
             .position(|link_info| link_info.crate_sel == info.crate_sel)?;
         Some(self.outstanding_linker_invocations.remove(index))
+    }
+
+    fn mark_parent_allow_apis_used(&mut self, api: &ApiName, perm_sel: &PermSel) {
+        let Some(parent) = perm_sel.parent() else {
+            return;
+        };
+        if let Some(info) = self.crate_infos.get_mut(&parent) {
+            info.unused_allowed_apis.remove(api);
+        }
+        self.mark_parent_allow_apis_used(api, &parent);
     }
 }
 
@@ -613,7 +636,7 @@ mod tests {
         checker.update_config(config.clone());
         let mut problems = ProblemList::default();
 
-        let crate_sel = CrateSel::primary(crate::crate_index::testing::pkg_id("foo"));
+        let pkg_id = crate::crate_index::testing::pkg_id("foo");
         let apis = checker
             .apis_for_name_iterator(["std", "fs", "read_to_string"].into_iter())
             .clone();
@@ -621,7 +644,8 @@ mod tests {
         assert_eq!(apis.iter().next().unwrap(), &ApiName::from("fs"));
         for api in apis {
             let api_usage = ApiUsages {
-                crate_sel: crate_sel.clone(),
+                pkg_id: pkg_id.clone(),
+                scope: crate::config::permissions::PermissionScope::All,
                 api_name: api,
                 usages: vec![ApiUsage {
                     bin_location: BinLocation {
@@ -629,6 +653,7 @@ mod tests {
                         symbol_start: 0,
                     },
                     bin_path: Arc::from(Path::new("bin")),
+                    permission_scope: PermissionScope::All,
                     source_location: SourceLocation::new(Path::new("lib.rs"), 1, None),
                     outer_location: None,
                     from: SymbolOrDebugName::Symbol(Symbol::borrowed(&[])),
@@ -642,7 +667,7 @@ mod tests {
         }
 
         assert!(problems.is_empty());
-        assert!(checker.check_unused().unwrap().is_empty());
+        assert_eq!(checker.check_unused().unwrap(), ProblemList::default());
 
         // Now reload the config and make that we still don't report any unused configuration.
         checker.update_config(config);

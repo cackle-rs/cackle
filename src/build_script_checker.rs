@@ -1,5 +1,5 @@
+use crate::config::permissions::PermSel;
 use crate::config::Config;
-use crate::config::PermSel;
 use crate::crate_index::CrateKind;
 use crate::crate_index::PackageId;
 use crate::problem::DisallowedBuildInstruction;
@@ -23,7 +23,7 @@ pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<Pro
         // If it wasn't a build script that was run, then there's nothing else to check.
         return Ok(ProblemList::default());
     };
-    let perm_sel = PermSel::from(crate_sel);
+    let perm_sel = PermSel::for_build_script(crate_sel.pkg_name());
     let allow_build_instructions = config
         .permissions
         .get(&perm_sel)
