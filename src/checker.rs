@@ -227,7 +227,13 @@ impl Checker {
             rpc::Request::RustcComplete(info) => {
                 self.record_crate_paths(info)?;
                 if let Some(link_info) = self.get_link_info(info) {
-                    return self.check_linker_invocation(&link_info, check_state);
+                    let problems = self.check_linker_invocation(&link_info, check_state)?;
+                    if !problems.is_empty() {
+                        // Since we found some problems, add our LinkInfo back so that if we fix the
+                        // problems via the UI we can recheck once we have fixes.
+                        self.outstanding_linker_invocations.push(link_info);
+                    }
+                    return Ok(problems);
                 }
 
                 Ok(ProblemList::default())
