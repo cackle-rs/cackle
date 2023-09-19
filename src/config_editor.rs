@@ -784,7 +784,19 @@ impl Edit for AllowApiUsage {
             "allow_apis",
             &[&self.usage.api_name],
             opts.comment.as_deref(),
-        )
+        )?;
+        // Remove the API from any selectors that inherit from the one that we just added to, since
+        // they're now redundant.
+        for perm_sel in self.usage.perm_sel().descendants() {
+            RemoveUnusedAllowApis {
+                unused: UnusedAllowApi {
+                    perm_sel,
+                    apis: vec![self.usage.api_name.clone()],
+                },
+            }
+            .apply(editor, opts)?;
+        }
+        Ok(())
     }
 }
 
@@ -1104,6 +1116,36 @@ mod tests {
                 ]
             "#,
             },
+        );
+    }
+
+    #[test]
+    fn allow_api_existing_sub_selector() {
+        check(
+            indoc! {r#"
+                import_std = ["fs", "net", "process"]
+                [pkg.crab1]
+                allow_apis = [
+                    "net",
+                ]
+                test.allow_apis = [
+                    "fs",
+                    "process",
+                ]
+            "#},
+            &disallowed_api(pkg_id("crab1"), PermissionScope::All, "fs"),
+            0,
+            indoc! {r#"
+                import_std = ["fs", "net", "process"]
+                [pkg.crab1]
+                allow_apis = [
+                    "fs",
+                    "net",
+                ]
+                test.allow_apis = [
+                    "process",
+                ]
+            "#},
         );
     }
 

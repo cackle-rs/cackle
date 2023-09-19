@@ -288,6 +288,31 @@ impl PermSel {
             PermissionScope::DepTest => Some(PermissionScope::All),
         }
     }
+
+    fn child_scopes(&self) -> &'static [PermissionScope] {
+        match self.scope {
+            PermissionScope::All => &[PermissionScope::DepBuild, PermissionScope::DepTest],
+            PermissionScope::Build => &[],
+            PermissionScope::Test => &[],
+            PermissionScope::DepBuild => &[PermissionScope::Build],
+            PermissionScope::DepTest => &[PermissionScope::Test],
+        }
+    }
+
+    /// Returns all selectors that inherit from this one.
+    pub(crate) fn descendants(&self) -> Vec<PermSel> {
+        let mut scopes: Vec<PermSel> = self
+            .child_scopes()
+            .iter()
+            .map(|s| self.clone_with_scope(*s))
+            .collect();
+        let mut next_level: Vec<PermSel> = scopes
+            .iter()
+            .flat_map(|sel| sel.child_scopes().iter().map(|s| self.clone_with_scope(*s)))
+            .collect();
+        scopes.append(&mut next_level);
+        scopes
+    }
 }
 
 impl Display for PermSel {
