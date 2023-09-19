@@ -778,8 +778,25 @@ struct AllowApiUsage {
 
 impl Edit for AllowApiUsage {
     fn title(&self) -> String {
+        let pkg = &self.usage.pkg_id;
         let api = &self.usage.api_name;
-        format!("Allow `{}` to use API `{api}`", self.usage.perm_sel(),)
+        match self.usage.scope {
+            crate::config::permissions::PermissionScope::All => {
+                format!("Allow `{pkg}` to use `{api}` API")
+            }
+            crate::config::permissions::PermissionScope::Build => {
+                format!("Allow `{pkg}` to use `{api}` API when building its own build script")
+            }
+            crate::config::permissions::PermissionScope::Test => {
+                format!("Allow `{pkg}` to use `{api}` API when building its own tests")
+            }
+            crate::config::permissions::PermissionScope::FromBuild => {
+                format!("Allow `{pkg}` to use `{api}` API when building build scripts")
+            }
+            crate::config::permissions::PermissionScope::FromTest => {
+                format!("Allow `{pkg}` to use `{api}` API when building tests")
+            }
+        }
     }
 
     fn help(&self) -> Cow<'static, str> {
@@ -787,21 +804,22 @@ impl Edit for AllowApiUsage {
         let api = &self.usage.api_name;
         match self.usage.scope {
             crate::config::permissions::PermissionScope::All => {
-                format!("Allow `{pkg}` to use `{api}` in any binary").into()
+                format!("Allow `{pkg}` to use `{api}` API in any binary")
             }
             crate::config::permissions::PermissionScope::Build => {
-                format!("Allow `{pkg}` to use `{api}` in its own build script").into()
+                format!("Allow `{pkg}` to use `{api}` API, but only in its own build script")
             }
             crate::config::permissions::PermissionScope::Test => {
-                format!("Allow `{pkg}` to use `{api}` in its own tests").into()
+                format!("Allow `{pkg}` to use `{api}` API, but only in its own tests")
             }
             crate::config::permissions::PermissionScope::FromBuild => {
-                format!("Allow `{pkg}` to use `{api}` in any build script").into()
+                format!("Allow `{pkg}` to use `{api}` API, but only from build scripts")
             }
             crate::config::permissions::PermissionScope::FromTest => {
-                format!("Allow `{pkg}` to use `{api}` in any test").into()
+                format!("Allow `{pkg}` to use `{api}` API, but only from tests")
             }
         }
+        .into()
     }
 
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
