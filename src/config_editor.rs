@@ -85,9 +85,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
             edits.push(Box::new(IgnoreApi(available.clone())));
         }
         Problem::DisallowedApiUsage(usage) => {
-            edits.push(Box::new(AllowApiUsage {
-                usage: usage.clone(),
-            }));
+            usage.add_allow_api_fixes(&mut edits);
             let _ = usage.add_exclude_fixes(&mut edits, config);
         }
         Problem::IsProcMacro(pkg_id) => {
@@ -130,9 +128,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
             // have shown up elsewhere and it seems nicer to just degrade to not show those edits.
             let _ = info.usages.add_include_fixes(&mut edits, config);
             let _ = info.usages.add_exclude_fixes(&mut edits, config);
-            edits.push(Box::new(AllowApiUsage {
-                usage: info.usages.clone(),
-            }))
+            info.usages.add_allow_api_fixes(&mut edits);
         }
         _ => {}
     }
@@ -341,6 +337,22 @@ impl ApiUsages {
             }
         }
         Ok(())
+    }
+
+    fn add_allow_api_fixes(&self, edits: &mut Vec<Box<dyn Edit>>) {
+        edits.push(Box::new(AllowApiUsage {
+            usage: self.clone(),
+        }));
+        let mut scope = self.scope;
+        while let Some(parent_scope) = scope.parent_scope() {
+            edits.push(Box::new(AllowApiUsage {
+                usage: ApiUsages {
+                    scope: parent_scope,
+                    ..self.clone()
+                },
+            }));
+            scope = parent_scope;
+        }
     }
 }
 

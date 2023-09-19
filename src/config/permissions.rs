@@ -276,39 +276,25 @@ impl PermSel {
     }
 
     pub(crate) fn parent(&self) -> Option<PermSel> {
-        Some(self.clone_with_scope(self.parent_scope()?))
-    }
-
-    pub(crate) fn parent_scope(&self) -> Option<PermissionScope> {
-        match self.scope {
-            PermissionScope::All => None,
-            PermissionScope::Build => Some(PermissionScope::FromBuild),
-            PermissionScope::Test => Some(PermissionScope::FromTest),
-            PermissionScope::FromBuild => Some(PermissionScope::All),
-            PermissionScope::FromTest => Some(PermissionScope::All),
-        }
-    }
-
-    fn child_scopes(&self) -> &'static [PermissionScope] {
-        match self.scope {
-            PermissionScope::All => &[PermissionScope::FromBuild, PermissionScope::FromTest],
-            PermissionScope::Build => &[],
-            PermissionScope::Test => &[],
-            PermissionScope::FromBuild => &[PermissionScope::Build],
-            PermissionScope::FromTest => &[PermissionScope::Test],
-        }
+        Some(self.clone_with_scope(self.scope.parent_scope()?))
     }
 
     /// Returns all selectors that inherit from this one.
     pub(crate) fn descendants(&self) -> Vec<PermSel> {
         let mut scopes: Vec<PermSel> = self
+            .scope
             .child_scopes()
             .iter()
             .map(|s| self.clone_with_scope(*s))
             .collect();
         let mut next_level: Vec<PermSel> = scopes
             .iter()
-            .flat_map(|sel| sel.child_scopes().iter().map(|s| self.clone_with_scope(*s)))
+            .flat_map(|sel| {
+                sel.scope
+                    .child_scopes()
+                    .iter()
+                    .map(|s| self.clone_with_scope(*s))
+            })
             .collect();
         scopes.append(&mut next_level);
         scopes
@@ -350,6 +336,26 @@ impl PermissionScope {
                 CrateKind::BuildScript => PermissionScope::FromBuild,
                 CrateKind::Test => PermissionScope::FromTest,
             }
+        }
+    }
+
+    pub(crate) fn parent_scope(self) -> Option<PermissionScope> {
+        match self {
+            PermissionScope::All => None,
+            PermissionScope::Build => Some(PermissionScope::FromBuild),
+            PermissionScope::Test => Some(PermissionScope::FromTest),
+            PermissionScope::FromBuild => Some(PermissionScope::All),
+            PermissionScope::FromTest => Some(PermissionScope::All),
+        }
+    }
+
+    fn child_scopes(self) -> &'static [PermissionScope] {
+        match self {
+            PermissionScope::All => &[PermissionScope::FromBuild, PermissionScope::FromTest],
+            PermissionScope::Build => &[],
+            PermissionScope::Test => &[],
+            PermissionScope::FromBuild => &[PermissionScope::Build],
+            PermissionScope::FromTest => &[PermissionScope::Test],
         }
     }
 }
