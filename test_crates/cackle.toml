@@ -48,28 +48,25 @@ allow_apis = [
     "terminate",
     "unix_sockets",
 ]
-
-[pkg.crab-1.build]
-allow_apis = [
+build.allow_apis = [
     "net",
 ]
+build.sandbox.allow_network = true
 
 [pkg.crab-2]
 allow_apis = [
     "env",
     "fs",
 ]
-
-[pkg.crab-2.build]
-allow_apis = [
-    "process",
+build.allow_apis = [
     "env",
     "fs",
+    "process",
 ]
-allow_build_instructions = [
+build.allow_build_instructions = [
     "cargo:rustc-link-*"
 ]
-allow_unsafe = true
+build.allow_unsafe = true
 
 [pkg.crab-3]
 allow_unsafe = true
@@ -81,9 +78,7 @@ allow_apis = [
     "env",
     "crab-1::fs",
 ]
-
-[pkg.crab-3.build]
-allow_apis = [
+build.allow_apis = [
     "env",
     "fs",
 ]
@@ -101,10 +96,8 @@ allow_apis = [
     "res1",
 ]
 allow_unsafe = true
-
-[pkg.crab-bin.build]
-sandbox.kind = "Disabled"
-allow_apis = [
+build.sandbox.kind = "Disabled"
+build.allow_apis = [
     "fs",
 ]
 
@@ -115,9 +108,7 @@ allow_apis = [
     "process",
 ]
 allow_unsafe = true
-
-[pkg.crab-4.build]
-allow_apis = [
+build.allow_apis = [
     "env",
     "fs",
 ]
@@ -157,10 +148,7 @@ test.sandbox.bind_writable = [
 
 [pkg.crab-10]
 allow_unsafe = true
-
-[pkg.crab-10.build]
-allow_unsafe = true
-allow_apis = [
+build.allow_apis = [
     "env",
     "fs",
     "process",
@@ -173,13 +161,8 @@ allow_build_instructions = [
 allow_apis = [
     "fs",
 ]
-
-[pkg.crab-11.test]
-sandbox.kind = "Disabled"
-allow_apis = [
+test.sandbox.kind = "Disabled"
+test.allow_apis = [
     "env",
     "terminate",
 ]
-
-[pkg.crab-1.build.sandbox]
-allow_network = true
