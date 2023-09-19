@@ -164,7 +164,16 @@ impl ConfigEditor {
     }
 
     fn pkg_table(&mut self, perm_sel: &PermSel) -> Result<&mut toml_edit::Table> {
-        self.table(pkg_path(perm_sel))
+        let path = pkg_path(perm_sel);
+        let mut table = self.table(path.clone().take(2))?;
+        for part in path.skip(2) {
+            table = table
+                .entry(part)
+                .or_insert_with(create_dotted_table)
+                .as_table_mut()
+                .ok_or_else(|| anyhow!("[pkg.{perm_sel}] should be a table"))?;
+        }
+        Ok(table)
     }
 
     fn opt_pkg_table(&mut self, perm_sel: &PermSel) -> Result<Option<&mut toml_edit::Table>> {
@@ -391,6 +400,12 @@ fn create_array() -> Item {
 fn create_implicit_table() -> Item {
     let mut table = toml_edit::Table::new();
     table.set_implicit(true);
+    Item::Table(table)
+}
+
+fn create_dotted_table() -> Item {
+    let mut table = toml_edit::Table::new();
+    table.set_dotted(true);
     Item::Table(table)
 }
 
@@ -1110,8 +1125,8 @@ mod tests {
             &disallowed_api(pkg_id("crab1"), PermissionScope::Build, "fs"),
             0,
             indoc! {r#"
-                [pkg.crab1.build]
-                allow_apis = [
+                [pkg.crab1]
+                build.allow_apis = [
                     "fs",
                 ]
             "#,
@@ -1160,8 +1175,8 @@ mod tests {
             &problem,
             1,
             indoc! {r#"
-                [pkg.crab1.build]
-                allow_build_instructions = [
+                [pkg.crab1]
+                build.allow_build_instructions = [
                     "cargo:rustc-env=SOME_VAR=*",
                 ]
             "#,

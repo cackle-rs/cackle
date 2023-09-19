@@ -109,15 +109,15 @@ If for some reason you don't want to sandbox a particular build script, you can 
 just for that build script.
 
 ```toml
-[pkg.foo.build]
-sandbox.kind = "Disabled"
+[pkg.foo]
+build.sandbox.kind = "Disabled"
 ```
 
 If a build script needs network access, you can relax the sandbox to allow it as follows:
 
 ```toml
-[pkg.foo.build]
-sandbox.allow_network = true
+[pkg.foo]
+build.sandbox.allow_network = true
 ```
 
 Tests can also be run in a sandbox using the `cargo` subcommand, for example:
@@ -132,16 +132,16 @@ tests, with a sandbox if one is configured.
 The sandbox used for tests is configured under `pkg.{pkg-name}.test`. e.g.:
 
 ```toml
-[pkg.foo.test]
-sandbox.kind = "Disabled"
+[pkg.foo]
+test.sandbox.kind = "Disabled"
 ```
 
 Tests and build scripts already have write access to a temporary directory, however, if for some
 reason they need to write to some directory in your source folder, this can be permitted as follows:
 
 ```toml
-[pkg.foo.test]
-sandbox.bind_writable = [
+[pkg.foo]
+test.sandbox.bind_writable = [
     "test_outputs",
 ]
 ```
@@ -153,8 +153,8 @@ If you'd like to automatically create a writable directory if it doesn't already
 `make_writable` behaves the same, but will create the directory before starting the sandbox.
 
 ```toml
-[pkg.foo.test]
-sandbox.make_writable = [
+[pkg.foo]
+test.sandbox.make_writable = [
     "test_outputs",
 ]
 ```
