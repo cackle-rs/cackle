@@ -42,7 +42,7 @@ pub(crate) fn validate(config: &Config, config_path: &Path) -> Result<(), Invali
         if crate_config.test.is_some() {
             problems.push(Problem::InvalidPkgSelector(format!("{perm_sel}.test")));
         }
-        if crate_config.dep.is_some() {
+        if crate_config.from.is_some() {
             problems.push(Problem::InvalidPkgSelector(format!("{perm_sel}.dep")));
         }
     }

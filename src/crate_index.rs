@@ -229,8 +229,8 @@ fn add_permission_selectors(
 ) {
     let perm_sel = PermSel::for_primary(pkg_name);
     permission_selectors.insert(perm_sel.clone());
-    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::DepBuild));
-    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::DepTest));
+    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::FromBuild));
+    permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::FromTest));
     if has_build_script {
         permission_selectors.insert(perm_sel.clone_with_scope(PermissionScope::Build));
     }

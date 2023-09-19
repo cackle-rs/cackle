@@ -61,7 +61,7 @@ from test code, we can do that as follows:
 
 ```toml
 [pkg.crab1]
-dep.test.allow_apis = [
+from.test.allow_apis = [
     "fs",
 ]
 ```
@@ -70,7 +70,7 @@ Similarly, we can allow the API to be used, but only in code that is reachable f
 
 ```toml
 [pkg.crab1]
-dep.build.allow_apis = [
+from.build.allow_apis = [
     "fs",
 ]
 ```
@@ -87,9 +87,9 @@ build.allow_apis = [
 Allowed APIs inherit as follows:
 
 * pkg.N
-  * pkg.N.dep.build (any build script)
+  * pkg.N.from.build (any build script)
     * pkg.N.build (N's build script)
-  * pkg.N.dep.test (any test)
+  * pkg.N.from.test (any test)
     * pkg.N.test (N's tests)
 
 So granting an API usage to `pkg.N` means it can be used in any kind of binary.

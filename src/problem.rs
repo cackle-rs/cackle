@@ -347,10 +347,10 @@ impl Display for ApiUsages {
             write!(f, "`{}` uses API `{}`", self.pkg_id, self.api_name)?;
             match self.scope {
                 PermissionScope::All => {}
-                PermissionScope::Build => " from its build script".fmt(f)?,
-                PermissionScope::Test => " from its test(s)".fmt(f)?,
-                PermissionScope::DepBuild => " via a build script in another package".fmt(f)?,
-                PermissionScope::DepTest => " via a test in another package".fmt(f)?,
+                PermissionScope::Build => " in its build script".fmt(f)?,
+                PermissionScope::Test => " in its test(s)".fmt(f)?,
+                PermissionScope::FromBuild => " from a build script in another package".fmt(f)?,
+                PermissionScope::FromTest => " from a test in another package".fmt(f)?,
             }
         }
         Ok(())

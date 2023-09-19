@@ -39,9 +39,9 @@ pub(crate) enum PermissionScope {
     Test,
     /// Permission is granted to the package, but only when used via build scripts of other
     /// packages.
-    DepBuild,
+    FromBuild,
     /// Permission is granted to the package, but only when used via tests of other packages.
-    DepTest,
+    FromTest,
 }
 
 impl Permissions {
@@ -83,12 +83,12 @@ impl Permissions {
                     *sub_cfg,
                 );
             }
-            if let Some(mut dep) = pkg_config.dep.take() {
+            if let Some(mut dep) = pkg_config.from.take() {
                 if let Some(sub_cfg) = dep.build.take() {
                     packages.insert(
                         PermSel {
                             package_name: name.clone(),
-                            scope: PermissionScope::DepBuild,
+                            scope: PermissionScope::FromBuild,
                         },
                         *sub_cfg,
                     );
@@ -97,7 +97,7 @@ impl Permissions {
                     packages.insert(
                         PermSel {
                             package_name: name.clone(),
-                            scope: PermissionScope::DepTest,
+                            scope: PermissionScope::FromTest,
                         },
                         *sub_cfg,
                     );
@@ -163,8 +163,8 @@ fn apply_inheritance(packages: &mut FxHashMap<PermSel, PackageConfig>, config: &
             PermissionScope::All => all.insert(perm_sel, config),
             PermissionScope::Build => local.insert(perm_sel, config),
             PermissionScope::Test => local.insert(perm_sel, config),
-            PermissionScope::DepBuild => dep.insert(perm_sel, config),
-            PermissionScope::DepTest => dep.insert(perm_sel, config),
+            PermissionScope::FromBuild => dep.insert(perm_sel, config),
+            PermissionScope::FromTest => dep.insert(perm_sel, config),
         };
     }
 
@@ -179,8 +179,8 @@ fn apply_inheritance(packages: &mut FxHashMap<PermSel, PackageConfig>, config: &
     }
     for (perm_sel, config) in local.iter_mut() {
         let parent_scope = match perm_sel.scope {
-            PermissionScope::Build => PermissionScope::DepBuild,
-            PermissionScope::Test => PermissionScope::DepTest,
+            PermissionScope::Build => PermissionScope::FromBuild,
+            PermissionScope::Test => PermissionScope::FromTest,
             _ => unreachable!(),
         };
         if let Some(parent) = dep.get(&perm_sel.clone_with_scope(parent_scope)) {
@@ -282,20 +282,20 @@ impl PermSel {
     pub(crate) fn parent_scope(&self) -> Option<PermissionScope> {
         match self.scope {
             PermissionScope::All => None,
-            PermissionScope::Build => Some(PermissionScope::DepBuild),
-            PermissionScope::Test => Some(PermissionScope::DepTest),
-            PermissionScope::DepBuild => Some(PermissionScope::All),
-            PermissionScope::DepTest => Some(PermissionScope::All),
+            PermissionScope::Build => Some(PermissionScope::FromBuild),
+            PermissionScope::Test => Some(PermissionScope::FromTest),
+            PermissionScope::FromBuild => Some(PermissionScope::All),
+            PermissionScope::FromTest => Some(PermissionScope::All),
         }
     }
 
     fn child_scopes(&self) -> &'static [PermissionScope] {
         match self.scope {
-            PermissionScope::All => &[PermissionScope::DepBuild, PermissionScope::DepTest],
+            PermissionScope::All => &[PermissionScope::FromBuild, PermissionScope::FromTest],
             PermissionScope::Build => &[],
             PermissionScope::Test => &[],
-            PermissionScope::DepBuild => &[PermissionScope::Build],
-            PermissionScope::DepTest => &[PermissionScope::Test],
+            PermissionScope::FromBuild => &[PermissionScope::Build],
+            PermissionScope::FromTest => &[PermissionScope::Test],
         }
     }
 
@@ -332,8 +332,8 @@ impl PermissionScope {
             Self::All => None,
             Self::Build => Some("build"),
             Self::Test => Some("test"),
-            Self::DepBuild => Some("dep.build"),
-            Self::DepTest => Some("dep.test"),
+            Self::FromBuild => Some("from.build"),
+            Self::FromTest => Some("from.test"),
         }
     }
 
@@ -347,8 +347,8 @@ impl PermissionScope {
         } else {
             match bin_selector.kind {
                 CrateKind::Primary => PermissionScope::All,
-                CrateKind::BuildScript => PermissionScope::DepBuild,
-                CrateKind::Test => PermissionScope::DepTest,
+                CrateKind::BuildScript => PermissionScope::FromBuild,
+                CrateKind::Test => PermissionScope::FromTest,
             }
         }
     }
@@ -411,7 +411,7 @@ fn test_inheritance() {
     }
 
     let bar1 = PermSel::for_primary("bar1");
-    let bar1_dep_test = bar1.clone_with_scope(PermissionScope::DepTest);
+    let bar1_dep_test = bar1.clone_with_scope(PermissionScope::FromTest);
     let mut crate_index = CrateIndex::default();
     crate_index
         .permission_selectors

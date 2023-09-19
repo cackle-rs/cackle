@@ -148,7 +148,7 @@ pub(crate) struct PackageConfig {
     pub(crate) test: Option<Box<PackageConfig>>,
 
     #[serde()]
-    pub(crate) dep: Option<DepConfig>,
+    pub(crate) from: Option<FromConfig>,
 
     #[serde()]
     pub(crate) sandbox: Option<SandboxConfig>,
@@ -159,7 +159,7 @@ pub(crate) struct PackageConfig {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DepConfig {
+pub(crate) struct FromConfig {
     pub(crate) build: Option<Box<PackageConfig>>,
     pub(crate) test: Option<Box<PackageConfig>>,
 }

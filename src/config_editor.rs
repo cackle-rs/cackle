@@ -783,10 +783,10 @@ impl Edit for AllowApiUsage {
             crate::config::permissions::PermissionScope::Test => {
                 format!("Allow `{pkg}` to use `{api}` in its own tests").into()
             }
-            crate::config::permissions::PermissionScope::DepBuild => {
+            crate::config::permissions::PermissionScope::FromBuild => {
                 format!("Allow `{pkg}` to use `{api}` in any build script").into()
             }
-            crate::config::permissions::PermissionScope::DepTest => {
+            crate::config::permissions::PermissionScope::FromTest => {
                 format!("Allow `{pkg}` to use `{api}` in any test").into()
             }
         }

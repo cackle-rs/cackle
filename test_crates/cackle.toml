@@ -51,7 +51,7 @@ build.allow_apis = [
     "net",
 ]
 build.sandbox.allow_network = true
-dep.test.allow_apis = [
+from.test.allow_apis = [
     "unix_sockets",
 ]
 
@@ -108,7 +108,7 @@ allow_unsafe = true
 [pkg.crab-5]
 allow_apis = [
 ]
-dep.build.allow_apis = [
+from.build.allow_apis = [
     "fs",
 ]
 
