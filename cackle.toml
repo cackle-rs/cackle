@@ -74,33 +74,25 @@ allow_unsafe = true
 allow_apis = [
     "fs",
 ]
-
-[pkg.serde.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
 [pkg.libc]
 allow_unsafe = true
-
-[pkg.libc.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
 [pkg.proc-macro2]
 allow_unsafe = true
-
-[pkg.proc-macro2.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
 [pkg.rustix]
 allow_unsafe = true
-
-[pkg.rustix.build]
-allow_apis = [
+build.allow_apis = [
     "fs",
     "process",
 ]
@@ -120,8 +112,8 @@ allow_unsafe = true
 [pkg.hashbrown]
 allow_unsafe = true
 
-[pkg.thiserror.build]
-allow_apis = [
+[pkg.thiserror]
+build.allow_apis = [
     "fs",
     "process",
 ]
@@ -134,9 +126,7 @@ allow_unsafe = true
 
 [pkg.crc32fast]
 allow_unsafe = true
-
-[pkg.crc32fast.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
@@ -148,9 +138,7 @@ allow_unsafe = true
 
 [pkg.syn]
 allow_unsafe = true
-
-[pkg.syn.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
@@ -177,9 +165,7 @@ allow_unsafe = true
 allow_apis = [
     "fs",
 ]
-
-[pkg.camino.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
@@ -197,16 +183,12 @@ allow_unsafe = true
 
 [pkg.semver]
 allow_unsafe = true
-
-[pkg.semver.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
 [pkg.serde_json]
 allow_unsafe = true
-
-[pkg.serde_json.build]
 
 [pkg.static_assertions]
 allow_unsafe = true
@@ -228,9 +210,7 @@ allow_unsafe = true
 
 [pkg.anyhow]
 allow_unsafe = true
-
-[pkg.anyhow.build]
-allow_apis = [
+build.allow_apis = [
     "fs",
     "process",
 ]
@@ -289,17 +269,15 @@ allow_apis = [
     "fs",
     "process",
 ]
-
-[pkg.cackle.test.sandbox]
-bind_writable = [
+test.sandbox.bind_writable = [
     "test_crates/crab-bin/scratch",
     "test_crates/crab-9/scratch",
     "test_crates/crab-11/scratch",
 ]
-make_writable = [
+test.sandbox.make_writable = [
     "test_crates/target",
 ]
-allow_network = true
+test.sandbox.allow_network = true
 
 [pkg.clap_builder]
 allow_apis = [
@@ -317,9 +295,7 @@ allow_unsafe = true
 
 [pkg.paste]
 allow_proc_macro = true
-
-[pkg.paste.build]
-allow_apis = [
+build.allow_apis = [
     "process",
 ]
 
@@ -331,8 +307,8 @@ allow_apis = [
 [pkg.thiserror-core-impl]
 allow_proc_macro = true
 
-[pkg.thiserror-core.build]
-allow_apis = [
+[pkg.thiserror-core]
+build.allow_apis = [
     "fs",
     "process",
 ]
@@ -342,9 +318,7 @@ allow_proc_macro = true
 
 [pkg.rustversion]
 allow_proc_macro = true
-
-[pkg.rustversion.build]
-allow_apis = [
+build.allow_apis = [
     "fs",
     "process",
 ]
