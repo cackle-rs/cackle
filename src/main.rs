@@ -323,11 +323,11 @@ impl Cackle {
             return Ok(outcome::FAILURE);
         }
         {
+            let should_run_cargo_clean = self.should_run_cargo_clean();
             let checker = &mut self.checker.lock().unwrap();
             checker.load_config()?;
 
-            if !self.args.replay_requests && !matches!(self.args.command, Some(Command::Cargo(..)))
-            {
+            if should_run_cargo_clean {
                 proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
             }
         }
@@ -394,13 +394,21 @@ impl Cackle {
         // We only check if the build failed if there were no ACL check errors.
         build_result?;
 
-        let unused_problems = self.checker.lock().unwrap().check_unused()?;
-        let resolution = self.problem_store.fix_problems(unused_problems);
-        if resolution != Outcome::Continue {
-            return Ok(outcome::FAILURE);
+        // If we didn't run `cargo clean` when we started, then our records of what is an isn't used
+        // won't be complete, so we shouldn't emit unused warnings.
+        if self.should_run_cargo_clean() {
+            let unused_problems = self.checker.lock().unwrap().check_unused()?;
+            let resolution = self.problem_store.fix_problems(unused_problems);
+            if resolution != Outcome::Continue {
+                return Ok(outcome::FAILURE);
+            }
         }
 
         Ok(outcome::SUCCESS)
+    }
+
+    fn should_run_cargo_clean(&mut self) -> bool {
+        !self.args.replay_requests && !matches!(self.args.command, Some(Command::Cargo(..)))
     }
 
     fn new_request_handler(&self, request: Option<Request>) -> RequestHandler {
