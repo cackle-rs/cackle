@@ -207,9 +207,6 @@ allow_apis = [
 allow_unsafe = true
 
 [pkg.serde_json.build]
-allow_apis = [
-    "process",
-]
 
 [pkg.static_assertions]
 allow_unsafe = true
