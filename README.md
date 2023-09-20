@@ -37,7 +37,7 @@ sudo apt install bubblewrap
 From the root of your project (the directory containing `Cargo.toml`), run:
 
 ```sh
-cackle ui
+cackle
 ```
 
 This will interactively guide you through creating an initial `cackle.toml`. Some manual editing of

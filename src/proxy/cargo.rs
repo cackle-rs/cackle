@@ -36,7 +36,7 @@ pub(crate) fn command(
         command.arg("--color=always");
     }
     let extra_args;
-    if let crate::Command::Cargo(cargo_options) = &args.command {
+    if let Some(crate::Command::Cargo(cargo_options)) = &args.command {
         command.arg(&cargo_options.subcommand);
         extra_args = cargo_options.remaining.as_slice();
     } else {

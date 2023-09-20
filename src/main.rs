@@ -128,8 +128,12 @@ struct Args {
     #[clap(long, hide = true)]
     tmpdir: Option<PathBuf>,
 
+    /// What kind of user interface to use.
+    #[clap(long, default_value = "full")]
+    ui: ui::Kind,
+
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand, Debug, Clone, Default)]
@@ -140,7 +144,7 @@ enum Command {
 
     /// Interactive check of configuration.
     #[cfg(feature = "ui")]
-    Ui(ui::UiArgs),
+    Ui,
 
     /// Print summary of permissions used.
     Summary(SummaryOptions),
@@ -253,7 +257,7 @@ impl Cackle {
     /// Runs, reports any error and returns the exit code. Takes self by value so that it's dropped
     /// before we return. That way the user interface will be cleaned up before we exit.
     fn run_and_report_errors(mut self, abort_recv: Receiver<()>) -> ExitCode {
-        if let Command::Summary(options) = &self.args.command {
+        if let Some(Command::Summary(options)) = &self.args.command {
             return self.print_summary(options);
         }
         let mut error = None;
@@ -284,7 +288,7 @@ impl Cackle {
         }
         if exit_code == outcome::SUCCESS
             && !self.args.quiet
-            && !matches!(self.args.command, Command::Cargo(..))
+            && !matches!(self.args.command, Some(Command::Cargo(..)))
         {
             println!(
                 "Completed successfully for configuration {}",
@@ -316,7 +320,8 @@ impl Cackle {
             let checker = &mut self.checker.lock().unwrap();
             checker.load_config()?;
 
-            if !self.args.replay_requests && !matches!(self.args.command, Command::Cargo(..)) {
+            if !self.args.replay_requests && !matches!(self.args.command, Some(Command::Cargo(..)))
+            {
                 proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
             }
         }

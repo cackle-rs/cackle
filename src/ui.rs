@@ -8,7 +8,6 @@ use crate::problem_store::ProblemStoreRef;
 use crate::Args;
 use crate::Command;
 use anyhow::Result;
-use clap::Parser;
 use clap::ValueEnum;
 use log::info;
 use std::path::Path;
@@ -24,15 +23,9 @@ mod basic_term;
 mod full_term;
 mod null_ui;
 
-#[derive(Parser, Debug, Clone)]
-pub(crate) struct UiArgs {
-    /// What kind of user interface to use.
-    #[clap(long, default_value = "full")]
-    ui: Kind,
-}
-
-#[derive(ValueEnum, Debug, Clone, Copy)]
-enum Kind {
+#[derive(ValueEnum, Debug, Clone, Copy, Default)]
+pub(crate) enum Kind {
+    #[default]
     None,
     #[cfg(feature = "ui")]
     Basic,
@@ -93,12 +86,14 @@ impl Args {
 
     fn ui_kind(&self) -> Kind {
         match &self.command {
-            Command::Check => Kind::None,
+            #[cfg(not(feature = "ui"))]
+            None => Kind::None,
+            Some(Command::Check) => Kind::None,
             #[cfg(feature = "ui")]
-            Command::Ui(ui_args) => ui_args.ui,
-            Command::Summary(..) => Kind::None,
-            Command::Cargo(..) => Kind::None,
-            Command::ProxyBin(..) => Kind::None,
+            None | Some(Command::Ui) => self.ui,
+            Some(Command::Summary(..)) => Kind::None,
+            Some(Command::Cargo(..)) => Kind::None,
+            Some(Command::ProxyBin(..)) => Kind::None,
         }
     }
 }
