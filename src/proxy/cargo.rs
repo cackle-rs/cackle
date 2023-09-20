@@ -9,8 +9,6 @@ pub(crate) const DEFAULT_PROFILE_NAME: &str = "cackle";
 
 #[derive(Parser, Debug, Clone)]
 pub(crate) struct CargoOptions {
-    subcommand: String,
-
     #[clap(allow_hyphen_values = true)]
     remaining: Vec<String>,
 }
@@ -35,14 +33,20 @@ pub(crate) fn command(
     if args.colour.should_use_colour() {
         command.arg("--color=always");
     }
-    let extra_args;
-    if let Some(crate::Command::Cargo(cargo_options)) = &args.command {
-        command.arg(&cargo_options.subcommand);
-        extra_args = cargo_options.remaining.as_slice();
-    } else {
-        command.arg(base_command);
-        extra_args = &[];
-    }
+    let extra_args = match &args.command {
+        Some(crate::Command::Test(cargo_options)) => {
+            command.arg("test");
+            cargo_options.remaining.as_slice()
+        }
+        Some(crate::Command::Run(cargo_options)) => {
+            command.arg("run");
+            cargo_options.remaining.as_slice()
+        }
+        _ => {
+            command.arg(base_command);
+            &[]
+        }
+    };
     command
         .arg("--config")
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.inherits=\"dev\""));

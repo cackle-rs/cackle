@@ -137,21 +137,16 @@ struct Args {
     command: Option<Command>,
 }
 
-#[derive(Subcommand, Debug, Clone, Default)]
+#[derive(Subcommand, Debug, Clone)]
 enum Command {
-    /// Non-interactive check of configuration.
-    #[default]
-    Check,
-
-    /// Interactive check of configuration.
-    #[cfg(feature = "ui")]
-    Ui,
-
     /// Print summary of permissions used.
     Summary(SummaryOptions),
 
-    /// Run an arbitrary cargo command, analysing whatever gets built.
-    Cargo(CargoOptions),
+    /// Run `cargo test`, analysing whatever gets built.
+    Test(CargoOptions),
+
+    /// Run `cargo run`, analysing whatever gets built.
+    Run(CargoOptions),
 
     #[clap(hide = true, name = PROXY_BIN_ARG)]
     ProxyBin(ProxyBinOptions),
@@ -292,10 +287,7 @@ impl Cackle {
         if self.args.print_timing {
             checker.print_timing();
         }
-        if exit_code == outcome::SUCCESS
-            && !self.args.quiet
-            && !matches!(self.args.command, Some(Command::Cargo(..)))
-        {
+        if exit_code == outcome::SUCCESS && !self.args.quiet && self.args.command.is_none() {
             println!(
                 "Completed successfully for configuration {}",
                 self.config_path.display()
@@ -408,7 +400,7 @@ impl Cackle {
     }
 
     fn should_run_cargo_clean(&mut self) -> bool {
-        !self.args.replay_requests && !matches!(self.args.command, Some(Command::Cargo(..)))
+        !self.args.replay_requests && self.args.command.is_none()
     }
 
     fn new_request_handler(&self, request: Option<Request>) -> RequestHandler {

@@ -38,11 +38,10 @@ impl super::UserInterface for NullUi {
                     let mut has_errors = false;
                     for (_, problem) in pstore.deduplicated_into_iter() {
                         let mut severity = problem.severity();
-                        if matches!(self.args.command, Some(crate::Command::Cargo(..)))
-                            && severity == Severity::Warning
-                        {
-                            // When running `cackle cargo x`, not everything will be analysed, so
-                            // unused warnings are expected. As such, we supress all warnings.
+                        if self.args.command.is_some() && severity == Severity::Warning {
+                            // When running for example `cackle test`, not everything will be
+                            // analysed, so unused warnings are expected. As such, we supress all
+                            // warnings.
                             continue;
                         }
                         if self.args.fail_on_warnings {

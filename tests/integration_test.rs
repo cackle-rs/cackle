@@ -30,6 +30,7 @@ fn integration_test() -> Result<()> {
             // changes.
             .arg("--tmpdir")
             .arg(tmpdir.path())
+            .arg("--ui=none")
             .args(args)
             .status()
             .with_context(|| format!("Failed to invoke `{}`", cackle_exe().display()))?;
@@ -39,8 +40,8 @@ fn integration_test() -> Result<()> {
 
     let tmpdir = TempDir::new()?;
 
-    run_with_args(&tmpdir, &["check"])?;
-    run_with_args(&tmpdir, &["cargo", "test", "-v"])?;
+    run_with_args(&tmpdir, &[])?;
+    run_with_args(&tmpdir, &["test", "-v"])?;
 
     Ok(())
 }
@@ -57,7 +58,7 @@ fn invalid_config() -> Result<()> {
     let output = Command::new(cackle_exe())
         .arg("--path")
         .arg(dir)
-        .arg("check")
+        .arg("--ui=none")
         .output()
         .with_context(|| format!("Failed to invoke `{}`", cackle_exe().display()))?;
     assert!(!output.status.success());

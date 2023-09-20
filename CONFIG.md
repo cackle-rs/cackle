@@ -120,14 +120,14 @@ If a build script needs network access, you can relax the sandbox to allow it as
 build.sandbox.allow_network = true
 ```
 
-Tests can also be run in a sandbox using the `cargo` subcommand, for example:
+Tests can also be run in a sandbox using the `test` subcommand, for example:
 
 ```sh
-cackle cargo test
+cackle test
 ```
 
-This builds the tests, performing the same permission checks as doing `cackle check`, then runs the
-tests, with a sandbox if one is configured.
+This builds the tests, checking the built test binaries against the permissions granted in
+cackle.toml, then runs the tests, with a sandbox if one is configured.
 
 The sandbox used for tests is configured under `pkg.{pkg-name}.test`. e.g.:
 
