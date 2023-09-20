@@ -84,6 +84,9 @@ impl Args {
     }
 
     fn ui_kind(&self) -> Kind {
+        if self.no_ui {
+            return Kind::None;
+        }
         if let Some(kind) = self.ui {
             return kind;
         }

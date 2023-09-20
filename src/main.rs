@@ -133,6 +133,10 @@ struct Args {
     #[clap(long)]
     ui: Option<ui::Kind>,
 
+    /// Disable interactive UI.
+    #[clap(long, short)]
+    no_ui: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
