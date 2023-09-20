@@ -139,7 +139,7 @@ pub(crate) fn scan_objects(
         .with_context(|| format!("Failed to read `{}`", link_info.output_file.display()))?;
     checker.timings.add_timing(start, "Read bin file");
 
-    let mut backtracer = Backtracer::default();
+    let mut backtracer = Backtracer::new(checker.sysroot.clone());
     let outputs =
         scan_object_with_bin_bytes(&file_bytes, checker, &mut backtracer, link_info, paths)?;
 

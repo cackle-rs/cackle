@@ -51,6 +51,7 @@ pub(crate) struct Checker {
     tmpdir: Arc<TempDir>,
     pub(crate) args: Arc<Args>,
     pub(crate) crate_index: Arc<CrateIndex>,
+    pub(crate) sysroot: Arc<Path>,
 
     /// Mapping from Rust source paths to the packages that contains them. Generally a source path
     /// will map to a single package, but in rare cases multiple packages could reference the same
@@ -105,6 +106,7 @@ impl Checker {
         tmpdir: Arc<TempDir>,
         target_dir: PathBuf,
         args: Arc<Args>,
+        sysroot: Arc<Path>,
         crate_index: Arc<CrateIndex>,
         config_path: PathBuf,
     ) -> Self {
@@ -122,6 +124,7 @@ impl Checker {
             timings,
             backtracers: Default::default(),
             outstanding_linker_invocations: Default::default(),
+            sysroot,
         }
     }
 
@@ -577,6 +580,7 @@ mod tests {
             Arc::new(TempDir::new(None).unwrap()),
             PathBuf::default(),
             Arc::new(Args::default()),
+            Arc::from(Path::new("")),
             Arc::new(CrateIndex::default()),
             PathBuf::default(),
         )

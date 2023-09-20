@@ -34,12 +34,12 @@ mod tmpdir;
 mod ui;
 mod unsafe_checker;
 
+use crate::proxy::subprocess::PROXY_BIN_ARG;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 use checker::Checker;
-use clap::builder::OsStr;
 use clap::Parser;
 use clap::Subcommand;
 use crate_index::CrateIndex;
@@ -61,8 +61,6 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 use summary::SummaryOptions;
 use symbol_graph::ScanOutputs;
-
-use crate::proxy::subprocess::PROXY_BIN_ARG;
 use tmpdir::TempDir;
 
 #[derive(Parser, Debug, Clone, Default)]
@@ -163,7 +161,11 @@ pub(crate) struct ProxyBinOptions {
 fn main() -> Result<()> {
     proxy::subprocess::handle_wrapped_binaries()?;
 
-    if std::env::args_os().nth(1).as_deref() == Some(&OsStr::from(PROXY_BIN_ARG)) {
+    if std::env::args_os()
+        .nth(1)
+        .map(|arg| arg == PROXY_BIN_ARG)
+        .unwrap_or(false)
+    {
         // If we get here and the call to handle_wrapped_binaries above didn't diverge, then either
         // a user invoked a bin wrapper directly, or we've been invoked when we're already inside a
         // cackle sandbox. In either case, we just run the original binary directly.
@@ -219,6 +221,7 @@ impl Cackle {
             tmpdir.clone(),
             target_dir.clone(),
             args.clone(),
+            determine_sysroot(&root_path)?,
             crate_index.clone(),
             config_path.clone(),
         )));
@@ -445,6 +448,17 @@ impl Cackle {
         )?;
         Ok(())
     }
+}
+
+fn determine_sysroot(root_path: &PathBuf) -> Result<Arc<Path>> {
+    let output = std::process::Command::new("rustc")
+        .current_dir(root_path)
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        .context("Failed to run `rustc --print sysroot`")?;
+    let stdout = std::str::from_utf8(&output.stdout).context("rust sysroot isn't UTF-8")?;
+    Ok(Arc::from(Path::new(stdout.trim())))
 }
 
 #[derive(Default)]

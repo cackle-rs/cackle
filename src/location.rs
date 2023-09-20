@@ -31,6 +31,19 @@ impl SourceLocation {
     pub(crate) fn column(&self) -> Option<u32> {
         self.column
     }
+
+    pub(crate) fn with_sysroot(&self, sysroot: &Path) -> Self {
+        if !self.filename.starts_with("/rustc/") {
+            return self.clone();
+        }
+        let mut filename = sysroot.join("lib/rustlib/src/rust");
+        filename.extend(self.filename.iter().skip(3));
+        Self {
+            filename: Arc::from(filename.as_path()),
+            line: self.line,
+            column: self.column,
+        }
+    }
 }
 
 impl Display for SourceLocation {

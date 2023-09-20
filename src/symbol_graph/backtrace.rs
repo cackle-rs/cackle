@@ -6,13 +6,16 @@ use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use gimli::Dwarf;
 use std::fmt::Display;
+use std::path::Path;
+use std::sync::Arc;
 
-#[derive(Default)]
 pub(crate) struct Backtracer {
     /// A map from symbol addresses in the binary to a list of relocations pointing to that address.
     back_references: FxHashMap<u64, Vec<BinLocation>>,
 
     bin_bytes: Vec<u8>,
+
+    sysroot: Arc<Path>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,6 +26,14 @@ pub(crate) struct Frame {
 }
 
 impl Backtracer {
+    pub(crate) fn new(sysroot: Arc<Path>) -> Self {
+        Self {
+            sysroot,
+            back_references: Default::default(),
+            bin_bytes: Default::default(),
+        }
+    }
+
     /// Declare a reference from `bin_location` to `target_address`.
     pub(crate) fn add_reference(&mut self, bin_location: BinLocation, target_address: u64) {
         self.back_references
@@ -68,7 +79,8 @@ impl Backtracer {
                     .unwrap_or_else(|| "??".to_owned());
                 let source_location = frame
                     .location
-                    .and_then(|location| SourceLocation::try_from(&location).ok());
+                    .and_then(|location| SourceLocation::try_from(&location).ok())
+                    .map(|location| location.with_sysroot(&self.sysroot));
                 if first {
                     first = false;
                 } else {
