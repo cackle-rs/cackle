@@ -25,7 +25,6 @@ use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use ratatui::Frame;
-use ratatui::Terminal;
 use std::io::Stdout;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -39,7 +38,6 @@ mod problems_ui;
 
 pub(crate) struct FullTermUi {
     config_path: PathBuf,
-    terminal: Terminal<CrosstermBackend<Stdout>>,
     abort_sender: Sender<()>,
     crate_index: Arc<CrateIndex>,
     checker: Arc<Mutex<Checker>>,
@@ -52,17 +50,33 @@ impl FullTermUi {
         crate_index: Arc<CrateIndex>,
         abort_sender: Sender<()>,
     ) -> Result<Self> {
+        Ok(Self {
+            config_path,
+            abort_sender,
+            crate_index,
+            checker: checker.clone(),
+        })
+    }
+}
+
+struct Terminal {
+    term: ratatui::Terminal<CrosstermBackend<Stdout>>,
+    // While our UI is active, we hold a lock on stderr. Our output threads try to acquire stderr
+    // before sending through output from cargo and will thus block output while the UI is active.
+    _output_lock: std::io::StderrLock<'static>,
+}
+
+impl Terminal {
+    fn new() -> Result<Terminal> {
         crossterm::terminal::enable_raw_mode()?;
         let mut stdout = std::io::stdout();
         crossterm::execute!(stdout, crossterm::terminal::EnterAlternateScreen)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
-        let terminal = ratatui::Terminal::new(backend)?;
+        let term = ratatui::Terminal::new(backend)?;
+        let output_lock = std::io::stderr().lock();
         Ok(Self {
-            config_path,
-            terminal,
-            abort_sender,
-            crate_index,
-            checker: checker.clone(),
+            term,
+            _output_lock: output_lock,
         })
     }
 }
@@ -81,6 +95,11 @@ impl super::UserInterface for FullTermUi {
         );
         let mut needs_redraw = true;
         let mut error = None;
+        match event_receiver.recv() {
+            Ok(AppEvent::ProblemsAdded) => {}
+            Err(..) | Ok(AppEvent::Shutdown) => return Ok(()),
+        }
+        let mut terminal = Terminal::new()?;
         loop {
             if screen.quit_requested() {
                 // When quit has been requested, we abort all problems in the store. New problems
@@ -92,11 +111,11 @@ impl super::UserInterface for FullTermUi {
             }
             if needs_redraw {
                 if screen.needs_cursor() {
-                    self.terminal.show_cursor()?;
+                    terminal.term.show_cursor()?;
                 } else {
-                    self.terminal.hide_cursor()?;
+                    terminal.term.hide_cursor()?;
                 }
-                self.terminal.draw(|f| {
+                terminal.term.draw(|f| {
                     screen.render(f);
                     if let Some(e) = error.as_ref() {
                         render_error(f, e);
@@ -143,11 +162,11 @@ impl super::UserInterface for FullTermUi {
     }
 }
 
-impl Drop for FullTermUi {
+impl Drop for Terminal {
     fn drop(&mut self) {
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = crossterm::execute!(
-            self.terminal.backend_mut(),
+            self.term.backend_mut(),
             crossterm::terminal::LeaveAlternateScreen
         );
     }

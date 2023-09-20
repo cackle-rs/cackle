@@ -28,9 +28,10 @@ use crate::outcome::ExitCode;
 use crate::outcome::Outcome;
 use crate::Args;
 use crate::RequestHandler;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
-use std::fmt::Display;
+use std::io::Write;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -52,18 +53,18 @@ const SOCKET_ENV: &str = "CACKLE_SOCKET_PATH";
 const CONFIG_PATH_ENV: &str = "CACKLE_CONFIG_PATH";
 const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 
-#[derive(Debug)]
-pub(crate) struct CargoBuildFailure {
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-}
-
 pub(crate) struct CargoRunner<'a> {
     pub(crate) manifest_dir: &'a Path,
     pub(crate) tmpdir: &'a Path,
     pub(crate) config: &'a Config,
     pub(crate) args: &'a Args,
     pub(crate) crate_index: &'a CrateIndex,
+}
+
+#[derive(Default)]
+pub(crate) struct CargoOutputWaiter {
+    stderr_thread: Option<JoinHandle<()>>,
+    stdout_thread: Option<JoinHandle<()>>,
 }
 
 pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()> {
@@ -79,14 +80,15 @@ pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()
 }
 
 impl<'a> CargoRunner<'a> {
-    /// Invokes `cargo build` in the specified directory with us acting as proxy versions of rustc and
-    /// the linker. If calling this, you must call handle_wrapped_binaries from the start of main.
+    /// Invokes `cargo build` in the specified directory with us acting as proxy versions of rustc
+    /// and the linker. If calling this, you must call handle_wrapped_binaries from the start of
+    /// main.
     pub(crate) fn invoke_cargo_build(
         &self,
         abort_recv: Receiver<()>,
         abort_sender: Sender<()>,
         request_creator: impl Fn(Request) -> RequestHandler,
-    ) -> Result<()> {
+    ) -> Result<CargoOutputWaiter> {
         if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
             panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
         }
@@ -140,15 +142,14 @@ impl<'a> CargoRunner<'a> {
             .spawn()
             .with_context(|| format!("Failed to run {command:?}"))?;
 
-        let mut stdout_thread = None;
-        let mut stderr_thread = None;
+        let mut output_waiter = CargoOutputWaiter::default();
         if capture_output {
-            stdout_thread = Some(start_output_collecting_thread(
-                "cargo-stdout-reader",
+            output_waiter.stdout_thread = Some(start_output_pass_through_thread(
+                "cargo-stdout-pass-through",
                 cargo_process.stdout.take().unwrap(),
             )?);
-            stderr_thread = Some(start_output_collecting_thread(
-                "cargo-stderr-reader",
+            output_waiter.stderr_thread = Some(start_output_pass_through_thread(
+                "cargo-stderr-pass-through",
                 cargo_process.stderr.take().unwrap(),
             )?);
         }
@@ -159,15 +160,6 @@ impl<'a> CargoRunner<'a> {
         let (error_send, error_recv) = channel();
         loop {
             if let Some(status) = cargo_process.try_wait()? {
-                // The following unwrap will only panic if an output collecting thread panicked.
-                let stdout = stdout_thread
-                    .take()
-                    .map(|thread| thread.join().unwrap())
-                    .unwrap_or_default();
-                let stderr = stderr_thread
-                    .take()
-                    .map(|thread| thread.join().unwrap())
-                    .unwrap_or_default();
                 drop(listener);
                 // Deleting the socket is best-effort only, so we don't report an error if we can't.
                 let _ = std::fs::remove_file(&ipc_path);
@@ -175,7 +167,7 @@ impl<'a> CargoRunner<'a> {
                     return Err(error);
                 }
                 if status.code() != Some(0) {
-                    return Err(CargoBuildFailure { stdout, stderr }.into());
+                    bail!("`cargo` exited with non-zero exit status");
                 }
                 break;
             }
@@ -206,20 +198,43 @@ impl<'a> CargoRunner<'a> {
             }
         }
 
-        Ok(())
+        Ok(output_waiter)
     }
 }
 
-fn start_output_collecting_thread(
+impl CargoOutputWaiter {
+    /// Wait for all output to pass through and the output threads (if any) to shut down. This
+    /// should only be called after the UI thread has been shut down since the output threads block
+    /// while the UI is active.
+    pub(crate) fn wait_for_output(&mut self) {
+        // The following unwraps will only panic if an output-collecting thread panicked.
+        if let Some(thread) = self.stdout_thread.take() {
+            thread.join().unwrap()
+        }
+        if let Some(thread) = self.stderr_thread.take() {
+            thread.join().unwrap()
+        }
+    }
+}
+
+fn start_output_pass_through_thread(
     thread_name: &str,
     mut reader: impl std::io::Read + Send + 'static,
-) -> Result<JoinHandle<Vec<u8>>> {
+) -> Result<JoinHandle<()>> {
     Ok(std::thread::Builder::new()
         .name(thread_name.to_owned())
-        .spawn(move || -> Vec<u8> {
-            let mut output = Vec::new();
-            let _ = reader.read_to_end(&mut output);
-            output
+        .spawn(move || {
+            let mut output = vec![0u8; 64];
+            while let Ok(size) = reader.read(&mut output) {
+                if size == 0 {
+                    break;
+                }
+                // For now, we just send all output to stderr regardless of whether it was
+                // originally on stdout or stderr. We lock stderr when the UI (full_term.rs) is
+                // active, so the following lock will block the whole time the UI is active. Once
+                // the UI shuts down, we'll unblock and send any remaining output through.
+                let _ = std::io::stderr().lock().write_all(&output[..size]);
+            }
         })?)
 }
 
@@ -255,13 +270,3 @@ fn run_command(command: &mut Command) -> Result<ExitCode> {
 fn cackle_exe() -> Result<PathBuf> {
     std::env::current_exe().context("Failed to get current exe")
 }
-
-impl Display for CargoBuildFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.stdout))?;
-        write!(f, "{}", String::from_utf8_lossy(&self.stderr))?;
-        Ok(())
-    }
-}
-
-impl std::error::Error for CargoBuildFailure {}

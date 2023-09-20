@@ -52,6 +52,7 @@ use problem_store::ProblemStoreRef;
 use proxy::cargo::profile_name;
 use proxy::cargo::CargoOptions;
 use proxy::rpc::Request;
+use proxy::CargoOutputWaiter;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -197,6 +198,7 @@ struct Cackle {
     args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
+    cargo_output_waiter: Option<CargoOutputWaiter>,
     crate_index: Arc<CrateIndex>,
     abort_sender: Sender<()>,
 }
@@ -251,6 +253,7 @@ impl Cackle {
             crate_index,
             tmpdir,
             abort_sender,
+            cargo_output_waiter: None,
         })
     }
 
@@ -272,6 +275,9 @@ impl Cackle {
         if let Ok(Err(error)) = self.ui_join_handle.join() {
             println!("UI error: {error}");
             return outcome::FAILURE;
+        }
+        if let Some(mut output_waiter) = self.cargo_output_waiter.take() {
+            output_waiter.wait_for_output();
         }
         // Now that the UI (if any) has shut down, print any errors.
         if let Some(error) = error {
@@ -356,14 +362,25 @@ impl Cackle {
                     args: &args,
                     crate_index: &crate_index,
                 };
-                cargo_runner.invoke_cargo_build(abort_recv, self.abort_sender.clone(), |request| {
-                    if self.args.save_requests {
-                        if let Err(error) = self.save_request(&request) {
-                            println!("Failed to save request: {error}");
+                let r = cargo_runner.invoke_cargo_build(
+                    abort_recv,
+                    self.abort_sender.clone(),
+                    |request| {
+                        if self.args.save_requests {
+                            if let Err(error) = self.save_request(&request) {
+                                println!("Failed to save request: {error}");
+                            }
                         }
+                        self.new_request_handler(Some(request))
+                    },
+                );
+                match r {
+                    Ok(output_waiter) => {
+                        self.cargo_output_waiter = Some(output_waiter);
+                        Ok(())
                     }
-                    self.new_request_handler(Some(request))
-                })
+                    Err(e) => Err(e),
+                }
             }
         } else {
             // We've already detected problems before running cargo, don't run cargo.
