@@ -27,7 +27,7 @@ include = [
     "serde::de::impls::PathBufVisitor",
 ]
 no_auto_detect = [
-    "cackle",
+    "cargo-acl",
 ]
 
 [api.process]
@@ -264,7 +264,7 @@ allow_unsafe = true
 [pkg.colored]
 allow_unsafe = true
 
-[pkg.cackle]
+[pkg.cargo-acl]
 allow_apis = [
     "fs",
     "process",

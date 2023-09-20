@@ -123,7 +123,7 @@ build.sandbox.allow_network = true
 Tests can also be run in a sandbox using the `test` subcommand, for example:
 
 ```sh
-cackle test
+cargo acl test
 ```
 
 This builds the tests, checking the built test binaries against the permissions granted in

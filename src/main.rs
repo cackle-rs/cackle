@@ -64,6 +64,18 @@ use summary::SummaryOptions;
 use symbol_graph::ScanOutputs;
 use tmpdir::TempDir;
 
+#[derive(Parser, Debug, Clone)]
+#[clap()]
+struct OuterArgs {
+    #[command(subcommand)]
+    command: OuterCommand,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+enum OuterCommand {
+    Acl(Args),
+}
+
 #[derive(Parser, Debug, Clone, Default)]
 #[clap(version, about)]
 struct Args {
@@ -176,7 +188,8 @@ fn main() -> Result<()> {
         return invoke_wrapped_binary();
     }
 
-    let mut args = Args::parse();
+    let outer = OuterArgs::parse();
+    let OuterCommand::Acl(mut args) = outer.command;
     args.colour = args.colour.detect();
     if let Some(log_file) = &args.log_file {
         logging::init(log_file, args.log_level)?;

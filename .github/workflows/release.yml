@@ -46,7 +46,7 @@ jobs:
       run: |
         n="cackle-${{ github.ref_name }}-${{ matrix.target }}"
         mkdir "$n"
-        cp "target/${{ matrix.target }}/release/cackle" "$n"
+        cp "target/${{ matrix.target }}/release/cargo-acl" "$n"
         tar zcf $n.tar.gz $n
 
     - name: Release

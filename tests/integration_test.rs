@@ -21,6 +21,7 @@ fn integration_test() -> Result<()> {
             }
         }
         let status = command
+            .arg("acl")
             .arg("--fail-on-warnings")
             .arg("--save-requests")
             .arg("--path")
@@ -56,6 +57,7 @@ fn invalid_config() -> Result<()> {
     let config_path = dir.join("cackle.toml");
     std::fs::write(config_path, "invalid_key = true")?;
     let output = Command::new(cackle_exe())
+        .arg("acl")
         .arg("--path")
         .arg(dir)
         .arg("--ui=none")
@@ -83,7 +85,7 @@ fn create_cargo_dir(dir: &Path) {
 }
 
 fn cackle_exe() -> PathBuf {
-    target_dir().join("cackle")
+    target_dir().join("cargo-acl")
 }
 
 fn crate_root() -> PathBuf {

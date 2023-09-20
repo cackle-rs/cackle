@@ -1,4 +1,4 @@
-# Cackle
+# Cackle / cargo acl
 
 A code ACL checker for Rust.
 
@@ -14,13 +14,13 @@ using network APIs.
 Currently Cackle only works on Linux. See [PORTING.md](PORTING.md) for more details.
 
 ```sh
-cargo install --locked cackle
+cargo install --locked cargo-acl
 ```
 
 Or if you'd like to install from git:
 
 ```sh
-cargo install --locked --git https://github.com/cackle-rs/cackle.git cackle
+cargo install --locked --git https://github.com/cackle-rs/cackle.git cargo-acl
 ```
 
 Installing `bubblewrap` is recommended as it allows build scripts (build.rs) and tests to be run
@@ -37,7 +37,7 @@ sudo apt install bubblewrap
 From the root of your project (the directory containing `Cargo.toml`), run:
 
 ```sh
-cackle
+cargo acl
 ```
 
 This will interactively guide you through creating an initial `cackle.toml`. Some manual editing of
