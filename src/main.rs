@@ -130,8 +130,8 @@ struct Args {
     tmpdir: Option<PathBuf>,
 
     /// What kind of user interface to use.
-    #[clap(long, default_value = "full")]
-    ui: ui::Kind,
+    #[clap(long)]
+    ui: Option<ui::Kind>,
 
     #[command(subcommand)]
     command: Option<Command>,

@@ -6,7 +6,6 @@ use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
 use crate::Args;
-use crate::Command;
 use anyhow::Result;
 use clap::ValueEnum;
 use log::info;
@@ -85,15 +84,13 @@ impl Args {
     }
 
     fn ui_kind(&self) -> Kind {
-        match &self.command {
-            #[cfg(not(feature = "ui"))]
-            None => Kind::None,
-            Some(Command::Check) => Kind::None,
-            #[cfg(feature = "ui")]
-            None | Some(Command::Ui) => self.ui,
-            Some(Command::Summary(..)) => Kind::None,
-            Some(Command::Cargo(..)) => Kind::None,
-            Some(Command::ProxyBin(..)) => Kind::None,
+        if let Some(kind) = self.ui {
+            return kind;
         }
+        #[cfg(feature = "ui")]
+        if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+            return Kind::Full;
+        }
+        Kind::None
     }
 }
