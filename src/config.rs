@@ -79,7 +79,7 @@ pub(crate) struct CommonConfig {
 #[serde(deny_unknown_fields)]
 pub(crate) struct SandboxConfig {
     #[serde(default)]
-    pub(crate) kind: SandboxKind,
+    pub(crate) kind: Option<SandboxKind>,
 
     #[serde(default)]
     pub(crate) extra_args: Vec<String>,
@@ -119,10 +119,8 @@ pub(crate) struct ApiPath {
     pub(crate) prefix: Arc<str>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Deserialize, Serialize, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum SandboxKind {
-    #[default]
-    Inherit,
     Disabled,
     Bubblewrap,
 }
@@ -150,8 +148,8 @@ pub(crate) struct PackageConfig {
     #[serde()]
     pub(crate) from: Option<FromConfig>,
 
-    #[serde()]
-    pub(crate) sandbox: Option<SandboxConfig>,
+    #[serde(default)]
+    pub(crate) sandbox: SandboxConfig,
 
     #[serde(default)]
     pub(crate) import: Option<Vec<String>>,
@@ -303,9 +301,7 @@ impl RawConfig {
 
 impl PackageConfig {
     fn make_paths_absolute(&mut self, workspace_root: Option<&Path>) -> Result<()> {
-        if let Some(sandbox_config) = self.sandbox.as_mut() {
-            sandbox_config.make_paths_absolute(workspace_root)?;
-        }
+        self.sandbox.make_paths_absolute(workspace_root)?;
         if let Some(sub_config) = self.build.as_mut() {
             sub_config.make_paths_absolute(workspace_root)?;
         }
@@ -553,13 +549,13 @@ mod tests {
         let sandbox_a = config
             .permissions
             .sandbox_config_for_package(&PermSel::for_build_script("a"));
-        assert_eq!(sandbox_a.kind, SandboxKind::Bubblewrap);
+        assert_eq!(sandbox_a.kind, Some(SandboxKind::Bubblewrap));
         assert_eq!(sandbox_a.extra_args, vec!["--extra1", "--extra2"]);
 
         let sandbox_b = config
             .permissions
             .sandbox_config_for_package(&PermSel::for_build_script("b"));
-        assert_eq!(sandbox_b.kind, SandboxKind::Disabled);
+        assert_eq!(sandbox_b.kind, Some(SandboxKind::Disabled));
     }
 
     #[test]

@@ -94,7 +94,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
             }));
         }
         Problem::BuildScriptFailed(failure) => {
-            if failure.output.sandbox_config.kind != SandboxKind::Disabled {
+            if failure.output.sandbox_config.kind != Some(SandboxKind::Disabled) {
                 let perm_sel = PermSel::for_build_script(failure.crate_sel.pkg_name());
                 if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
                     edits.push(Box::new(SandboxAllowNetwork {
@@ -261,7 +261,6 @@ impl ConfigEditor {
     pub(crate) fn set_sandbox_kind(&mut self, sandbox_kind: SandboxKind) -> Result<()> {
         crate::sandbox::verify_kind(sandbox_kind)?;
         let sandbox_kind = match sandbox_kind {
-            SandboxKind::Inherit => "Inherit",
             SandboxKind::Disabled => "Disabled",
             SandboxKind::Bubblewrap => "Bubblewrap",
         };
@@ -1303,7 +1302,7 @@ mod tests {
                 stderr: Vec::new(),
                 crate_sel: crate_sel.clone(),
                 sandbox_config: SandboxConfig {
-                    kind: crate::config::SandboxKind::Bubblewrap,
+                    kind: Some(crate::config::SandboxKind::Bubblewrap),
                     extra_args: vec![],
                     allow_network: None,
                     bind_writable: vec![],

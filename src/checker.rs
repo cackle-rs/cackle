@@ -480,7 +480,7 @@ impl Checker {
             }
         }
         for (perm_sel, config) in &self.config.permissions_no_inheritance.packages {
-            if config.sandbox.is_some()
+            if config.sandbox.kind.is_some()
                 && !matches!(
                     perm_sel.scope,
                     PermissionScope::Build | PermissionScope::Test

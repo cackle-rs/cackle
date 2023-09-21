@@ -2,7 +2,6 @@ use super::PackageConfig;
 use super::PackageName;
 use super::RawConfig;
 use super::SandboxConfig;
-use super::SandboxKind;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
@@ -112,7 +111,7 @@ impl Permissions {
     pub(crate) fn sandbox_config_for_package(&self, perm_sel: &PermSel) -> SandboxConfig {
         self.packages
             .get(perm_sel)
-            .and_then(|c| c.sandbox.clone())
+            .map(|c| c.sandbox.clone())
             .unwrap_or_default()
     }
 
@@ -132,7 +131,7 @@ fn apply_inheritance(packages: &mut FxHashMap<PermSel, PackageConfig>, config: &
     // Determine a global config. We may eventually make this an actual thing in our configuration
     // file.
     let global_config = PackageConfig {
-        sandbox: Some(config.sandbox.clone()),
+        sandbox: config.sandbox.clone(),
         ..Default::default()
     };
 
@@ -186,19 +185,13 @@ impl PackageConfig {
         );
         self.allow_proc_macro |= other.allow_proc_macro;
         self.allow_unsafe |= other.allow_unsafe;
-        if let Some(other_sandbox) = other.sandbox.as_ref() {
-            if let Some(sandbox) = self.sandbox.as_mut() {
-                sandbox.inherit(other_sandbox);
-            } else {
-                self.sandbox = other.sandbox.clone();
-            }
-        }
+        self.sandbox.inherit(&other.sandbox);
     }
 }
 
 impl SandboxConfig {
     fn inherit(&mut self, other: &SandboxConfig) {
-        if self.kind == SandboxKind::Inherit {
+        if self.kind.is_none() {
             self.kind = other.kind;
         }
         merge_string_vec(&mut self.extra_args, &other.extra_args);

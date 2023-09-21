@@ -62,8 +62,8 @@ pub(crate) fn from_config(
     perm_sel: &PermSel,
 ) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
-        SandboxKind::Disabled | SandboxKind::Inherit => return Ok(None),
-        SandboxKind::Bubblewrap => Box::<bubblewrap::Bubblewrap>::default(),
+        None | Some(SandboxKind::Disabled) => return Ok(None),
+        Some(SandboxKind::Bubblewrap) => Box::<bubblewrap::Bubblewrap>::default(),
     };
     let home = PathBuf::from(std::env::var("HOME").context("Couldn't get HOME env var")?);
     // We allow access to the root of the filesystem, but only selected parts of the user's home
