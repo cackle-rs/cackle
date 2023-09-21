@@ -18,6 +18,7 @@ use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
+use crate::proxy::subprocess::SubprocessConfig;
 use crate::symbol_graph::backtrace::Backtracer;
 use crate::symbol_graph::NameSource;
 use crate::symbol_graph::UsageDebugData;
@@ -143,7 +144,10 @@ impl Checker {
         // A subprocess might try to read the flattened config while we're updating it. It doesn't
         // matter if it sees the old or the new flattened config, but we don't want it to see a
         // partially written config, so we write first to a temporary file then rename it.
-        crate::fs::write_atomic(&flattened_path, &config.permissions.serialise()?)?;
+        crate::fs::write_atomic(
+            &flattened_path,
+            &SubprocessConfig::from_full_config(&config).serialise()?,
+        )?;
 
         self.update_config(config);
         info!("Config (re)loaded");

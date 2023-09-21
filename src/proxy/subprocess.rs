@@ -10,6 +10,7 @@ use super::ExitCode;
 use super::CONFIG_PATH_ENV;
 use crate::config::permissions::PermSel;
 use crate::config::permissions::Permissions;
+use crate::config::Config;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
@@ -21,6 +22,8 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use serde::Deserialize;
+use serde::Serialize;
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
@@ -134,9 +137,9 @@ fn proxy_binary(
     rpc_client: &RpcClient,
 ) -> Result<ExitCode> {
     loop {
-        let permissions = get_permissions_from_env()?;
+        let config = SubprocessConfig::from_env()?;
         let perm_sel = PermSel::for_non_build_output(crate_sel);
-        let sandbox_config = permissions.sandbox_config_for_package(&perm_sel);
+        let sandbox_config = config.permissions.sandbox_config_for_package(&perm_sel);
         let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
@@ -218,8 +221,10 @@ impl RustcRunner {
     fn run(&mut self, rpc_client: &RpcClient) -> Result<RustcRunStatus> {
         // We need to parse the configuration each time, since it might have changed. Specifically
         // it might have been changed to allow unsafe.
-        let permissions = get_permissions_from_env()?;
-        let unsafe_permitted = permissions.unsafe_permitted_for_crate(&self.crate_sel);
+        let config = SubprocessConfig::from_env()?;
+        let unsafe_permitted = config
+            .permissions
+            .unsafe_permitted_for_crate(&self.crate_sel);
         let mut command = self.get_command(unsafe_permitted)?;
         let output = command.output()?;
         let mut unsafe_locations = Vec::new();
@@ -354,11 +359,40 @@ fn default_linker() -> String {
     "cc".to_owned()
 }
 
-fn get_permissions_from_env() -> Result<Permissions> {
-    let Ok(config_path) = std::env::var(CONFIG_PATH_ENV) else {
-        bail!("Internal env var `{}` not set", CONFIG_PATH_ENV);
-    };
-    Permissions::parse_file(Path::new(&config_path))
+#[derive(Deserialize, Serialize, PartialEq, Eq, Debug)]
+pub(crate) struct SubprocessConfig {
+    permissions: Permissions,
+}
+
+impl SubprocessConfig {
+    fn from_env() -> Result<Self> {
+        let Ok(config_path) = std::env::var(CONFIG_PATH_ENV) else {
+            bail!("Internal env var `{}` not set", CONFIG_PATH_ENV);
+        };
+        Self::parse_file(Path::new(&config_path))
+    }
+
+    pub(crate) fn from_full_config(full_config: &Config) -> Self {
+        Self {
+            permissions: full_config.permissions.clone(),
+        }
+    }
+
+    fn parse_file(path: &Path) -> Result<Self> {
+        let toml = crate::fs::read_to_string(path)?;
+        Self::deserialise(&toml)
+    }
+
+    /// Returns all this config serialised to a string. This is for use by subprocesses that need to
+    /// know permissions. Subprocesses can't parse the original configuration because they don't
+    /// have access to the CrateIndex.
+    pub(crate) fn serialise(&self) -> Result<String> {
+        Ok(serde_json::to_string(&self)?)
+    }
+
+    fn deserialise(serialised: &str) -> Result<Self> {
+        Ok(serde_json::from_str(serialised)?)
+    }
 }
 
 #[test]
@@ -371,4 +405,18 @@ fn test_orig_bin_path() {
         orig_bin_path(Path::new("foo.exe")).as_ref(),
         Path::new("foo.orig.exe")
     );
+}
+
+#[test]
+fn config_roundtrips() {
+    let crate_root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let test_crates_dir = crate_root.join("test_crates");
+    let crate_index = crate::crate_index::CrateIndex::new(&test_crates_dir).unwrap();
+    let full_config =
+        crate::config::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
+    let subprocess_config = SubprocessConfig::from_full_config(&full_config);
+
+    let roundtripped_config =
+        SubprocessConfig::deserialise(&subprocess_config.serialise().unwrap()).unwrap();
+    assert_eq!(subprocess_config, roundtripped_config);
 }

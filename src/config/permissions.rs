@@ -12,7 +12,6 @@ use fxhash::FxHashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;
-use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -45,22 +44,6 @@ pub(crate) enum PermissionScope {
 }
 
 impl Permissions {
-    pub(crate) fn parse_file(path: &Path) -> Result<Self> {
-        let toml = crate::fs::read_to_string(path)?;
-        Self::deserialise(&toml)
-    }
-
-    /// Returns all permissions serialised to a string. This is for use by subprocesses that need to
-    /// know permissions. Subprocesses can't parse the original configuration because they don't
-    /// have access to the CrateIndex.
-    pub(crate) fn serialise(&self) -> Result<String> {
-        Ok(serde_json::to_string(&self)?)
-    }
-
-    fn deserialise(serialised: &str) -> Result<Self> {
-        Ok(serde_json::from_str(serialised)?)
-    }
-
     pub(crate) fn from_config(config: &RawConfig) -> Self {
         let mut packages = FxHashMap::default();
         for (name, pkg_config) in &config.packages {
@@ -450,16 +433,4 @@ fn test_inheritance() {
         .unwrap();
     assert!(bar1_test_config.allow_unsafe);
     assert_eq!(bar1_test_config.allow_apis, &["fs", "process"])
-}
-
-#[test]
-fn permissions_roundtrips() {
-    let crate_root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let test_crates_dir = crate_root.join("test_crates");
-    let crate_index = CrateIndex::new(&test_crates_dir).unwrap();
-    let config = super::parse_file(&test_crates_dir.join("cackle.toml"), &crate_index).unwrap();
-
-    let roundtripped_config =
-        Permissions::deserialise(&config.permissions.serialise().unwrap()).unwrap();
-    assert_eq!(config.permissions, roundtripped_config);
 }
