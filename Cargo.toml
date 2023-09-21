@@ -1,12 +1,13 @@
 [package]
 name = "cargo-acl"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.67"
 license = "MIT OR Apache-2.0"
 description = "A Rust code ACL checker"
 readme = "README.md"
 repository = "https://github.com/cackle-rs/cackle"
+keywords = ["cargo", "plugin", "security", "supply-chain"]
 
 [dependencies]
 anyhow = "1.0.33"
