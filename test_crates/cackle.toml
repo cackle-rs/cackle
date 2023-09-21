@@ -16,6 +16,9 @@ import_std = [
 [sandbox]
 kind = "Bubblewrap"
 
+[rustc.sandbox]
+kind = "Bubblewrap"
+
 # Restrict access to an entire crate.
 [api.res1]
 include = [

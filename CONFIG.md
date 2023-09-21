@@ -103,7 +103,7 @@ kind = "Bubblewrap"
 
 Here we declare that we'd like to use `Bubblewrap` (installed as `bwrap`) as our sandbox. Bubblewrap
 is currently the only supported kind of sandbox. The sandbox will be used for running build scripts
-(build.rs).
+(build.rs), running tests (with `cargo acl test`) and optionally for sandboxing rustc.
 
 If for some reason you don't want to sandbox a particular build script, you can disable the sandbox
 just for that build script.
@@ -158,6 +158,20 @@ test.sandbox.make_writable = [
     "test_outputs",
 ]
 ```
+
+### Sandboxing rustc
+
+Currently rustc isn't sandboxed by default. You can enable it as follows:
+
+```toml
+[rustc.sandbox]
+kind = "Bubblewrap"
+```
+
+Sandboxing rustc will mean that all proc macros get sandboxed. Controlling the sandbox on a
+per-proc-macro basis unfortunately isn't supported yet, but hopefully will in future. This means
+that if you have for example one proc macro that needs network access, you'd need to enable network
+access for the whole rustc sandbox, which means that all proc macros would have network access.
 
 ## Importing API definitions from an external crate
 

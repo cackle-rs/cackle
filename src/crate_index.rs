@@ -70,7 +70,7 @@ pub(crate) struct PackageInfo {
 /// metadata. Subprocesses need to know which packages are non-unique so that they can correctly
 /// form PackageIds, which need this information so that we can only print package versions when
 /// there are multiple versions of that package.
-const MULTIPLE_VERSION_PKG_NAMES_ENV: &str = "CACKLE_MULTIPLE_VERSION_PKG_NAMES";
+pub(crate) const MULTIPLE_VERSION_PKG_NAMES_ENV: &str = "CACKLE_MULTIPLE_VERSION_PKG_NAMES";
 
 impl CrateIndex {
     pub(crate) fn new(dir: &Path) -> Result<Self> {

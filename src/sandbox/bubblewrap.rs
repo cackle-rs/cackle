@@ -113,7 +113,7 @@ impl Display for CommandDisplay {
         write!(f, "{}", self.command.get_program().to_string_lossy())?;
         for arg in self.command.get_args() {
             let arg = arg.to_string_lossy();
-            if arg.contains(' ') || arg.is_empty() {
+            if arg.contains(' ') || arg.contains('"') || arg.is_empty() {
                 // Use debug print, since that gives us quotes.
                 write!(f, " {:?}", arg)?;
             } else {

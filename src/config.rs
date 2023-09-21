@@ -47,6 +47,9 @@ pub(crate) struct RawConfig {
 
     #[serde(default)]
     pub(crate) sandbox: SandboxConfig,
+
+    #[serde(default)]
+    pub(crate) rustc: RustcConfig,
 }
 
 /// The name of a package. Doesn't include any version information.
@@ -91,6 +94,13 @@ pub(crate) struct SandboxConfig {
 
     #[serde(default)]
     pub(crate) make_writable: Vec<PathBuf>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RustcConfig {
+    #[serde(default)]
+    pub(crate) sandbox: SandboxConfig,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Default, Hash)]

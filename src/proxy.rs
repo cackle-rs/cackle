@@ -49,9 +49,18 @@ pub(crate) mod errors;
 pub(crate) mod rpc;
 pub(crate) mod subprocess;
 
-const SOCKET_ENV: &str = "CACKLE_SOCKET_PATH";
+pub(crate) const SOCKET_ENV: &str = "CACKLE_SOCKET_PATH";
 const CONFIG_PATH_ENV: &str = "CACKLE_CONFIG_PATH";
 const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
+pub(crate) const TARGET_DIR: &str = "CACKLE_TARGET_DIR";
+pub(crate) const MANIFEST_DIR: &str = "CACKLE_MANIFEST_DIR";
+
+/// Environment variables that we need to allow through to rustc when we run rustc in a sandbox.
+pub(crate) const RUSTC_ENV_VARS: &[&str] = &[
+    SOCKET_ENV,
+    CONFIG_PATH_ENV,
+    crate::crate_index::MULTIPLE_VERSION_PKG_NAMES_ENV,
+];
 
 pub(crate) struct CargoRunner<'a> {
     pub(crate) manifest_dir: &'a Path,
@@ -59,6 +68,7 @@ pub(crate) struct CargoRunner<'a> {
     pub(crate) config: &'a Config,
     pub(crate) args: &'a Args,
     pub(crate) crate_index: &'a CrateIndex,
+    pub(crate) target_dir: &'a Path,
 }
 
 #[derive(Default)]
@@ -126,6 +136,8 @@ impl<'a> CargoRunner<'a> {
         command
             .env(SOCKET_ENV, &ipc_path)
             .env(CONFIG_PATH_ENV, config_path)
+            .env(TARGET_DIR, self.target_dir)
+            .env(MANIFEST_DIR, self.manifest_dir)
             .env("RUSTC_WRAPPER", cackle_exe()?);
 
         self.crate_index.add_internal_env(&mut command);

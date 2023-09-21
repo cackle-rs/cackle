@@ -11,12 +11,14 @@ use super::CONFIG_PATH_ENV;
 use crate::config::permissions::PermSel;
 use crate::config::permissions::Permissions;
 use crate::config::Config;
+use crate::config::RustcConfig;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::outcome::Outcome;
 use crate::proxy::rpc::RpcClient;
+use crate::sandbox::RustcSandboxInputs;
 use crate::unsafe_checker;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -140,7 +142,7 @@ fn proxy_binary(
         let config = SubprocessConfig::from_env()?;
         let perm_sel = PermSel::for_non_build_output(crate_sel);
         let sandbox_config = config.permissions.sandbox_config_for_package(&perm_sel);
-        let Some(sandbox) = crate::sandbox::from_config(&sandbox_config, &orig_bin, &perm_sel)?
+        let Some(sandbox) = crate::sandbox::for_perm_sel(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
             return Ok(Command::new(&orig_bin).status()?.into());
@@ -227,7 +229,14 @@ impl RustcRunner {
             .permissions
             .unsafe_permitted_for_crate(&self.crate_sel);
         let mut command = self.get_command(unsafe_permitted)?;
-        let output = command.output()?;
+        let output =
+            match crate::sandbox::for_rustc(&config.rustc, &RustcSandboxInputs::from_env()?)? {
+                Some(mut sandbox) => {
+                    sandbox.ro_bind(&cackle_exe()?);
+                    sandbox.run(&command)?
+                }
+                None => command.output()?,
+            };
         let mut unsafe_locations = Vec::new();
 
         if output.status.code() == Some(0) {
@@ -363,6 +372,7 @@ fn default_linker() -> String {
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug)]
 pub(crate) struct SubprocessConfig {
     permissions: Permissions,
+    rustc: RustcConfig,
 }
 
 impl SubprocessConfig {
@@ -376,6 +386,7 @@ impl SubprocessConfig {
     pub(crate) fn from_full_config(full_config: &Config) -> Self {
         Self {
             permissions: full_config.permissions.clone(),
+            rustc: full_config.raw.rustc.clone(),
         }
     }
 

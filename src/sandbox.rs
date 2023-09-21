@@ -1,4 +1,5 @@
 use crate::config::permissions::PermSel;
+use crate::config::RustcConfig;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
 use anyhow::bail;
@@ -56,15 +57,12 @@ pub(crate) trait Sandbox {
     fn display_to_run(&self, command: &Command) -> Box<dyn Display>;
 }
 
-pub(crate) fn from_config(
-    config: &SandboxConfig,
-    bin_path: &Path,
-    perm_sel: &PermSel,
-) -> Result<Option<Box<dyn Sandbox>>> {
+pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandbox>>> {
     let mut sandbox = match &config.kind {
         None | Some(SandboxKind::Disabled) => return Ok(None),
         Some(SandboxKind::Bubblewrap) => Box::<bubblewrap::Bubblewrap>::default(),
     };
+
     let home = PathBuf::from(std::env::var("HOME").context("Couldn't get HOME env var")?);
     // We allow access to the root of the filesystem, but only selected parts of the user's home
     // directory. The home directory is where sensitive stuff is most likely to live. e.g. access
@@ -86,15 +84,7 @@ pub(crate) fn from_config(
 
     // Allow read access to the crate's root source directory.
     sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
-    // Allow read access to the build directory. This contains the bin file being executed and
-    // possibly other binaries.
-    if let Some(build_dir) = build_directory(bin_path) {
-        sandbox.ro_bind(build_dir);
-    }
-    // Allow write access to OUT_DIR.
-    if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        sandbox.writable_bind(Path::new(&out_dir));
-    }
+
     // LD_LIBRARY_PATH is set when running `cargo test` on crates that normally compile as
     // cdylibs - e.g. proc macros. If we don't pass it through, those tests will fail to find
     // runtime dependencies.
@@ -104,13 +94,13 @@ pub(crate) fn from_config(
     for dir in &config.bind_writable {
         if !dir.exists() {
             bail!(
-                "Sandbox config for `{perm_sel}` says to bind directory `{}`, but that doesn't exist",
+                "Sandbox config says to bind directory `{}`, but that doesn't exist",
                 dir.display()
             );
         }
         if !dir.is_dir() {
             bail!(
-                "Sandbox config for `{perm_sel}` says to bind directory `{}`, but that isn't a directory",
+                "Sandbox config says to bind directory `{}`, but that isn't a directory",
                 dir.display()
             );
         }
@@ -132,6 +122,88 @@ pub(crate) fn from_config(
         // permitted prevents DNS lookups on some systems.
         sandbox.tmpfs(Path::new("/run"));
     }
+
+    Ok(Some(sandbox))
+}
+
+/// Information extracted from the rustc command line that's relevant to running it in a sandbox.
+#[derive(Default)]
+pub(crate) struct RustcSandboxInputs {
+    output_directories: Vec<PathBuf>,
+    input_directories: Vec<PathBuf>,
+}
+
+impl RustcSandboxInputs {
+    pub(crate) fn from_env() -> Result<Self> {
+        let mut result = Self::default();
+        let mut next_is_out = false;
+        let target_dir = PathBuf::from(get_env(crate::proxy::TARGET_DIR)?);
+        let manifest_dir = PathBuf::from(get_env(crate::proxy::MANIFEST_DIR)?);
+        result.input_directories.push(manifest_dir);
+        for arg in std::env::args() {
+            if next_is_out {
+                result.output_directories.push(arg.into());
+                next_is_out = false;
+                continue;
+            }
+            next_is_out = arg == "--out-dir";
+            if let Some(rest) = arg.strip_prefix("incremental=") {
+                result.output_directories.push(rest.into());
+            }
+        }
+        if let Ok(socket_path) = std::env::var(crate::proxy::SOCKET_ENV) {
+            if let Some(dir) = Path::new(&socket_path).parent() {
+                result.output_directories.push(dir.to_owned());
+            }
+        }
+        result
+            .output_directories
+            .retain(|d| !d.starts_with(&target_dir));
+        result.output_directories.push(target_dir);
+        Ok(result)
+    }
+}
+
+pub(crate) fn for_rustc(
+    config: &RustcConfig,
+    inputs: &RustcSandboxInputs,
+) -> Result<Option<Box<dyn Sandbox>>> {
+    let Some(mut sandbox) = from_config(&config.sandbox)? else {
+        return Ok(None);
+    };
+    for dir in &inputs.input_directories {
+        sandbox.ro_bind(dir);
+    }
+    for dir in &inputs.output_directories {
+        sandbox.writable_bind(dir);
+    }
+    for env in crate::proxy::RUSTC_ENV_VARS {
+        sandbox.pass_env(env);
+    }
+    Ok(Some(sandbox))
+}
+
+pub(crate) fn for_perm_sel(
+    config: &SandboxConfig,
+    bin_path: &Path,
+    perm_sel: &PermSel,
+) -> Result<Option<Box<dyn Sandbox>>> {
+    let Some(mut sandbox) = from_config(config)
+        .with_context(|| format!("Failed to build sandbox config for `{perm_sel}`"))?
+    else {
+        return Ok(None);
+    };
+
+    // Allow read access to the build directory. This contains the bin file being executed and
+    // possibly other binaries.
+    if let Some(build_dir) = build_directory(bin_path) {
+        sandbox.ro_bind(build_dir);
+    }
+    // Allow write access to OUT_DIR.
+    if let Ok(out_dir) = std::env::var("OUT_DIR") {
+        sandbox.writable_bind(Path::new(&out_dir));
+    }
+
     Ok(Some(sandbox))
 }
 

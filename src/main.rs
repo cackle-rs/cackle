@@ -207,6 +207,7 @@ struct Cackle {
     config_path: PathBuf,
     checker: Arc<Mutex<Checker>>,
     tmpdir: Arc<TempDir>,
+    target_dir: PathBuf,
     args: Arc<Args>,
     event_sender: Sender<AppEvent>,
     ui_join_handle: JoinHandle<Result<()>>,
@@ -264,6 +265,7 @@ impl Cackle {
             ui_join_handle,
             crate_index,
             tmpdir,
+            target_dir,
             abort_sender,
             cargo_output_waiter: None,
         })
@@ -367,6 +369,7 @@ impl Cackle {
                 let cargo_runner = proxy::CargoRunner {
                     manifest_dir: &root_path,
                     tmpdir: self.tmpdir.path(),
+                    target_dir: &self.target_dir,
                     config: &config,
                     args: &args,
                     crate_index: &crate_index,
