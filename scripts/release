@@ -23,7 +23,8 @@ echo "Releasing version ${VERSION} with minimum rust version ${MIN_RUST_VER}"
 cargo clippy -- -D warnings
 cargo clippy --no-default-features -- -D warnings
 cargo test
-cargo run --release -- --save-requests --fail-on-warnings check
+cargo run --release -- acl --no-ui --save-requests --fail-on-warnings
+cargo run --release -- acl --no-ui --save-requests --fail-on-warnings test
 cargo +${MIN_RUST_VER}-x86_64-unknown-linux-gnu test --all
 cargo package
 
@@ -32,3 +33,32 @@ git push origin
 git push origin refs/tags/v${VERSION}
 
 cargo publish
+
+sleep 120
+echo "Waiting for release build to complete..."
+for i in {1..1000}; do
+  code=$(curl -o /dev/null --silent -Iw '%{http_code}' https://github.com/cackle-rs/cackle/releases/download/v${VERSION}/cackle-v${VERSION}-x86_64-unknown-linux-musl.tar.gz)
+  if [ $code != 404 ]; then
+    break
+  fi
+  if [ $i = 10 ]; then
+    echo "Giving up waiting for release. Last code was $code"
+  fi
+  sleep 60
+done
+
+echo "Release build is available"
+
+(
+  cd ../cackle-action
+  git checkout main
+  perl -pi -e 's/default: "0.*"$/default: "'$VERSION'"/' action.yml
+  git add action.yml
+  git commit -m "Release $VERSION"
+  git push origin main
+  git checkout latest
+  git merge main
+  git push origin latest
+  git checkout -b $VERSION
+  git push origin $VERSION
+)
