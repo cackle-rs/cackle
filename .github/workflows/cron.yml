@@ -1,0 +1,16 @@
+name: cackle-cron
+on:
+  schedule:
+    - cron: '36 19 * * *'
+
+jobs:
+  cackle:
+    name: cackle check and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: cackle-rs/cackle-action@latest
+      - run: cargo update
+      - run: cargo acl -n
+      - run: cargo acl -n test
