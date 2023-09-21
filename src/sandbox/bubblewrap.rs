@@ -17,9 +17,9 @@ impl Bubblewrap {
         self.args.push(arg.as_ref().to_owned());
     }
 
-    fn command(&self, binary: &Path) -> Command {
-        let mut command = Command::new("bwrap");
-        command
+    fn command(&self, command: &Command) -> Command {
+        let mut bwrap_command = Command::new("bwrap");
+        bwrap_command
             .args(["--unshare-all"])
             .args(["--uid", "1000"])
             .args(["--gid", "1000"])
@@ -28,9 +28,19 @@ impl Bubblewrap {
             .args(["--clearenv"])
             .args(&self.args)
             .args(["--dev", "/dev"])
-            .args(["--proc", "/proc"])
-            .arg(binary);
-        command
+            .args(["--proc", "/proc"]);
+        for (var_name, value) in command.get_envs() {
+            if let Some(value) = value {
+                bwrap_command.arg("--setenv").arg(var_name).arg(value);
+            } else {
+                bwrap_command.arg("--unsetenv").arg(var_name);
+            }
+        }
+        bwrap_command
+            .arg("--")
+            .arg(command.get_program())
+            .args(command.get_args());
+        bwrap_command
     }
 }
 
@@ -69,8 +79,8 @@ impl Sandbox for Bubblewrap {
         self.arg("--share-net");
     }
 
-    fn run(&self, binary: &Path) -> Result<std::process::Output> {
-        let mut command = self.command(binary);
+    fn run(&self, command: &Command) -> Result<std::process::Output> {
+        let mut command = self.command(command);
         command.output().with_context(|| {
             format!(
                 "Failed to run sandbox command: {}",
@@ -79,9 +89,9 @@ impl Sandbox for Bubblewrap {
         })
     }
 
-    fn display_to_run(&self, binary: &Path) -> Box<dyn Display> {
+    fn display_to_run(&self, command: &Command) -> Box<dyn Display> {
         Box::new(CommandDisplay {
-            command: self.command(binary),
+            command: self.command(command),
         })
     }
 }

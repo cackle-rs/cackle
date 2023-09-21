@@ -8,12 +8,13 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 mod bubblewrap;
 
 pub(crate) trait Sandbox {
-    /// Runs `binary` inside the sandbox.
-    fn run(&self, binary: &Path) -> Result<std::process::Output>;
+    /// Runs `command` inside the sandbox.
+    fn run(&self, command: &Command) -> Result<std::process::Output>;
 
     /// Bind a tmpfs at `dir`.
     fn tmpfs(&mut self, dir: &Path);
@@ -52,7 +53,7 @@ pub(crate) trait Sandbox {
 
     /// Returns an object that when displayed serves to tell the user what the sandbox would do.
     /// e.g. the command that would be run with all flags.
-    fn display_to_run(&self, binary: &Path) -> Box<dyn Display>;
+    fn display_to_run(&self, command: &Command) -> Box<dyn Display>;
 }
 
 pub(crate) fn from_config(

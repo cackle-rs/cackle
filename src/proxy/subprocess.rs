@@ -146,7 +146,8 @@ fn proxy_binary(
             return Ok(Command::new(&orig_bin).status()?.into());
         };
 
-        let output = sandbox.run(&orig_bin)?;
+        let command = Command::new(&orig_bin);
+        let output = sandbox.run(&command)?;
         let rpc_response = rpc_client.build_script_complete({
             let exit_code = output.status.code().unwrap_or(-1);
             BinExecutionOutput {
@@ -157,7 +158,7 @@ fn proxy_binary(
                 sandbox_config,
                 build_script: orig_bin.clone(),
                 sandbox_config_display: (exit_code != 0)
-                    .then(|| sandbox.display_to_run(&orig_bin).to_string()),
+                    .then(|| sandbox.display_to_run(&command).to_string()),
             }
         })?;
         match rpc_response {
