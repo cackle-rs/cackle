@@ -8,7 +8,6 @@ mod build_script_checker;
 mod checker;
 mod colour;
 mod config;
-#[cfg(feature = "ui")]
 mod config_editor;
 mod config_validation;
 mod cowarc;
@@ -341,6 +340,10 @@ impl Cackle {
             if should_run_cargo_clean {
                 proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
             }
+        }
+        let update_problems = self.checker.lock().unwrap().check_for_new_config_version();
+        if !update_problems.is_empty() {
+            self.problem_store.fix_problems(update_problems);
         }
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;

@@ -190,7 +190,7 @@ impl PackageConfig {
 }
 
 impl SandboxConfig {
-    fn inherit(&mut self, other: &SandboxConfig) {
+    pub(crate) fn inherit(&mut self, other: &SandboxConfig) {
         if self.kind.is_none() {
             self.kind = other.kind;
         }

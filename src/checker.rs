@@ -492,6 +492,14 @@ impl Checker {
         Ok(problems)
     }
 
+    pub(crate) fn check_for_new_config_version(&self) -> ProblemList {
+        let version = self.config.raw.common.version;
+        if version < crate::config::MAX_VERSION {
+            return Problem::NewConfigVersionAvailable(version + 1).into();
+        }
+        ProblemList::default()
+    }
+
     fn record_crate_paths(&mut self, info: &rpc::RustcOutput) -> Result<()> {
         for path in &info.source_paths {
             let selectors = &mut self.path_to_pkg_ids.entry(path.to_owned()).or_default();

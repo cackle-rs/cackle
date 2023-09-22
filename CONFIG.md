@@ -161,17 +161,25 @@ test.sandbox.make_writable = [
 
 ### Sandboxing rustc
 
-Currently rustc isn't sandboxed by default. You can enable it as follows:
+If you have a sandbox configuation, then from config version 2 onwards, rustc will be run in a
+sandbox. This means that all proc macros get sandboxed. Controlling the sandbox on a per-proc-macro
+basis unfortunately isn't supported yet, but hopefully will in future. This means that if you have
+for example one proc macro that needs network access, you'd need to enable network access for the
+whole rustc sandbox, which means that all proc macros would have network access.
+
+If you need to enable networking from the rustc sandbox, you can do so as follows:
 
 ```toml
 [rustc.sandbox]
-kind = "Bubblewrap"
+allow_network = true
 ```
 
-Sandboxing rustc will mean that all proc macros get sandboxed. Controlling the sandbox on a
-per-proc-macro basis unfortunately isn't supported yet, but hopefully will in future. This means
-that if you have for example one proc macro that needs network access, you'd need to enable network
-access for the whole rustc sandbox, which means that all proc macros would have network access.
+Or if you need to completely disable the rustc sandbox:
+
+```toml
+[rustc.sandbox]
+kind = "Disable"
+```
 
 ## Importing API definitions from an external crate
 

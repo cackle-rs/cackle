@@ -2,6 +2,7 @@
 
 use crate::checker::common_prefix::common_to_prefixes;
 use crate::config::permissions::PermSel;
+use crate::config::versions::Version;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::Config;
@@ -130,6 +131,16 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
             let _ = info.usages.add_exclude_fixes(&mut edits, config);
             info.usages.add_allow_api_fixes(&mut edits);
         }
+        Problem::NewConfigVersionAvailable(version) => {
+            if let Some(version) = crate::config::versions::VERSIONS.get(*version as usize) {
+                edits.push(Box::new(UpdateConfigVersion {
+                    version: version.clone(),
+                }));
+                edits.push(Box::new(UpdateConfigVersionPerserveBehaviour {
+                    version: version.clone(),
+                }));
+            }
+        }
         _ => {}
     }
     edits
@@ -184,7 +195,7 @@ impl ConfigEditor {
         self.table(["common"].into_iter())
     }
 
-    fn table<'a>(
+    pub(crate) fn table<'a>(
         &mut self,
         path: impl Iterator<Item = &'a str> + Clone,
     ) -> Result<&mut toml_edit::Table> {
@@ -230,9 +241,8 @@ impl ConfigEditor {
     }
 
     pub(crate) fn set_version(&mut self, version: i64) -> Result<()> {
-        self.common_table()?
-            .entry("version")
-            .or_insert_with(|| toml_edit::value(version));
+        let table = self.table(["common"].into_iter())?;
+        table.insert("version", toml_edit::value(version));
         Ok(())
     }
 
@@ -484,10 +494,9 @@ impl Edit for SelectSandbox {
     }
 
     fn help(&self) -> Cow<'static, str> {
-        "Select what kind of sandbox you'd like to use. At the moment the sandbox is only used \
-         for running build scripts (build.rs) and tests. Hopefully eventually we'll also run \
-         proc-macros in the sandbox. To use Bubblewrap, it must be installed. On Debian-based \
-         systems you can `sudo apt install bubblewrap`"
+        "Select what kind of sandbox you'd like to use. This is used when running build scripts \
+         (build.rs), tests and when running rustc. To use Bubblewrap, it must be installed. On \
+         Debian-based systems you can `sudo apt install bubblewrap`"
             .into()
     }
 
@@ -900,6 +909,47 @@ impl Edit for RemoveUnusedPkgConfig {
             parent_table.remove(last_part);
         }
         Ok(())
+    }
+}
+
+struct UpdateConfigVersion {
+    version: Version,
+}
+
+impl Edit for UpdateConfigVersion {
+    fn title(&self) -> String {
+        format!("Update config to version {}", self.version.number)
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        "Edit config to just use the newer version and accept any changes in behaviour.".into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
+        editor.set_version(self.version.number)
+    }
+}
+
+struct UpdateConfigVersionPerserveBehaviour {
+    version: Version,
+}
+
+impl Edit for UpdateConfigVersionPerserveBehaviour {
+    fn title(&self) -> String {
+        format!(
+            "Update config to version {} while preserving old behaviour",
+            self.version.number
+        )
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        "Edit config to use the newer version and also adjust the config to preserve the old \
+         behaviour"
+            .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor, _opts: &EditOpts) -> Result<()> {
+        self.version.apply(editor)
     }
 }
 

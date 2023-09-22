@@ -1064,6 +1064,13 @@ fn problem_details(problem: &Problem) -> String {
                 an inlined function references that symbol."
             )
         }
+        Problem::NewConfigVersionAvailable(version) => {
+            let notes = crate::config::versions::VERSIONS
+                .get(*version as usize)
+                .map(|v| v.change_notes)
+                .unwrap_or_default();
+            format!("A newer config version {version} is available\n\n{notes}")
+        }
         _ => {
             // For kinds of problems that don't support per-usage details, show the full details report.
             format!("{problem:#}")

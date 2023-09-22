@@ -1,5 +1,5 @@
 [common]
-version = 1
+version = 2
 features = [
     "crash-if-not-sandboxed",
     "foo",
@@ -14,9 +14,6 @@ import_std = [
 ]
 
 [sandbox]
-kind = "Bubblewrap"
-
-[rustc.sandbox]
 kind = "Bubblewrap"
 
 # Restrict access to an entire crate.

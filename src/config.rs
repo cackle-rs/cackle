@@ -15,11 +15,11 @@ use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+pub(crate) use versions::MAX_VERSION;
 
 pub(crate) mod built_in;
 pub(crate) mod permissions;
-
-pub(crate) const MAX_VERSION: i64 = 1;
+pub(crate) mod versions;
 
 #[derive(Default, Debug)]
 pub(crate) struct Config {
@@ -205,6 +205,8 @@ fn parse_file_raw(cackle_path: &Path) -> Result<RawConfig> {
 fn parse_raw(cackle: &str) -> Result<RawConfig> {
     let mut config = toml::from_str(cackle)?;
     merge_built_ins(&mut config)?;
+    versions::apply_runtime_patches(&mut config);
+    config.rustc.sandbox.inherit(&config.sandbox);
     Ok(config)
 }
 

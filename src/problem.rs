@@ -44,6 +44,7 @@ pub(crate) enum Problem {
     AvailableApi(AvailableApi),
     PossibleExportedApi(PossibleExportedApi),
     UnusedSandboxConfiguration(PermSel),
+    NewConfigVersionAvailable(i64),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -170,6 +171,7 @@ impl Problem {
             Problem::UnusedAllowApi(..)
             | Problem::UnusedPackageConfig(..)
             | Problem::PossibleExportedApi(..)
+            | Problem::NewConfigVersionAvailable(..)
             | Problem::AvailableApi(..) => Severity::Warning,
             _ => Severity::Error,
         }
@@ -229,6 +231,7 @@ impl Problem {
             Problem::AvailableApi(d) => Some(&d.pkg_id),
             Problem::PossibleExportedApi(d) => Some(&d.pkg_id),
             Problem::UnusedSandboxConfiguration(_) => None,
+            Problem::NewConfigVersionAvailable(_) => None,
         }
     }
 }
@@ -243,6 +246,9 @@ impl Display for Problem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Problem::Message(message) => write!(f, "{message}")?,
+            Problem::NewConfigVersionAvailable(version) => {
+                write!(f, "Newer config version {version} is available")?
+            }
             Problem::DisallowedUnsafe(usage) => {
                 write!(f, "`{}` uses unsafe", usage.crate_sel)?;
                 if f.alternate() {
