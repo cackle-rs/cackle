@@ -23,8 +23,8 @@ Or if you'd like to install from git:
 cargo install --locked --git https://github.com/cackle-rs/cackle.git cargo-acl
 ```
 
-Installing `bubblewrap` is recommended as it allows build scripts (build.rs) and tests to be run
-inside a sandbox.
+Installing `bubblewrap` is recommended as it allows build scripts (build.rs), tests and rustc to be
+run inside a sandbox.
 
 On systems with `apt`, this can be done by running:
 
@@ -51,13 +51,28 @@ details.
 Cackle can be run from GitHub actions. See the instructions in the
 [cackle-action](https://github.com/cackle-rs/cackle-action) repository.
 
+## Features
+
+* Checks what APIs are used by each crate in your dependency tree.
+* Ignores dead code, so if a crate uses an API, but in code that isn't called in your binary, then
+  it doesn't count.
+* Restrict which crates are allowed to use unsafe.
+* A terminal UI that shows problems as they're found.
+  * Preview the source where the API usage or unsafe was detected.
+  * For API usages, show a backtrace of how that code is reachable.
+  * Select from several edits that can be applied to your config file to allow the usage.
+* Can run build scripts, tests in a sandbox to restrict network and filesystem access.
+* The sandbox for each build script is configured separately, so if one build script needs extra
+  access you can grant it to just that build script.
+* Can run rustc in a sandbox, thus sandboxing all proc macros. This however is currently not
+  granular, so if one proc macro needs more access it needs to be granted to all. Fortunately proc
+  macros that need network access are relatively rare.
+
 ## Limitations and precautions
 
 * A proc macro might detect that it's being run under Cackle and emit different code.
 * Even without proc macros, a crate may only use problematic APIs only in certain configurations
   that don't match the configuration used when you run Cackle.
-* Analyzing a crate could well end up executing arbitrary code provided by that crate. If this is a
-  concern, then running in a sandbox is recommended.
 * This tool is intended to supplement and aid manual review of 3rd party code, not replace it.
 * Your configuration might miss defining an API provided by a crate as falling into a certain
   category that you care about.
