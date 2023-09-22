@@ -57,7 +57,8 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
             bail!("Missing proxy-bin args");
         };
         let crate_sel = CrateSel::from_env()?.with_selector_token(&selector_token)?;
-        exit_status = proxy_binary(PathBuf::from(orig_bin), &crate_sel, &rpc_client)?;
+        let bin_args: Vec<_> = args.collect();
+        exit_status = proxy_binary(PathBuf::from(orig_bin), &crate_sel, &rpc_client, &bin_args)?;
     } else if is_path_to_rustc(args.peek()) {
         // We're wrapping rustc.
         exit_status = proxy_rustc(&rpc_client)?;
@@ -137,18 +138,20 @@ fn proxy_binary(
     orig_bin: PathBuf,
     crate_sel: &CrateSel,
     rpc_client: &RpcClient,
+    args: &[String],
 ) -> Result<ExitCode> {
     loop {
         let config = SubprocessConfig::from_env()?;
         let perm_sel = PermSel::for_non_build_output(crate_sel);
         let sandbox_config = config.permissions.sandbox_config_for_package(&perm_sel);
+        let mut command = Command::new(&orig_bin);
+        command.args(args);
         let Some(sandbox) = crate::sandbox::for_perm_sel(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
-            return Ok(Command::new(&orig_bin).status()?.into());
+            return Ok(command.args(args).status()?.into());
         };
 
-        let command = Command::new(&orig_bin);
         let output = sandbox.run(&command)?;
         let rpc_response = rpc_client.build_script_complete({
             let exit_code = output.status.code().unwrap_or(-1);

@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 #[test]
 fn integration_test() -> Result<()> {
-    fn run_with_args(tmpdir: &TempDir, args: &[&str]) -> Result<()> {
+    fn run_with_args(tmpdir: &TempDir, args: &[&str]) -> Result<String> {
         let mut command = Command::new(cackle_exe());
         // Remove cargo and rust-releated environment variables. In particular we want to remove
         // variables that cargo sets, but which won't always be set. For example CARGO_PKG_NAME is set
@@ -20,7 +20,7 @@ fn integration_test() -> Result<()> {
                 command.env_remove(var);
             }
         }
-        let status = command
+        let output = command
             .arg("acl")
             .arg("--fail-on-warnings")
             .arg("--save-requests")
@@ -33,16 +33,22 @@ fn integration_test() -> Result<()> {
             .arg(tmpdir.path())
             .arg("--ui=none")
             .args(args)
-            .status()
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
+            .output()
             .with_context(|| format!("Failed to invoke `{}`", cackle_exe().display()))?;
-        assert!(status.success());
-        Ok(())
+        assert!(output.status.success());
+        let stdout = std::str::from_utf8(&output.stdout).unwrap().to_owned();
+        Ok(stdout)
     }
 
     let tmpdir = TempDir::new()?;
 
     run_with_args(&tmpdir, &[])?;
     run_with_args(&tmpdir, &["test", "-v"])?;
+    let out = run_with_args(&tmpdir, &["run", "--bin", "c2-bin", "--", "40", "4", "-2"])?;
+    let n: i32 = out.trim().parse().unwrap();
+    assert_eq!(n, 42);
 
     Ok(())
 }
