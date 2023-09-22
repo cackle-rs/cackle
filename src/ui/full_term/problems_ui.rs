@@ -481,8 +481,13 @@ impl ProblemsUi {
             return;
         };
 
-        let lines = config_diff_lines(&self.config_path, &**edit, &self.edit_opts())
-            .unwrap_or_else(error_lines);
+        let lines = config_diff_lines(
+            &self.config_path,
+            &**edit,
+            &self.edit_opts(),
+            (area.height as usize).saturating_sub(4),
+        )
+        .unwrap_or_else(error_lines);
 
         let block = Block::default().title("Edit details").borders(Borders::ALL);
         let paragraph = Paragraph::new(lines)
@@ -740,6 +745,7 @@ fn config_diff_lines(
     config_path: &Path,
     edit: &dyn Edit,
     opts: &EditOpts,
+    max_lines: usize,
 ) -> Result<Vec<Line<'static>>> {
     let mut lines = Vec::new();
     lines.push(Line::from(edit.help().to_string()));
@@ -755,6 +761,7 @@ fn config_diff_lines(
         lines.push(Line::from(""));
         lines.push(Line::from("=== Diff of cackle.toml ==="));
     }
+    diff::remove_excess_context(&mut diff, max_lines - lines.len());
     lines.append(&mut diff);
     Ok(lines)
 }
