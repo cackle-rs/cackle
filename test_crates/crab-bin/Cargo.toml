@@ -15,5 +15,8 @@ pmacro-1 = { path = "../pmacro-1" }
 res-1 = { path = "../res-1" }
 
 [features]
-crash-if-not-sandboxed = [ "crab-2/crash-if-not-sandboxed" ]
+crash-if-not-sandboxed = [
+    "crab-2/crash-if-not-sandboxed",
+    "pmacro-1/crash-if-not-sandboxed",
+]
 foo = []

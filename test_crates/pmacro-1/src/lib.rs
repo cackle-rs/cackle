@@ -3,6 +3,11 @@ use proc_macro::TokenStream;
 
 #[proc_macro]
 pub fn create_write_to_file(_item: TokenStream) -> TokenStream {
+    if cfg!(feature = "crash-if-not-sandboxed")
+        && std::fs::write("a.txt", "pmacro-1 wrote this").is_ok()
+    {
+        panic!("pmacro-1 running without sandbox (was able to write a.txt)");
+    }
     if std::env::var("PWD").as_deref() == Ok("/foo/bar") {
         println!("This seems unlikely");
     }
