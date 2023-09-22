@@ -94,6 +94,10 @@ struct Args {
     #[clap(long)]
     fail_on_warnings: bool,
 
+    /// Ignore newer config versions.
+    #[clap(long)]
+    ignore_newer_config_versions: bool,
+
     /// Whether to use coloured output.
     #[clap(long, alias = "color", default_value = "auto")]
     colour: colour::Colour,
@@ -341,9 +345,11 @@ impl Cackle {
                 proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
             }
         }
-        let update_problems = self.checker.lock().unwrap().check_for_new_config_version();
-        if !update_problems.is_empty() {
-            self.problem_store.fix_problems(update_problems);
+        if !self.args.ignore_newer_config_versions {
+            let update_problems = self.checker.lock().unwrap().check_for_new_config_version();
+            if !update_problems.is_empty() {
+                self.problem_store.fix_problems(update_problems);
+            }
         }
 
         let mut initial_outcome = self.new_request_handler(None).handle_request()?;
