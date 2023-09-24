@@ -1,3 +1,9 @@
+# Version 0.4.0
+* Now sandboxes rustc (and thus proc macros)
+* Config version bumped to 2 (enables sandboxing of rustc)
+* Fixed passing arguments via `cargo acl run`
+* Minimum supported Rust version bumped to 1.70
+
 # Version 0.3.0
 * Renamed to cargo-acl
 * UI now only activates when necessary.
