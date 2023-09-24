@@ -1,3 +1,6 @@
+# Version 0.5.0
+* Bypass rustup when running rustc - fixes problem where rustup fails due to running in a sandbox.
+
 # Version 0.4.0
 * Now sandboxes rustc (and thus proc macros)
 * Config version bumped to 2 (enables sandboxing of rustc)
