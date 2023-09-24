@@ -185,7 +185,7 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
     if std::env::var("CARGO_PKG_NAME").is_err() {
         // If CARGO_PKG_NAME isn't set, then cargo is probably just invoking rustc to query
         // version information etc, just run it.
-        return Ok(Command::new("rustc")
+        return Ok(Command::new(rustc_path_from_env()?)
             .args(std::env::args().skip(2))
             .status()?
             .into());
@@ -207,6 +207,16 @@ fn proxy_rustc(rpc_client: &RpcClient) -> Result<ExitCode> {
             }
         }
     }
+}
+
+fn rustc_path_from_env() -> Result<PathBuf> {
+    path_from_env(super::RUSTC_PATH)
+}
+
+fn path_from_env(var_name: &str) -> Result<PathBuf> {
+    Ok(PathBuf::from(std::env::var_os(var_name).ok_or_else(
+        || anyhow!("Environment variable `{var_name}` not set"),
+    )?))
 }
 
 struct RustcRunner {
@@ -275,7 +285,7 @@ impl RustcRunner {
 
     fn get_command(&self, unsafe_permitted: bool) -> Result<Command> {
         let mut args = std::env::args().skip(2).peekable();
-        let mut command = Command::new("rustc");
+        let mut command = Command::new(rustc_path_from_env()?);
         let mut linker_arg = OsString::new();
         let mut orig_linker_arg = None;
         while let Some(arg) = args.next() {

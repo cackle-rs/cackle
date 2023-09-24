@@ -54,6 +54,7 @@ const CONFIG_PATH_ENV: &str = "CACKLE_CONFIG_PATH";
 const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 pub(crate) const TARGET_DIR: &str = "CACKLE_TARGET_DIR";
 pub(crate) const MANIFEST_DIR: &str = "CACKLE_MANIFEST_DIR";
+const RUSTC_PATH: &str = "CACKLE_RUSTC_PATH";
 
 /// Environment variables that we need to allow through to rustc when we run rustc in a sandbox.
 pub(crate) const RUSTC_ENV_VARS: &[&str] = &[
@@ -125,6 +126,7 @@ impl<'a> CargoRunner<'a> {
         {
             command.arg(flag);
         }
+        let rustc_path = rustup_rustc_path().unwrap_or_else(|_| PathBuf::from("rustc"));
         if let Some(target) = &self.args.target {
             command.arg("--target").arg(target);
         }
@@ -138,6 +140,7 @@ impl<'a> CargoRunner<'a> {
             .env(CONFIG_PATH_ENV, config_path)
             .env(TARGET_DIR, self.target_dir)
             .env(MANIFEST_DIR, self.manifest_dir)
+            .env(RUSTC_PATH, rustc_path)
             .env("RUSTC_WRAPPER", cackle_exe()?);
 
         self.crate_index.add_internal_env(&mut command);
@@ -212,6 +215,26 @@ impl<'a> CargoRunner<'a> {
 
         Ok(output_waiter)
     }
+}
+
+/// Returns the path to rustc as provided by rustup. If rustup is available, then we bypass it when
+/// running rustc, since rustup sometimes (at least in CI) seems to write to ~/.rustup, which our
+/// sandbox configuration doesn't allow. We don't want to allow write access to ~/.rustup because
+/// that would also mean that proc macros could write there.
+fn rustup_rustc_path() -> Result<PathBuf> {
+    // Note, the call of this function discards errors and just falls back to "rustc".
+    let output = Command::new("rustup").arg("which").arg("rustc").output()?;
+    if !output.status.success() {
+        bail!("rustup which rustc failed");
+    }
+    let path = PathBuf::from(std::str::from_utf8(&output.stdout)?.trim());
+    if !path.exists() {
+        panic!(
+            "rustup which rustc returned non-existent path: {}",
+            path.display()
+        );
+    }
+    Ok(path)
 }
 
 impl CargoOutputWaiter {
