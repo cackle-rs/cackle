@@ -23,8 +23,8 @@ echo "Releasing version ${VERSION} with minimum rust version ${MIN_RUST_VER}"
 cargo clippy -- -D warnings
 cargo clippy --no-default-features -- -D warnings
 cargo test
-cargo run --release -- acl --no-ui --save-requests --fail-on-warnings
-cargo run --release -- acl --no-ui --save-requests --fail-on-warnings test
+cargo run --release -- acl --no-ui --ignore-newer-config-versions --save-requests --fail-on-warnings
+cargo run --release -- acl --no-ui --ignore-newer-config-versions --save-requests --fail-on-warnings test
 cargo +${MIN_RUST_VER}-x86_64-unknown-linux-gnu test --all
 cargo package
 
