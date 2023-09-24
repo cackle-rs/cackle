@@ -9,6 +9,11 @@ import_std = [
 [sandbox]
 kind = "Bubblewrap"
 
+[rustc.sandbox]
+# TODO: Reenable this. Right now it's breaking because rustup is trying to write something to
+# ~/.rustup.
+kind = "Disabled"
+
 [api.net]
 include = [
     "mio::net",
