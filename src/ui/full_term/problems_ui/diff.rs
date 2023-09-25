@@ -97,6 +97,9 @@ pub(super) fn remove_excess_context(lines: &mut Vec<Line>, max_lines: usize) {
                 to_reclaim -= 1;
             }
             block.to_take += 1;
+        } else {
+            // We have no blocks at all.
+            break;
         }
     }
 
@@ -182,8 +185,11 @@ fn test_diff_lines() {
     assert_eq!(lines, expected);
 }
 
-#[test]
-fn test_remove_excess_context() {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+
     fn to_lines(text: &str) -> Vec<Line<'static>> {
         text.lines()
             .filter_map(|l| {
@@ -211,9 +217,9 @@ fn test_remove_excess_context() {
             .join("\n")
     }
 
-    use indoc::indoc;
-
-    let mut lines = to_lines(indoc! {r#"
+    #[test]
+    fn test_remove_excess_context() {
+        let mut lines = to_lines(indoc! {r#"
         @
          [common]
         -version = 1
@@ -234,10 +240,10 @@ fn test_remove_excess_context() {
          m
          n
     "#});
-    remove_excess_context(&mut lines, 11);
-    assert_eq!(
-        to_text(&lines),
-        to_text(&to_lines(indoc! {r#"
+        remove_excess_context(&mut lines, 11);
+        assert_eq!(
+            to_text(&lines),
+            to_text(&to_lines(indoc! {r#"
             @
              [common]
             -version = 1
@@ -251,5 +257,34 @@ fn test_remove_excess_context() {
              m
              n
         "#}))
-    );
+        );
+    }
+
+    #[test]
+    fn test_remove_excess_context_from_empty() {
+        let mut lines = to_lines(indoc! {r#"
+            @
+            +[common]
+            +version = 1
+            +import_std = [
+            +    "fs",
+            +    "process",
+            +    "net",
+            +]
+        "#});
+        remove_excess_context(&mut lines, 6);
+        assert_eq!(
+            to_text(&lines),
+            to_text(&to_lines(indoc! {r#"
+            @
+            +[common]
+            +version = 1
+            +import_std = [
+            +    "fs",
+            +    "process",
+            +    "net",
+            +]
+        "#}))
+        );
+    }
 }
