@@ -93,9 +93,9 @@ impl ProblemsUi {
 
     pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
         let chunks = if self.show_package_details {
-            split_vertial(f.size(), &[30, 50, 20])
+            split_vertical(f.size(), &[30, 50, 20])
         } else {
-            split_vertial(f.size(), &[35, 65])
+            split_vertical(f.size(), &[35, 65])
         };
         let (top, middle) = (chunks[0], chunks[1]);
 
@@ -1078,7 +1078,7 @@ fn problem_details(problem: &Problem) -> String {
     }
 }
 
-fn split_vertial(area: Rect, percentages: &[u16]) -> Rc<[Rect]> {
+fn split_vertical(area: Rect, percentages: &[u16]) -> Rc<[Rect]> {
     let constraints: Vec<_> = percentages
         .iter()
         .cloned()

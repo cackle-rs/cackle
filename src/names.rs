@@ -363,7 +363,7 @@ impl<'input> DebugName<'input> {
 
 #[derive(Debug, Clone)]
 enum NamesIteratorState<I> {
-    /// We're not outputting a anme and no 'as' token has been encountered yet.
+    /// We're not outputting a name and no 'as' token has been encountered yet.
     Inactive,
     /// We've output at least one part of a name.
     OutputtingName,

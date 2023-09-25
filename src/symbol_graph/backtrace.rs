@@ -101,7 +101,7 @@ impl Backtracer {
     /// that it's likely to be the most interesting.
     fn find_frames(
         &self,
-        candiate: &mut Vec<u64>,
+        candidate: &mut Vec<u64>,
         bin_location: BinLocation,
         out: &mut Vec<u64>,
         visited: &mut FxHashSet<u64>,
@@ -109,16 +109,16 @@ impl Backtracer {
         if !visited.insert(bin_location.address) {
             return;
         }
-        candiate.push(bin_location.address);
+        candidate.push(bin_location.address);
         if let Some(references) = self.back_references.get(&bin_location.symbol_start) {
             for reference in references {
-                self.find_frames(candiate, *reference, out, visited);
+                self.find_frames(candidate, *reference, out, visited);
             }
-        } else if candiate.len() > out.len() {
-            out.resize(candiate.len(), 0);
-            out.copy_from_slice(candiate);
+        } else if candidate.len() > out.len() {
+            out.resize(candidate.len(), 0);
+            out.copy_from_slice(candidate);
         }
-        candiate.pop();
+        candidate.pop();
     }
 }
 

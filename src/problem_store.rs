@@ -204,7 +204,7 @@ struct NotificationEntry {
     sender: Option<Sender<Outcome>>,
 }
 impl NotificationEntry {
-    /// Tries to remov `id`. If `id` was present, then adds all `replacements`.
+    /// Tries to remove `id`. If `id` was present, then adds all `replacements`.
     fn replace_problem(&mut self, id: ProblemId, replacements: &[ProblemId]) {
         if !self.problem_ids.remove(&id) {
             // ID wasn't present.
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn deduplicated_iteraton() {
+    fn deduplicated_iteration() {
         let mut store = ProblemStore::new(channel().0);
         store.add(create_problems());
         store.add(create_problems());

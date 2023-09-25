@@ -40,7 +40,7 @@ impl super::UserInterface for NullUi {
                         let mut severity = problem.severity();
                         if self.args.command.is_some() && severity == Severity::Warning {
                             // When running for example `cackle test`, not everything will be
-                            // analysed, so unused warnings are expected. As such, we supress all
+                            // analysed, so unused warnings are expected. As such, we suppress all
                             // warnings.
                             continue;
                         }

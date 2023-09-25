@@ -48,7 +48,7 @@ pub(crate) trait Edit {
     }
 
     /// Whether the problem that produced this edit can be resolved if this edit produces no diff.
-    /// This should be overriden for any problems that are expected to produce no diff.
+    /// This should be overridden for any problems that are expected to produce no diff.
     fn resolve_problem_if_edit_is_empty(&self) -> bool {
         true
     }
@@ -136,7 +136,7 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
                 edits.push(Box::new(UpdateConfigVersion {
                     version: version.clone(),
                 }));
-                edits.push(Box::new(UpdateConfigVersionPerserveBehaviour {
+                edits.push(Box::new(UpdateConfigVersionPreserveBehaviour {
                     version: version.clone(),
                 }));
             }
@@ -930,11 +930,11 @@ impl Edit for UpdateConfigVersion {
     }
 }
 
-struct UpdateConfigVersionPerserveBehaviour {
+struct UpdateConfigVersionPreserveBehaviour {
     version: Version,
 }
 
-impl Edit for UpdateConfigVersionPerserveBehaviour {
+impl Edit for UpdateConfigVersionPreserveBehaviour {
     fn title(&self) -> String {
         format!(
             "Update config to version {} while preserving old behaviour",
