@@ -101,7 +101,7 @@ impl<'a> CargoRunner<'a> {
         request_creator: impl Fn(Request) -> RequestHandler,
     ) -> Result<CargoOutputWaiter> {
         if !std::env::var(SOCKET_ENV).unwrap_or_default().is_empty() {
-            panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binarie?");
+            panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binaries?");
         }
 
         let ipc_path = self.tmpdir.join("cackle.socket");

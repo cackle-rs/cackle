@@ -1,4 +1,4 @@
-//! This module contains code that is intended for running in a subprocess whenn we're proxying
+//! This module contains code that is intended for running in a subprocess when we're proxying
 //! rustc, the linker or a build script. See comment on parent module for more details.
 
 use super::cackle_exe;
