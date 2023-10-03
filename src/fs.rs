@@ -22,3 +22,8 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<()> {
 pub(crate) fn read_to_string(path: &Path) -> Result<String> {
     std::fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))
 }
+
+pub(crate) fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    std::fs::write(path, contents).with_context(|| format!("Failed to read {}", path.display()))
+}

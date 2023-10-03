@@ -7,41 +7,57 @@ use crate::problem::ProblemList;
 use crate::proxy::rpc::BinExecutionOutput;
 use anyhow::Result;
 
-pub(crate) fn check(outputs: &BinExecutionOutput, config: &Config) -> Result<ProblemList> {
-    let crate_sel = &outputs.crate_sel;
-    if outputs.exit_code != 0 {
-        return Ok(
-            Problem::BuildScriptFailed(crate::problem::BinExecutionFailed {
-                output: outputs.clone(),
-                crate_sel: crate_sel.clone(),
-            })
-            .into(),
-        );
-    }
-    let perm_sel = PermSel::for_build_script(crate_sel.pkg_name());
-    let allow_build_instructions = config
-        .permissions
-        .get(&perm_sel)
-        .map(|cfg| cfg.allow_build_instructions.as_slice())
-        .unwrap_or(&[]);
-    let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
-        return Ok(Problem::new(format!(
-            "The build script `{}` emitted invalid UTF-8",
-            crate_sel.pkg_id
-        ))
-        .into());
-    };
-    let mut problems = ProblemList::default();
-    for line in stdout.lines() {
-        if line.starts_with("cargo:") {
-            problems.merge(check_directive(
-                line,
-                &crate_sel.pkg_id,
-                allow_build_instructions,
+#[derive(Default)]
+pub(crate) struct BuildScriptReport {
+    pub(crate) problems: ProblemList,
+    pub(crate) env_vars: Vec<String>,
+}
+
+impl BuildScriptReport {
+    pub(crate) fn build(
+        outputs: &BinExecutionOutput,
+        config: &Config,
+    ) -> Result<BuildScriptReport> {
+        let mut report = BuildScriptReport::default();
+        let crate_sel = &outputs.crate_sel;
+        if outputs.exit_code != 0 {
+            report.problems.push(Problem::BuildScriptFailed(
+                crate::problem::BinExecutionFailed {
+                    output: outputs.clone(),
+                    crate_sel: crate_sel.clone(),
+                },
             ));
+            return Ok(report);
         }
+        let perm_sel = PermSel::for_build_script(crate_sel.pkg_name());
+        let allow_build_instructions = config
+            .permissions
+            .get(&perm_sel)
+            .map(|cfg| cfg.allow_build_instructions.as_slice())
+            .unwrap_or(&[]);
+        let Ok(stdout) = std::str::from_utf8(&outputs.stdout) else {
+            report.problems.push(Problem::new(format!(
+                "The build script `{}` emitted invalid UTF-8",
+                crate_sel.pkg_id
+            )));
+            return Ok(report);
+        };
+        for line in stdout.lines() {
+            if line.starts_with("cargo:") {
+                report.problems.merge(check_directive(
+                    line,
+                    &crate_sel.pkg_id,
+                    allow_build_instructions,
+                ));
+            }
+            if let Some(rest) = line.strip_prefix("cargo:rustc-env=") {
+                if let Some((var_name, _value)) = rest.split_once('=') {
+                    report.env_vars.push(var_name.to_owned());
+                }
+            }
+        }
+        Ok(report)
     }
-    Ok(problems)
 }
 
 /// Cargo instructions that should be harmless, so would just add noise if we were required to
@@ -104,7 +120,9 @@ mod tests {
             build_script: PathBuf::new(),
             sandbox_config_display: None,
         };
-        super::check(&outputs, &config).unwrap()
+        super::BuildScriptReport::build(&outputs, &config)
+            .unwrap()
+            .problems
     }
 
     #[test]

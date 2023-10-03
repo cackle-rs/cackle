@@ -16,6 +16,7 @@ fn main() {
         .arg(&object_file));
     println!("cargo:rustc-link-search={}", out_dir.display());
     println!("cargo:rerun-if-changed=nothing.c");
+    println!("cargo:rustc-env=CRAB_2_ENV=42");
     let v = [42, 43];
     assert_eq!(*unsafe { v.get_unchecked(0) }, 42);
     assert_eq!(*unsafe { v.get_unchecked(1) }, 43);

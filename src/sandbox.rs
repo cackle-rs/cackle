@@ -2,6 +2,7 @@ use crate::config::permissions::PermSel;
 use crate::config::RustcConfig;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
+use crate::crate_index::CrateSel;
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
@@ -131,14 +132,18 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
 pub(crate) struct RustcSandboxInputs {
     output_directories: Vec<PathBuf>,
     input_directories: Vec<PathBuf>,
+    /// The names of environment variables that were set by the build script by printing
+    /// "cargo:rustc-env=...". These variables should be allowed through when running rustc.
+    build_script_env_vars: Vec<String>,
 }
 
 impl RustcSandboxInputs {
-    pub(crate) fn from_env() -> Result<Self> {
+    pub(crate) fn from_env(crate_sel: &CrateSel) -> Result<Self> {
         let mut result = Self::default();
         let mut next_is_out = false;
         let target_dir = PathBuf::from(get_env(crate::proxy::TARGET_DIR)?);
         let manifest_dir = PathBuf::from(get_env(crate::proxy::MANIFEST_DIR)?);
+        let tmpdir = PathBuf::from(get_env(crate::proxy::TMPDIR_ENV)?);
         result.input_directories.push(manifest_dir);
         for arg in std::env::args() {
             if next_is_out {
@@ -160,6 +165,7 @@ impl RustcSandboxInputs {
             .output_directories
             .retain(|d| !d.starts_with(&target_dir));
         result.output_directories.push(target_dir);
+        result.build_script_env_vars = read_env_vars(&tmpdir, crate_sel);
         Ok(result)
     }
 }
@@ -178,6 +184,9 @@ pub(crate) fn for_rustc(
         sandbox.writable_bind(dir);
     }
     for env in crate::proxy::RUSTC_ENV_VARS {
+        sandbox.pass_env(env);
+    }
+    for env in &inputs.build_script_env_vars {
         sandbox.pass_env(env);
     }
     Ok(Some(sandbox))
@@ -225,6 +234,31 @@ pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
         anyhow::bail!("Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`");
     }
     Ok(())
+}
+
+fn env_vars_file(tmpdir: &Path, crate_sel: &CrateSel) -> PathBuf {
+    tmpdir.join(format!("{}.env", crate_sel.pkg_id))
+}
+
+pub(crate) fn write_env_vars(
+    tmpdir: &Path,
+    crate_sel: &CrateSel,
+    env_vars: &[String],
+) -> Result<()> {
+    crate::fs::write(env_vars_file(tmpdir, crate_sel), env_vars.join("\n"))
+}
+
+fn read_env_vars(tmpdir: &Path, crate_sel: &CrateSel) -> Vec<String> {
+    let filename = env_vars_file(tmpdir, crate_sel);
+    // Env vars will only be written when there was a build script run, so we just ignore errors.
+    let Ok(contents) = std::fs::read_to_string(filename) else {
+        return Default::default();
+    };
+    contents
+        .split('\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_owned())
+        .collect()
 }
 
 fn get_env(var_name: &str) -> Result<String> {

@@ -241,14 +241,16 @@ impl RustcRunner {
             .permissions
             .unsafe_permitted_for_crate(&self.crate_sel);
         let mut command = self.get_command(unsafe_permitted)?;
-        let output =
-            match crate::sandbox::for_rustc(&config.rustc, &RustcSandboxInputs::from_env()?)? {
-                Some(mut sandbox) => {
-                    sandbox.ro_bind(&cackle_exe()?);
-                    sandbox.run(&command)?
-                }
-                None => command.output()?,
-            };
+        let output = match crate::sandbox::for_rustc(
+            &config.rustc,
+            &RustcSandboxInputs::from_env(&self.crate_sel)?,
+        )? {
+            Some(mut sandbox) => {
+                sandbox.ro_bind(&cackle_exe()?);
+                sandbox.run(&command)?
+            }
+            None => command.output()?,
+        };
         let mut unsafe_locations = Vec::new();
 
         if output.status.code() == Some(0) {

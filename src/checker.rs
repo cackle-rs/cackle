@@ -243,7 +243,14 @@ impl Checker {
             }
             rpc::Request::BinExecutionComplete(output) => {
                 if output.crate_sel.kind == CrateKind::BuildScript {
-                    self.check_build_script_output(output)
+                    let report =
+                        build_script_checker::BuildScriptReport::build(output, &self.config)?;
+                    crate::sandbox::write_env_vars(
+                        self.tmpdir.path(),
+                        &output.crate_sel,
+                        &report.env_vars,
+                    )?;
+                    Ok(report.problems)
                 } else {
                     Ok(ProblemList::default())
                 }
@@ -319,10 +326,6 @@ impl Checker {
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
         let problems = graph_outputs.problems(self)?;
         Ok(problems)
-    }
-
-    fn check_build_script_output(&self, output: &rpc::BinExecutionOutput) -> Result<ProblemList> {
-        build_script_checker::check(output, &self.config)
     }
 
     pub(crate) fn crate_uses_unsafe(&self, usage: &UnsafeUsage) -> ProblemList {

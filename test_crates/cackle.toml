@@ -64,6 +64,7 @@ build.allow_apis = [
     "process",
 ]
 build.allow_build_instructions = [
+    "cargo:rustc-env=*",
     "cargo:rustc-link-*"
 ]
 build.allow_unsafe = true
