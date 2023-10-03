@@ -48,8 +48,7 @@ impl Name {
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         self.parts
             .first()
-            .map(|name_start| prefix == &**name_start)
-            .unwrap_or(false)
+            .is_some_and(|name_start| prefix == &**name_start)
     }
 }
 
@@ -255,8 +254,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                     if self.as_final == Some(text)
                         && self
                             .as_final
-                            .map(|t| t.as_ptr() as usize == text.as_ptr() as usize)
-                            .unwrap_or(false)
+                            .is_some_and(|t| t.as_ptr() as usize == text.as_ptr() as usize)
                     {
                         // This text was already output as the final part of an as-name. Ignore it.
                         continue;

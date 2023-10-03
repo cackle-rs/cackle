@@ -543,8 +543,7 @@ impl<'input> InlinedFunctionScanner<'input> {
                     .names
                     .symbol
                     .as_ref()
-                    .map(|s| s.is_look_through())
-                    .unwrap_or(false)
+                    .is_some_and(|s| s.is_look_through())
                 {
                     call_location = &frame.call_location;
                     continue;

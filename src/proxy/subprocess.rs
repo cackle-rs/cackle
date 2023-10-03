@@ -50,7 +50,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     // Skip binary name.
     args.next();
     let exit_status;
-    if args.peek().map(|a| a == PROXY_BIN_ARG).unwrap_or(false) {
+    if args.peek().is_some_and(|a| a == PROXY_BIN_ARG) {
         // We're wrapping a binary.
         args.next();
         let (Some(selector_token), Some(orig_bin)) = (args.next(), args.next()) else {
@@ -75,8 +75,7 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
 
 fn is_path_to_rustc(arg: Option<&String>) -> bool {
     arg.and_then(|arg| Path::new(arg).file_name())
-        .map(|file_name| file_name == "rustc")
-        .unwrap_or(false)
+        .is_some_and(|file_name| file_name == "rustc")
 }
 
 /// Renames an output binary and puts our binary in its place. This lets us wrap the binary when it
@@ -302,11 +301,7 @@ impl RustcRunner {
                     continue;
                 }
                 // Skip -C debuginfo= if present, so that we can add our own value at the end.
-                if args
-                    .peek()
-                    .map(|arg| arg.starts_with("debuginfo="))
-                    .unwrap_or(false)
-                {
+                if args.peek().is_some_and(|arg| arg.starts_with("debuginfo=")) {
                     args.next();
                     continue;
                 }

@@ -302,8 +302,7 @@ impl ApiUsages {
                 p.prefix.as_ref() == prefix
                     || prefix
                         .strip_prefix(p.prefix.as_ref())
-                        .map(|remain| remain.starts_with("::"))
-                        .unwrap_or(false)
+                        .is_some_and(|remain| remain.starts_with("::"))
             }) {
                 // We already have this prefix or a prefix that would subsume this one, so don't
                 // suggest adding it.
@@ -336,8 +335,7 @@ impl ApiUsages {
             if api_config.include.iter().any(|inc| {
                 prefix
                     .strip_prefix(inc.prefix.as_ref())
-                    .map(|remaining| remaining.starts_with("::"))
-                    .unwrap_or(false)
+                    .is_some_and(|remaining| remaining.starts_with("::"))
             }) {
                 edits.push(Box::new(ExcludeFromApi {
                     api: self.api_name.clone(),
@@ -624,19 +622,13 @@ fn add_to_array<S: AsRef<str>>(
         let index = array
             .iter()
             .enumerate()
-            .find(|(_, existing)| {
-                existing
-                    .as_str()
-                    .map(|e| e >= value.as_str())
-                    .unwrap_or(false)
-            })
+            .find(|(_, existing)| existing.as_str().is_some_and(|e| e >= value.as_str()))
             .map(|(index, _)| index)
             .unwrap_or_else(|| array.len());
         if array
             .get(index)
             .and_then(Value::as_str)
-            .map(|existing| existing == value)
-            .unwrap_or(false)
+            .is_some_and(|existing| existing == value)
         {
             // Value is already present in the array.
             continue;

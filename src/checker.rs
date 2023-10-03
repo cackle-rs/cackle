@@ -219,8 +219,7 @@ impl Checker {
                 .config
                 .permissions
                 .get(&PermSel::for_primary(pkg_id.pkg_name()))
-                .map(|pkg_config| pkg_config.allow_proc_macro)
-                .unwrap_or(false)
+                .is_some_and(|pkg_config| pkg_config.allow_proc_macro)
             {
                 problems.push(Problem::IsProcMacro(pkg_id.clone()));
             }
@@ -298,8 +297,7 @@ impl Checker {
         if check_state
             .graph_outputs
             .as_ref()
-            .map(|outputs| outputs.apis != self.config.raw.apis)
-            .unwrap_or(false)
+            .is_some_and(|outputs| outputs.apis != self.config.raw.apis)
         {
             // APIs have changed, invalidate cache.
             check_state.graph_outputs = None;

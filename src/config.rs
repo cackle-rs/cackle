@@ -282,8 +282,7 @@ impl RawConfig {
             if self
                 .packages
                 .get(&PackageName(Arc::from(pkg_id.name_str())))
-                .map(|config| config.import.is_some())
-                .unwrap_or(false)
+                .is_some_and(|config| config.import.is_some())
             {
                 continue;
             }

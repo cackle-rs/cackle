@@ -118,8 +118,7 @@ impl Permissions {
     pub(crate) fn unsafe_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
         self.packages
             .get(&PermSel::for_non_build_output(crate_sel))
-            .map(|crate_config| crate_config.allow_unsafe)
-            .unwrap_or(false)
+            .is_some_and(|crate_config| crate_config.allow_unsafe)
     }
 
     pub(crate) fn get(&self, perm_sel: &PermSel) -> Option<&PackageConfig> {

@@ -302,8 +302,8 @@ impl CrateSel {
     pub(crate) fn from_env() -> Result<Self> {
         let pkg_id = PackageId::from_env()?;
         let is_build_script = std::env::var("CARGO_CRATE_NAME")
-            .map(|v| v.starts_with("build_script_"))
-            .unwrap_or(false);
+            .ok()
+            .is_some_and(|v| v.starts_with("build_script_"));
         if is_build_script {
             Ok(CrateSel::build_script(pkg_id))
         } else if let Ok(crate_kind) = std::env::var(crate::proxy::subprocess::ENV_CRATE_KIND) {

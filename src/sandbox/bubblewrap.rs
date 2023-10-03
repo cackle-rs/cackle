@@ -100,8 +100,8 @@ pub(crate) fn has_bwrap() -> bool {
     std::process::Command::new("bwrap")
         .arg("--version")
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+        .ok()
+        .is_some_and(|output| output.status.success())
 }
 
 struct CommandDisplay {

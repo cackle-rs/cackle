@@ -182,8 +182,7 @@ fn main() -> Result<()> {
 
     if std::env::args_os()
         .nth(1)
-        .map(|arg| arg == PROXY_BIN_ARG)
-        .unwrap_or(false)
+        .is_some_and(|arg| arg == PROXY_BIN_ARG)
     {
         // If we get here and the call to handle_wrapped_binaries above didn't diverge, then either
         // a user invoked a bin wrapper directly, or we've been invoked when we're already inside a

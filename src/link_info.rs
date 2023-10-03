@@ -67,6 +67,5 @@ fn has_supported_extension(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &["rlib", "o"];
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| EXTENSIONS.contains(&ext))
-        .unwrap_or(false)
+        .is_some_and(|ext| EXTENSIONS.contains(&ext))
 }

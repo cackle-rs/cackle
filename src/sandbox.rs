@@ -46,7 +46,7 @@ pub(crate) trait Sandbox {
     fn pass_cargo_env(&mut self) {
         self.pass_env("OUT_DIR");
         for (var, value) in std::env::vars_os() {
-            if var.to_str().map(is_cargo_env).unwrap_or(false) {
+            if var.to_str().is_some_and(is_cargo_env) {
                 self.set_env(OsStr::new(&var), OsStr::new(&value));
             }
         }
@@ -234,7 +234,7 @@ fn get_env(var_name: &str) -> Result<String> {
 
 fn build_directory(executable: &Path) -> Option<&Path> {
     let parent = executable.parent()?;
-    if parent.file_name().map(|n| n == "deps").unwrap_or(false) {
+    if parent.file_name().is_some_and(|n| n == "deps") {
         if let Some(grandparent) = parent.parent() {
             return Some(grandparent);
         }
