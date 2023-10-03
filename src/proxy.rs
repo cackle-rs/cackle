@@ -122,16 +122,18 @@ impl<'a> CargoRunner<'a> {
             self.args,
             &self.config.raw.common,
         );
-        let default_build_flags = ["--all-targets".to_owned()];
-        for flag in self
-            .config
-            .raw
-            .common
-            .build_flags
-            .as_deref()
-            .unwrap_or(default_build_flags.as_slice())
-        {
-            command.arg(flag);
+        if self.args.command.is_none() {
+            let default_build_flags = ["--all-targets".to_owned()];
+            for flag in self
+                .config
+                .raw
+                .common
+                .build_flags
+                .as_deref()
+                .unwrap_or(default_build_flags.as_slice())
+            {
+                command.arg(flag);
+            }
         }
         let rustc_path = rustup_rustc_path().unwrap_or_else(|_| PathBuf::from("rustc"));
         if let Some(target) = &self.args.target {
