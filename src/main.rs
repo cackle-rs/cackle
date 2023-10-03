@@ -530,7 +530,7 @@ impl RequestHandler {
                 .checker
                 .lock()
                 .unwrap()
-                .problems(&self.request, &mut self.check_state)?;
+                .handle_request(&self.request, &mut self.check_state)?;
             let return_on_retry = problems.should_send_retry_to_subprocess();
             if problems.is_empty() {
                 return Ok(Outcome::Continue);

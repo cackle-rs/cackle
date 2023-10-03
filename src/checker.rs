@@ -227,7 +227,7 @@ impl Checker {
         problems
     }
 
-    pub(crate) fn problems(
+    pub(crate) fn handle_request(
         &mut self,
         request: &Option<rpc::Request>,
         check_state: &mut CheckState,
@@ -241,7 +241,13 @@ impl Checker {
                 self.outstanding_linker_invocations.push(link_info.clone());
                 Ok(ProblemList::default())
             }
-            rpc::Request::BinExecutionComplete(output) => self.check_build_script_output(output),
+            rpc::Request::BinExecutionComplete(output) => {
+                if output.crate_sel.kind == CrateKind::BuildScript {
+                    self.check_build_script_output(output)
+                } else {
+                    Ok(ProblemList::default())
+                }
+            }
             rpc::Request::RustcComplete(info) => {
                 self.record_crate_paths(info)?;
                 if let Some(link_info) = self.get_link_info(info) {
