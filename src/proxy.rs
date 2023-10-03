@@ -104,7 +104,13 @@ impl<'a> CargoRunner<'a> {
             panic!("{SOCKET_ENV} is already set. Missing call to handle_wrapped_binaries?");
         }
 
-        let ipc_path = self.tmpdir.join("cackle.socket");
+        // We put `cackle.socket` into a directory by itself. This lets our rustc sandbox have write
+        // permission on this directory without also gaining write access to other files that we put
+        // in our temporary directory.
+        let ipc_dir = self.tmpdir.join("comms");
+        std::fs::create_dir_all(&ipc_dir)
+            .with_context(|| format!("Failed to crate directory `{}`", ipc_dir.display()))?;
+        let ipc_path = ipc_dir.join("cackle.socket");
         let _ = std::fs::remove_file(&ipc_path);
         let listener = UnixListener::bind(&ipc_path)
             .with_context(|| format!("Failed to create Unix socket `{}`", ipc_path.display()))?;
