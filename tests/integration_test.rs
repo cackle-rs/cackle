@@ -7,14 +7,14 @@ use tempfile::TempDir;
 
 #[test]
 fn integration_test() -> Result<()> {
-    fn run_with_args(tmpdir: &TempDir, args: &[&str]) -> Result<String> {
+    fn run_with_args(tmpdir: &TempDir, args: &[&str], expect_failure: bool) -> Result<String> {
         let mut command = Command::new(cackle_exe());
-        // Remove cargo and rust-releated environment variables. In particular we want to remove
-        // variables that cargo sets, but which won't always be set. For example CARGO_PKG_NAME is set
-        // by cargo when it invokes rustc, but only when it's compiling a package, not when it queries
-        // rustc for version information. If we allow such variables to pass through, then our code that
-        // proxies rustc can appear to work from the test, but only because the test itself was run from
-        // cargo.
+        // Remove cargo and rust-related environment variables. In particular we want to remove
+        // variables that cargo sets, but which won't always be set. For example CARGO_PKG_NAME is
+        // set by cargo when it invokes rustc, but only when it's compiling a package, not when it
+        // queries rustc for version information. If we allow such variables to pass through, then
+        // our code that proxies rustc can appear to work from the test, but only because the test
+        // itself was run from cargo.
         for (var, _) in std::env::vars() {
             if var.starts_with("CARGO") || var.starts_with("RUST") {
                 command.env_remove(var);
@@ -37,18 +37,47 @@ fn integration_test() -> Result<()> {
             .stderr(std::process::Stdio::inherit())
             .output()
             .with_context(|| format!("Failed to invoke `{}`", cackle_exe().display()))?;
-        assert!(output.status.success());
+
         let stdout = std::str::from_utf8(&output.stdout).unwrap().to_owned();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap().to_owned();
+        if expect_failure {
+            if output.status.success() {
+                panic!("Test succeeded when we expected it to fail. Output:\n{stdout}\n{stderr}");
+            }
+        } else if !output.status.success() {
+            panic!("Test failed when we expected it to succeed. Output:\n{stdout}\n{stderr}");
+        }
         Ok(stdout)
     }
 
     let tmpdir = TempDir::new()?;
 
-    run_with_args(&tmpdir, &[])?;
-    run_with_args(&tmpdir, &["test", "-v"])?;
-    let out = run_with_args(&tmpdir, &["run", "--bin", "c2-bin", "--", "40", "4", "-2"])?;
+    run_with_args(&tmpdir, &[], false)?;
+    run_with_args(&tmpdir, &["test", "-v"], false)?;
+    let out = run_with_args(
+        &tmpdir,
+        &["run", "--bin", "c2-bin", "--", "40", "4", "-2"],
+        false,
+    )?;
     let n: i32 = out.trim().parse().unwrap();
     assert_eq!(n, 42);
+
+    std::env::set_var("CRAB_9_CRASH_TEST", "1");
+    let out = run_with_args(
+        &tmpdir,
+        &[
+            "--features",
+            "",
+            "test",
+            "-p",
+            "crab-9",
+            "conditional_crash",
+        ],
+        true,
+    )?;
+    if !out.contains("Deliberate crash") {
+        panic!("Test failed, but didn't contain expected message. Output was:\n{out}");
+    }
 
     Ok(())
 }
