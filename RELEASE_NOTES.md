@@ -1,3 +1,11 @@
+# Version 0.6.0
+* Fixed a bug where API usages by dependencies of proc-macros were not properly checked.
+* Pass environment variables set by build scripts to sandboxed rustc.
+* Allow passing of arbitrary environment variables to sandboxed processes.
+* Fixed repeated running of tests when a test failed.
+* Fixed `cargo acl run` (`--all-targets` was being passed causing it to error).
+* Cargo features can now be specified via `--features` flag.
+
 # Version 0.5.0
 * Bypass rustup when running rustc - fixes problem where rustup fails due to running in a sandbox.
 
