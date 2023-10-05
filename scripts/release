@@ -12,6 +12,11 @@ if ! head -1 RELEASE_NOTES.md | grep "# Version ${VERSION}$" >/dev/null; then
     exit 1
 fi
 
+if [ $(git tag -l v${VERSION}) ]; then
+  echo "A tag already exists for version ${VERSION}" >&2
+  exit 1
+fi
+
 MIN_RUST_VER=$(grep ^rust-version Cargo.toml | cut -d'"' -f2)
 if [ -z "$MIN_RUST_VER" ]; then
   echo "Failed to determine minimum rust version" >&2
