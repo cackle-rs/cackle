@@ -35,7 +35,7 @@ pub(crate) enum Problem {
     IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
     OffTreeApiUsage(OffTreeApiUsage),
-    BuildScriptFailed(BinExecutionFailed),
+    ExecutionFailed(BinExecutionFailed),
     DisallowedBuildInstruction(DisallowedBuildInstruction),
     UnusedPackageConfig(PermSel),
     UnusedAllowApi(UnusedAllowApi),
@@ -181,7 +181,7 @@ impl Problem {
     fn should_send_retry_to_subprocess(&self) -> bool {
         matches!(
             self,
-            &Problem::BuildScriptFailed(..) | &Problem::DisallowedUnsafe(..)
+            &Problem::ExecutionFailed(..) | &Problem::DisallowedUnsafe(..)
         )
     }
 
@@ -222,7 +222,7 @@ impl Problem {
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
             Problem::DisallowedApiUsage(d) => Some(&d.pkg_id),
             Problem::OffTreeApiUsage(d) => Some(&d.usages.pkg_id),
-            Problem::BuildScriptFailed(d) => Some(d.crate_sel.pkg_id()),
+            Problem::ExecutionFailed(d) => Some(d.crate_sel.pkg_id()),
             Problem::DisallowedBuildInstruction(d) => Some(&d.pkg_id),
             Problem::UnusedPackageConfig(_) => None,
             Problem::UnusedAllowApi(_) => None,
@@ -282,7 +282,7 @@ impl Display for Problem {
                     display_usages(f, &info.usages.usages)?;
                 }
             }
-            Problem::BuildScriptFailed(info) => info.fmt(f)?,
+            Problem::ExecutionFailed(info) => info.fmt(f)?,
             Problem::DisallowedBuildInstruction(info) => {
                 write!(
                     f,

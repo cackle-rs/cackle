@@ -242,7 +242,15 @@ impl Checker {
                 Ok(ProblemList::default())
             }
             rpc::Request::BinExecutionComplete(output) => {
-                if output.crate_sel.kind == CrateKind::BuildScript {
+                if output.exit_code != 0 {
+                    Ok(
+                        Problem::ExecutionFailed(crate::problem::BinExecutionFailed {
+                            output: output.clone(),
+                            crate_sel: output.crate_sel.clone(),
+                        })
+                        .into(),
+                    )
+                } else if output.crate_sel.kind == CrateKind::BuildScript {
                     let report =
                         build_script_checker::BuildScriptReport::build(output, &self.config)?;
                     crate::sandbox::write_env_vars(

@@ -53,7 +53,7 @@ impl RpcClient {
         read_from_stream(&mut ipc)
     }
 
-    pub(crate) fn build_script_complete(&self, info: BinExecutionOutput) -> Result<Outcome> {
+    pub(crate) fn bin_execution_complete(&self, info: BinExecutionOutput) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         write_to_stream(&Request::BinExecutionComplete(info), &mut ipc)?;
         read_from_stream(&mut ipc)
@@ -96,7 +96,7 @@ pub(crate) struct BinExecutionOutput {
     pub(crate) stderr: Vec<u8>,
     pub(crate) crate_sel: CrateSel,
     pub(crate) sandbox_config: SandboxConfig,
-    pub(crate) build_script: PathBuf,
+    pub(crate) binary_path: PathBuf,
     /// A display string for how the sandbox was configured (e.g. the command line). Only present if
     /// the exit code is non-zero.
     pub(crate) sandbox_config_display: Option<String>,

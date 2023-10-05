@@ -20,15 +20,6 @@ impl BuildScriptReport {
     ) -> Result<BuildScriptReport> {
         let mut report = BuildScriptReport::default();
         let crate_sel = &outputs.crate_sel;
-        if outputs.exit_code != 0 {
-            report.problems.push(Problem::BuildScriptFailed(
-                crate::problem::BinExecutionFailed {
-                    output: outputs.clone(),
-                    crate_sel: crate_sel.clone(),
-                },
-            ));
-            return Ok(report);
-        }
         let perm_sel = PermSel::for_build_script(crate_sel.pkg_name());
         let allow_build_instructions = config
             .permissions
@@ -117,7 +108,7 @@ mod tests {
             stderr: vec![],
             crate_sel: CrateSel::build_script(pkg_id("my_pkg")),
             sandbox_config: SandboxConfig::default(),
-            build_script: PathBuf::new(),
+            binary_path: PathBuf::new(),
             sandbox_config_display: None,
         };
         super::BuildScriptReport::build(&outputs, &config)
