@@ -3,9 +3,15 @@ on:
   schedule:
     - cron: '36 19 * * *'
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: '-D warnings'
+
 jobs:
+  # Run cackle after updating to the latest semver-compatible versions of packages. This aims to
+  # detect any new permission usage introduced by our dependencies.
   cackle:
-    name: cackle check and test
+    name: cackle with latest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -14,3 +20,13 @@ jobs:
       - run: cargo update
       - run: cargo acl -n
       - run: cargo acl -n test
+
+  test-nightly:
+    name: Test Nightly
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+      id: rust-toolchain
+    - run: sudo apt update && sudo apt install git bubblewrap
+    - run: cargo test --profile ci

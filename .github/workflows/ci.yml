@@ -14,41 +14,25 @@ jobs:
   test-stable:
     name: Test x86_64-linux stable
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # 64-bit target
-          - target: x86_64-unknown-linux-gnu
-            deps: sudo apt update && sudo apt install git bubblewrap
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - run: rustup target add ${{ matrix.target }}
-      - run: ${{ matrix.deps }}
-      - run: cargo test --profile ci --target ${{ matrix.target }}
-      - run: cargo build --profile ci --target ${{ matrix.target }} --no-default-features
-
-  test-nightly:
-    name: Test Nightly
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@nightly
-    - run: sudo apt update && sudo apt install git bubblewrap
-    - run: cargo test --profile ci
-
-# TODO: bench
-#  bench:
-#    name: Check that benchmarks compile
-#    runs-on: ubuntu-latest
-#    steps:
-#    - uses: actions/checkout@v3
-#    - uses: dtolnay/rust-toolchain@stable
-#    - name: Build default (host native) bench
-#      run: cargo build --benches
+        id: rust-toolchain
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
+      - run: sudo apt install bubblewrap
+      - run: cargo test --profile ci
+      - run: cargo build --profile ci --no-default-features
 
   clippy:
-    name: Check that clippy is happy
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
