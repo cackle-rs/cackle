@@ -114,6 +114,10 @@ struct Args {
     #[clap(long)]
     profile: Option<String>,
 
+    /// Features to pass to cargo. Overrides common.features in config.
+    #[clap(long)]
+    features: Option<String>,
+
     /// Print how long various things take to run.
     #[clap(long)]
     print_timing: bool,

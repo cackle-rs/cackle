@@ -139,9 +139,14 @@ impl<'a> CargoRunner<'a> {
         if let Some(target) = &self.args.target {
             command.arg("--target").arg(target);
         }
-        if !self.config.raw.common.features.is_empty() {
+        let features = self
+            .args
+            .features
+            .clone()
+            .unwrap_or_else(|| self.config.raw.common.features.join(","));
+        if !features.is_empty() {
             command.arg("--features");
-            command.arg(self.config.raw.common.features.join(","));
+            command.arg(features);
         }
         let config_path = crate::config::flattened_config_path(self.tmpdir);
         command
