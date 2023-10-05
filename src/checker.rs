@@ -16,6 +16,7 @@ use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
+use crate::proxy::cargo::profile_name;
 use crate::proxy::rpc;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::proxy::subprocess::SubprocessConfig;
@@ -254,7 +255,8 @@ impl Checker {
                     let report =
                         build_script_checker::BuildScriptReport::build(output, &self.config)?;
                     crate::sandbox::write_env_vars(
-                        self.tmpdir.path(),
+                        &self.target_dir,
+                        profile_name(&self.args, &self.config.raw.common),
                         &output.crate_sel,
                         &report.env_vars,
                     )?;

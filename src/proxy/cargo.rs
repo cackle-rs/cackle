@@ -6,6 +6,7 @@ use std::process::Command;
 
 /// The name of the default cargo profile that we use.
 pub(crate) const DEFAULT_PROFILE_NAME: &str = "cackle";
+pub(crate) const PROFILE_NAME_ENV: &str = "CACKLE_BUILD_PROFILE";
 
 #[derive(Parser, Debug, Clone)]
 pub(crate) struct CargoOptions {
@@ -60,7 +61,9 @@ pub(crate) fn command(
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.incremental=false"));
     // We don't currently support split debug info.
     command.arg("--config").arg("split-debuginfo=\"off\"");
-    command.arg("--profile").arg(profile_name(args, config));
+    let profile = profile_name(args, config);
+    command.arg("--profile").arg(profile);
+    command.env(PROFILE_NAME_ENV, profile);
     command.args(extra_args);
     command
 }

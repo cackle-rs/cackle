@@ -20,12 +20,25 @@ fn integration_test() -> Result<()> {
                 command.env_remove(var);
             }
         }
+        // Delete everything from our tmpdir. Deleting files makes sure that we don't mask bugs that
+        // would only occur with a fresh temporary directory. We don't delete the directory itself
+        // because recreating it with the same name could be a security issue on a shared system.
+        for entry in tmpdir.path().read_dir()? {
+            let entry = entry?;
+            if entry.path().is_dir() {
+                std::fs::remove_dir_all(entry.path())
+            } else {
+                std::fs::remove_file(entry.path())
+            }
+            .with_context(|| format!("Failed to remove `{}`", entry.path().display()))?;
+        }
+        let root = crate_root().join("test_crates");
         let output = command
             .arg("acl")
             .arg("--fail-on-warnings")
             .arg("--save-requests")
             .arg("--path")
-            .arg(crate_root().join("test_crates"))
+            .arg(&root)
             // Use the same tmpdir for all our runs. This speeds up this test because many of our
             // tests depend on CACKLE_SOCKET_PATH, so would otherwise need to be rebuilt whenever it
             // changes.
@@ -53,6 +66,12 @@ fn integration_test() -> Result<()> {
     let tmpdir = TempDir::new()?;
 
     run_with_args(&tmpdir, &[], false)?;
+
+    // Trigger crab-2 to rebuild its test, but not rerun its build script. This ensures that
+    // variables set by the build script survive between runs even if the build script doesn't
+    // rerun.
+    std::env::set_var("CRAB_2_EXT_ENV", "1");
+
     run_with_args(&tmpdir, &["test", "-v"], false)?;
     let out = run_with_args(
         &tmpdir,

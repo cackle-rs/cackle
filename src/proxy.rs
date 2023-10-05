@@ -55,7 +55,6 @@ const ORIG_LINKER_ENV: &str = "CACKLE_ORIG_LINKER";
 pub(crate) const TARGET_DIR: &str = "CACKLE_TARGET_DIR";
 pub(crate) const MANIFEST_DIR: &str = "CACKLE_MANIFEST_DIR";
 const RUSTC_PATH: &str = "CACKLE_RUSTC_PATH";
-pub(crate) const TMPDIR_ENV: &str = "CACKLE_TMP_DIR";
 
 /// Environment variables that we need to allow through to rustc when we run rustc in a sandbox.
 pub(crate) const RUSTC_ENV_VARS: &[&str] = &[
@@ -155,7 +154,6 @@ impl<'a> CargoRunner<'a> {
             .env(TARGET_DIR, self.target_dir)
             .env(MANIFEST_DIR, self.manifest_dir)
             .env(RUSTC_PATH, rustc_path)
-            .env(TMPDIR_ENV, self.tmpdir)
             .env("RUSTC_WRAPPER", cackle_exe()?);
 
         self.crate_index.add_internal_env(&mut command);

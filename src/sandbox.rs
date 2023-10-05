@@ -145,8 +145,8 @@ impl RustcSandboxInputs {
         let mut result = Self::default();
         let mut next_is_out = false;
         let target_dir = PathBuf::from(get_env(crate::proxy::TARGET_DIR)?);
+        let cargo_profile = get_env(crate::proxy::cargo::PROFILE_NAME_ENV)?;
         let manifest_dir = PathBuf::from(get_env(crate::proxy::MANIFEST_DIR)?);
-        let tmpdir = PathBuf::from(get_env(crate::proxy::TMPDIR_ENV)?);
         result.input_directories.push(manifest_dir);
         for arg in std::env::args() {
             if next_is_out {
@@ -167,8 +167,8 @@ impl RustcSandboxInputs {
         result
             .output_directories
             .retain(|d| !d.starts_with(&target_dir));
+        result.build_script_env_vars = read_env_vars(&target_dir, &cargo_profile, crate_sel);
         result.output_directories.push(target_dir);
-        result.build_script_env_vars = read_env_vars(&tmpdir, crate_sel);
         Ok(result)
     }
 }
@@ -239,20 +239,31 @@ pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
     Ok(())
 }
 
-fn env_vars_file(tmpdir: &Path, crate_sel: &CrateSel) -> PathBuf {
-    tmpdir.join(format!("{}.env", crate_sel.pkg_id))
+fn env_vars_file(target_dir: &Path, profile: &str, crate_sel: &CrateSel) -> PathBuf {
+    env_vars_dir(target_dir, profile).join(crate_sel.pkg_id.to_string())
+}
+
+fn env_vars_dir(target_dir: &Path, profile: &str) -> PathBuf {
+    target_dir.join(profile).join("env")
 }
 
 pub(crate) fn write_env_vars(
-    tmpdir: &Path,
+    target_dir: &Path,
+    profile: &str,
     crate_sel: &CrateSel,
     env_vars: &[String],
 ) -> Result<()> {
-    crate::fs::write(env_vars_file(tmpdir, crate_sel), env_vars.join("\n"))
+    let dir = env_vars_dir(target_dir, profile);
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Failed to crate directory `{}`", dir.display()))?;
+    crate::fs::write(
+        env_vars_file(target_dir, profile, crate_sel),
+        env_vars.join("\n"),
+    )
 }
 
-fn read_env_vars(tmpdir: &Path, crate_sel: &CrateSel) -> Vec<String> {
-    let filename = env_vars_file(tmpdir, crate_sel);
+fn read_env_vars(target_dir: &Path, profile: &str, crate_sel: &CrateSel) -> Vec<String> {
+    let filename = env_vars_file(target_dir, profile, crate_sel);
     // Env vars will only be written when there was a build script run, so we just ignore errors.
     let Ok(contents) = std::fs::read_to_string(filename) else {
         return Default::default();
