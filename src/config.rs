@@ -223,7 +223,7 @@ fn merge_built_ins(config: &mut RawConfig) -> Result<()> {
         let built_in_api = built_ins
             .get(&api)
             .ok_or_else(|| anyhow!("Unknown API `{imp}` in import_std"))?;
-        let api_config = config.apis.entry(api).or_insert_with(Default::default);
+        let api_config = config.apis.entry(api).or_default();
         api_config
             .include
             .extend(built_in_api.include.iter().cloned());
