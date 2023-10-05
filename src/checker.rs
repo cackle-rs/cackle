@@ -440,6 +440,11 @@ impl Checker {
                 }
                 on_tree.push(usage.clone());
             }
+        } else {
+            // If we don't know the transitive dependencies of our crate, then just classify
+            // everything as on-tree. This currently happens for transitive dependencies of
+            // proc-macros due to the arguments we pass to `cargo tree`.
+            on_tree.extend(api_usage.usages.iter().cloned());
         }
 
         // Report off-tree problems for each off-tree package that we appear to reference.
