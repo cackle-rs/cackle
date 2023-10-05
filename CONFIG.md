@@ -159,9 +159,23 @@ test.sandbox.make_writable = [
 ]
 ```
 
+If you need to pass particular environment variables into a sandboxed process, you can list them as
+follows:
+
+```toml
+[pkg.foo.test.sandbox]
+pass_env = [
+    "VAR1",
+    "VAR2",
+]
+```
+
+This will cause the variables "VAR1" and "VAR2", if set, to be passed to the sandboxed process - in
+this case the tests for the package `foo`.
+
 ### Sandboxing rustc
 
-If you have a sandbox configuation, then from config version 2 onwards, rustc will be run in a
+If you have a sandbox configuration, then from config version 2 onwards, rustc will be run in a
 sandbox. This means that all proc macros get sandboxed. Controlling the sandbox on a per-proc-macro
 basis unfortunately isn't supported yet, but hopefully will in future. This means that if you have
 for example one proc macro that needs network access, you'd need to enable network access for the
@@ -241,7 +255,7 @@ file. e.g.
 profile = "cackle-release"
 ```
 
-You can also override with the `--profile` flag, which takes precidence over the config file.
+You can also override with the `--profile` flag, which takes precedence over the config file.
 
 Cackle supports analysing references even when inlining occurs, so it can work to some extent even
 with optimisations enabled, however it's more likely that you'll run into false attribution bugs,

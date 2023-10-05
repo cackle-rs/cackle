@@ -94,6 +94,9 @@ pub(crate) struct SandboxConfig {
 
     #[serde(default)]
     pub(crate) make_writable: Vec<PathBuf>,
+
+    #[serde(default)]
+    pub(crate) pass_env: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]

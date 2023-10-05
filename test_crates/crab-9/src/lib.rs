@@ -46,4 +46,11 @@ mod tests {
     fn it_works() {
         access_files();
     }
+
+    #[test]
+    fn conditional_crash() {
+        if std::env::var("CRAB_9_CRASH_TEST").is_ok() {
+            panic!("Deliberate crash");
+        }
+    }
 }

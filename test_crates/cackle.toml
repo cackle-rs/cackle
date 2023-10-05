@@ -139,6 +139,9 @@ allow_apis = [
 test.sandbox.bind_writable = [
     "crab-9/scratch"
 ]
+test.sandbox.pass_env = [
+    "CRAB_9_CRASH_TEST",
+]
 test.allow_apis = [
     "env",
     "fs",

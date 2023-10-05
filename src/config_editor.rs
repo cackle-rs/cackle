@@ -1345,10 +1345,7 @@ mod tests {
                 crate_sel: crate_sel.clone(),
                 sandbox_config: SandboxConfig {
                     kind: Some(crate::config::SandboxKind::Bubblewrap),
-                    extra_args: vec![],
-                    allow_network: None,
-                    bind_writable: vec![],
-                    make_writable: vec![],
+                    ..Default::default()
                 },
                 binary_path: PathBuf::new(),
                 sandbox_config_display: None,

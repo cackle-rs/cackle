@@ -82,6 +82,9 @@ pub(crate) fn from_config(config: &SandboxConfig) -> Result<Option<Box<dyn Sandb
     sandbox.set_env(OsStr::new("USER"), OsStr::new("user"));
     sandbox.pass_env("PATH");
     sandbox.pass_env("HOME");
+    for env in &config.pass_env {
+        sandbox.pass_env(env);
+    }
 
     // Allow read access to the crate's root source directory.
     sandbox.ro_bind(Path::new(&get_env("CARGO_MANIFEST_DIR")?));
