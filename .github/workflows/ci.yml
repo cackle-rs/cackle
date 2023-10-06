@@ -28,8 +28,8 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ steps.rust-toolchain.outputs.cachekey }}-${{ hashFiles('**/Cargo.lock') }}
       - run: sudo apt install bubblewrap
-      - run: cargo test --profile ci
       - run: cargo build --profile ci --no-default-features
+      - run: cargo test --profile ci
 
   clippy:
     name: Clippy
@@ -50,13 +50,3 @@ jobs:
       with:
         components: rustfmt
     - run: cargo fmt --all -- --check
-
-  cackle:
-    name: Cackle check and test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: cackle-rs/cackle-action@main
-      - run: cargo acl -n
-      - run: cargo acl -n test
