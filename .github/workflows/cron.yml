@@ -11,6 +11,7 @@ jobs:
   # Run cackle after updating to the latest semver-compatible versions of packages. This aims to
   # detect any new permission usage introduced by our dependencies.
   cackle:
+    if: github.repository == 'cackle-rs/cackle'
     name: cackle with latest
     runs-on: ubuntu-latest
     steps:
@@ -22,6 +23,7 @@ jobs:
       - run: cargo acl -n test
 
   test-nightly:
+    if: github.repository == 'cackle-rs/cackle'
     name: Test Nightly
     runs-on: ubuntu-latest
     steps:
