@@ -225,11 +225,7 @@ struct Cackle {
 impl Cackle {
     fn new(args: Args, abort_sender: Sender<()>) -> Result<Self> {
         let args = Arc::new(args);
-        let root_path = args
-            .path
-            .clone()
-            .or_else(|| std::env::current_dir().ok())
-            .ok_or_else(|| anyhow!("Failed to get current working directory"))?;
+        let root_path = root_path(&args)?;
         let root_path = Path::new(&root_path)
             .canonicalize()
             .with_context(|| format!("Failed to read directory `{}`", root_path.display()))?;
@@ -501,6 +497,29 @@ impl Cackle {
             serialized,
         )?;
         Ok(())
+    }
+}
+
+fn root_path(args: &Arc<Args>) -> Result<PathBuf> {
+    if let Some(path) = args.path.clone() {
+        return Ok(path);
+    }
+    let current_dir = std::env::current_dir()
+        .ok()
+        .ok_or_else(|| anyhow!("Failed to get current working directory"))?;
+    let mut dir = current_dir.as_path();
+    loop {
+        if dir.join("Cargo.toml").exists() {
+            return Ok(dir.to_owned());
+        }
+        if let Some(parent) = dir.parent() {
+            dir = parent;
+        } else {
+            bail!(
+                "No Cargo.toml found in `{}` or any parent directory",
+                current_dir.display()
+            );
+        }
     }
 }
 
