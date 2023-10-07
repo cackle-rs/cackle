@@ -56,14 +56,12 @@ echo "Release build is available"
 
 (
   cd ../cackle-action
-  git checkout main
+  git checkout latest
   perl -pi -e 's/default: "0.*"$/default: "'$VERSION'"/' action.yml
   git add action.yml
   git commit -m "Release $VERSION"
-  git push origin main
-  git checkout latest
-  git merge main
   git push origin latest
   git checkout -b $VERSION
   git push origin $VERSION
+  git checkout latest
 )
