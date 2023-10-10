@@ -26,6 +26,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+        id: rust-toolchain
       - uses: cackle-rs/cackle-action@latest
+      # Note, we don't cache the target dir, since it currently wouldn't help. We also don't include
+      # the toolchain or the OS in the cache key.
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cackle-${{ hashFiles('**/Cargo.lock') }}
       - run: cargo acl -n
       - run: cargo acl -n test
