@@ -25,5 +25,5 @@ pub(crate) fn read_to_string(path: &Path) -> Result<String> {
 
 pub(crate) fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
     let path = path.as_ref();
-    std::fs::write(path, contents).with_context(|| format!("Failed to read {}", path.display()))
+    std::fs::write(path, contents).with_context(|| format!("Failed to write {}", path.display()))
 }

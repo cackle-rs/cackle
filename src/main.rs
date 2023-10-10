@@ -236,7 +236,11 @@ impl Cackle {
             .unwrap_or_else(|| root_path.join("cackle.toml"));
 
         let crate_index = Arc::new(CrateIndex::new(&root_path)?);
-        let target_dir = root_path.join("target");
+        let target_dir = root_path.join(
+            std::env::var("CARGO_TARGET_DIR")
+                .as_deref()
+                .unwrap_or("target"),
+        );
         let tmpdir = Arc::new(TempDir::new(args.tmpdir.as_deref())?);
         let checker = Arc::new(Mutex::new(Checker::new(
             tmpdir.clone(),
@@ -450,8 +454,7 @@ impl Cackle {
     }
 
     fn saved_request_path(&self) -> PathBuf {
-        self.root_path
-            .join("target")
+        self.target_dir
             .join(profile_name(
                 &self.args,
                 &self.checker.lock().unwrap().config.raw.common,
@@ -492,7 +495,7 @@ impl Cackle {
         std::fs::create_dir_all(&rpcs_dir)?;
         let num_entries = rpcs_dir.read_dir()?.count();
         let serialized = serde_json::to_string(request)?;
-        std::fs::write(
+        crate::fs::write(
             rpcs_dir.join(format!("{num_entries:03}.cackle-rpc")),
             serialized,
         )?;

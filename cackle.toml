@@ -275,7 +275,7 @@ test.sandbox.bind_writable = [
     "test_crates/crab-11/scratch",
 ]
 test.sandbox.make_writable = [
-    "test_crates/target",
+    "test_crates/custom_target_dir",
 ]
 test.sandbox.allow_network = true
 

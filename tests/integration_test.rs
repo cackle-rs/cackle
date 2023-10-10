@@ -34,6 +34,7 @@ fn integration_test() -> Result<()> {
         }
         let root = crate_root().join("test_crates");
         let output = command
+            .env("CARGO_TARGET_DIR", "custom_target_dir")
             .arg("acl")
             .arg("--fail-on-warnings")
             .arg("--save-requests")
@@ -78,7 +79,11 @@ fn integration_test() -> Result<()> {
         &["run", "--bin", "c2-bin", "--", "40", "4", "-2"],
         false,
     )?;
-    let n: i32 = out.trim().parse().unwrap();
+    let out = out.trim();
+    let n: i32 = match out.parse() {
+        Ok(x) => x,
+        Err(_) => panic!("Unexpected output. Expected integer, got `{out}`"),
+    };
     assert_eq!(n, 42);
 
     std::env::set_var("CRAB_9_CRASH_TEST", "1");
