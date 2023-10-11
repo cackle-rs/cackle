@@ -41,3 +41,18 @@ wanting to get accurate span information for code that originated from macros. I
 switching back to source analysis at some point. It's possible that we could even end up with both
 binary and source-based analysis. Ideally what I'd like would be if we could get rustc emit HIR in
 some stable format. e.g. a JSON dump of the AST with all paths resolved and with span information.
+
+## Whats an ACL
+
+An ACL is an access-control list. It's where you have a list of permissions that you grant to some
+entity. In the case of Cackle, those entities are Rust packages.
+
+## How can I get Cackle to ignore my examples, benches etc
+
+By default, Cackle runs `cargo build` with `--all-targets`. You can override this in your
+`cackle.toml` as follows:
+
+```toml
+[common]
+build_flags = []
+```
