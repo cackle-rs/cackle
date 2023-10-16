@@ -119,7 +119,7 @@ impl Summary {
             if options.output_format == OutputFormat::Human {
                 if options.print_headers {
                     println!("=== Permissions by package ===");
-                }    
+                }
                 self.print_by_crate();
             } else {
                 self.json_print_by_crate(&mut json_map);
@@ -134,7 +134,6 @@ impl Summary {
             } else {
                 self.json_print_by_permission(&mut json_map);
             }
-
         }
         if options.impure_proc_macros {
             if options.output_format == OutputFormat::Human {
@@ -145,7 +144,6 @@ impl Summary {
             } else {
                 self.json_print_impure_proc_macros(&mut json_map);
             }
-
         }
         if options.counts {
             if options.output_format == OutputFormat::Human {
@@ -153,7 +151,7 @@ impl Summary {
                     println!("=== Permission counts ===");
                 }
                 println!("{self}");
-            }  else {
+            } else {
                 self.json_print_count(&mut json_map);
             }
         }
@@ -174,7 +172,10 @@ impl Summary {
         for pkg in &self.packages {
             map.insert(&pkg.name.package_name, &pkg.permissions);
         }
-        json_map.insert("permissions_by_package", serde_json::to_value(&map).unwrap());
+        json_map.insert(
+            "permissions_by_package",
+            serde_json::to_value(&map).unwrap(),
+        );
     }
 
     fn print_impure_proc_macros(&self) {
@@ -220,7 +221,10 @@ impl Summary {
                     .push(pkg.name.to_string());
             }
         }
-        json_map.insert("impure_proc_macros", serde_json::to_value(&by_permission).unwrap());
+        json_map.insert(
+            "impure_proc_macros",
+            serde_json::to_value(&by_permission).unwrap(),
+        );
     }
 
     fn json_print_count(&self, json_map: &mut HashMap<&str, Value>) {
@@ -230,8 +234,6 @@ impl Summary {
         }
         json_map.insert("permission_count", serde_json::to_value(&map).unwrap());
     }
-
-
 }
 
 impl SummaryOptions {
