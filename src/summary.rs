@@ -2,15 +2,26 @@ use crate::config::permissions::PermSel;
 use crate::config::Config;
 use crate::config::PackageConfig;
 use crate::crate_index::CrateIndex;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use fxhash::FxHashMap;
+use serde_json::Value;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 /// Counts of how many packages in the dependency tree use different permissions, how many use no
 /// special permissions etc.
+#[derive(serde::Serialize)]
 pub(crate) struct Summary {
     packages: Vec<PackageSummary>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    /// Print output in a human-readable form.
+    Human,
+    /// Print output in a machine-readable form with minimal extra context.
+    Json,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -39,11 +50,17 @@ pub(crate) struct SummaryOptions {
     /// summary is selected.
     #[clap(long)]
     print_headers: bool,
+
+    /// The format of the output
+    #[clap(long, value_enum, action)]
+    #[clap(default_value_t = OutputFormat::Human)]
+    output_format: OutputFormat,
 }
 
+#[derive(serde::Serialize)]
 struct PackageSummary {
-    name: PermSel,
-    permissions: Vec<String>,
+    pub(crate) name: PermSel,
+    pub(crate) permissions: Vec<String>,
 }
 
 impl PackageSummary {
@@ -96,29 +113,53 @@ impl Summary {
 
     pub(crate) fn print(&self, options: &SummaryOptions) {
         let options = options.with_defaults();
+        let mut json_map = HashMap::new();
+
         if options.by_package {
-            if options.print_headers {
-                println!("=== Permissions by package ===");
+            if options.output_format == OutputFormat::Human {
+                if options.print_headers {
+                    println!("=== Permissions by package ===");
+                }    
+                self.print_by_crate();
+            } else {
+                self.json_print_by_crate(&mut json_map);
             }
-            self.print_by_crate();
         }
         if options.by_permission {
-            if options.print_headers {
-                println!("=== Packages by permission ===");
+            if options.output_format == OutputFormat::Human {
+                if options.print_headers {
+                    println!("=== Packages by permission ===");
+                }
+                self.print_by_permission();
+            } else {
+                self.json_print_by_permission(&mut json_map);
             }
-            self.print_by_permission();
+
         }
         if options.impure_proc_macros {
-            if options.print_headers {
-                println!("=== Proc macros with other permissions ===");
+            if options.output_format == OutputFormat::Human {
+                if options.print_headers {
+                    println!("=== Proc macros with other permissions ===");
+                }
+                self.print_impure_proc_macros();
+            } else {
+                self.json_print_impure_proc_macros(&mut json_map);
             }
-            self.print_impure_proc_macros();
+
         }
         if options.counts {
-            if options.print_headers {
-                println!("=== Permission counts ===");
+            if options.output_format == OutputFormat::Human {
+                if options.print_headers {
+                    println!("=== Permission counts ===");
+                }
+                println!("{self}");
+            }  else {
+                self.json_print_count(&mut json_map);
             }
-            println!("{self}");
+        }
+
+        if !json_map.is_empty() {
+            println!("{}", serde_json::to_string_pretty(&json_map).unwrap());
         }
     }
 
@@ -128,12 +169,30 @@ impl Summary {
         }
     }
 
+    fn json_print_by_crate(&self, json_map: &mut HashMap<&str, Value>) {
+        let mut map = HashMap::new();
+        for pkg in &self.packages {
+            map.insert(&pkg.name.package_name, &pkg.permissions);
+        }
+        json_map.insert("permissions_by_package", serde_json::to_value(&map).unwrap());
+    }
+
     fn print_impure_proc_macros(&self) {
         for pkg in &self.packages {
             if pkg.is_proc_macro_with_other_permissions() {
                 println!("{}: {}", pkg.name, pkg.permissions.join(", "));
             }
         }
+    }
+
+    fn json_print_impure_proc_macros(&self, json_map: &mut HashMap<&str, Value>) {
+        let mut map = HashMap::new();
+        for pkg in &self.packages {
+            if pkg.is_proc_macro_with_other_permissions() {
+                map.insert(&pkg.name.package_name, &pkg.permissions);
+            }
+        }
+        json_map.insert("impure_proc_macros", serde_json::to_value(&map).unwrap());
     }
 
     fn print_by_permission(&self) {
@@ -150,6 +209,29 @@ impl Summary {
             println!("{perm}: {}", packages.join(", "));
         }
     }
+
+    fn json_print_by_permission(&self, json_map: &mut HashMap<&str, Value>) {
+        let mut by_permission: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+        for pkg in &self.packages {
+            for perm in &pkg.permissions {
+                by_permission
+                    .entry(perm)
+                    .or_default()
+                    .push(pkg.name.to_string());
+            }
+        }
+        json_map.insert("impure_proc_macros", serde_json::to_value(&by_permission).unwrap());
+    }
+
+    fn json_print_count(&self, json_map: &mut HashMap<&str, Value>) {
+        let mut map = HashMap::new();
+        for pkg in &self.packages {
+            map.insert(&pkg.name.package_name, &pkg.permissions);
+        }
+        json_map.insert("permission_count", serde_json::to_value(&map).unwrap());
+    }
+
+
 }
 
 impl SummaryOptions {
