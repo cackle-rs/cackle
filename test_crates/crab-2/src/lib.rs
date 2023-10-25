@@ -19,7 +19,8 @@ pub mod stuff {
     extern "C" {}
 
     pub fn do_stuff() {
-        assert_eq!(env!("CRAB_2_ENV"), "42");
+        let crab_2_env = env!("CRAB_2_ENV");
+        assert_eq!(crab_2_env, "42");
 
         crab_3::macro_that_uses_unsafe!({
             crate::woozle("/tmp/foo.bar", [42]).unwrap();
