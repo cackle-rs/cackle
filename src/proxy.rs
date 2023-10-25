@@ -200,6 +200,7 @@ impl<'a> CargoRunner<'a> {
                 break;
             }
             if abort_recv.try_recv().is_ok() {
+                log::info!("Killing cargo process");
                 let _ = cargo_process.kill();
             }
             // We need to concurrently accept connections from our proxy subprocesses and also check to

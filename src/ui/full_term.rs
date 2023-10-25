@@ -102,12 +102,14 @@ impl super::UserInterface for FullTermUi {
         let mut terminal = Terminal::new()?;
         loop {
             if screen.quit_requested() {
-                // When quit has been requested, we abort all problems in the store. New problems
-                // may be added afterwards, in which case we'll go around the loop again and abort
-                // those problems too. We don't return from this function until we get a shutdown
-                // event from the main thread.
-                problem_store.lock().abort();
+                let pstore = &mut problem_store.lock();
                 let _ = self.abort_sender.send(());
+                // Give cargo a chance to exit before we tell the problem store to abort, otherwise
+                // cargo might get to see its subprocesses failing which would pollute our output
+                // with confusing messages.
+                std::thread::sleep(Duration::from_millis(20));
+                pstore.abort();
+                // We don't return yet, but rather wait until we get an AppEvent::Shutdown.
             }
             if needs_redraw {
                 if screen.needs_cursor() {
