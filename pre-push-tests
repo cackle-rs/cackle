@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+cargo test
+cargo clippy -- -D warnings
+cargo run --release -- acl --replay-requests
