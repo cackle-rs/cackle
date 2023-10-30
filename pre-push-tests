@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cargo fmt --check
 cargo test
 cargo clippy -- -D warnings
 cargo run --release -- acl --replay-requests
