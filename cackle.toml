@@ -331,3 +331,6 @@ allow_unsafe = true
 
 [pkg.tui-input]
 allow_unsafe = true
+
+[pkg.zerocopy-derive]
+allow_proc_macro = true
