@@ -1,3 +1,9 @@
+# Version 0.7.0
+* Fixes for recent changes in rustc nightly
+* `std::env` no longer included in `fs` API. It shouldn't be needed and was causing some false
+  positives.
+* Added `--output-format` flag to `summary` subcommand. Thanks teromene@
+
 # Version 0.6.0
 * Fixed a bug where API usages by dependencies of proc-macros were not properly checked.
 * Pass environment variables set by build scripts to sandboxed rustc.
