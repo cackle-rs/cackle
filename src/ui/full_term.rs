@@ -174,7 +174,7 @@ impl Drop for Terminal {
     }
 }
 
-fn render_build_progress(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+fn render_build_progress(f: &mut Frame, area: Rect) {
     let block = Block::default()
         .title("Building")
         .borders(Borders::ALL)
@@ -186,7 +186,7 @@ fn render_build_progress(f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
-fn render_error(f: &mut Frame<CrosstermBackend<Stdout>>, error: &anyhow::Error) {
+fn render_error(f: &mut Frame, error: &anyhow::Error) {
     let area = message_area(f.size());
     let block = Block::default()
         .title("Error")
@@ -227,7 +227,7 @@ fn centre(target: u16, available: u16) -> Vec<Constraint> {
 }
 
 fn render_list(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
+    f: &mut Frame,
     title: &str,
     items: impl Iterator<Item = ListItem<'static>>,
     active: bool,

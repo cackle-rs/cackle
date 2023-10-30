@@ -26,7 +26,6 @@ use anyhow::Context;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
@@ -45,7 +44,6 @@ use ratatui::widgets::Row;
 use ratatui::widgets::Table;
 use ratatui::widgets::Wrap;
 use ratatui::Frame;
-use std::io::Stdout;
 use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -91,7 +89,7 @@ impl ProblemsUi {
         self.modes.is_empty()
     }
 
-    pub(super) fn render(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
+    pub(super) fn render(&self, f: &mut Frame) {
         let chunks = if self.show_package_details {
             split_vertical(f.size(), &[30, 50, 20])
         } else {
@@ -365,7 +363,7 @@ impl ProblemsUi {
         crate::fs::write_atomic(&self.config_path, &editor.to_toml())
     }
 
-    fn render_problems(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_problems(&self, f: &mut Frame, area: Rect) {
         let pstore_lock = &self.problem_store.lock();
         if pstore_lock.is_empty() {
             super::render_build_progress(f, area);
@@ -440,7 +438,7 @@ impl ProblemsUi {
         );
     }
 
-    fn render_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_details(&self, f: &mut Frame, area: Rect) {
         let block = Block::default().title("Details").borders(Borders::ALL);
         let pstore_lock = &self.problem_store.lock();
         let problem = pstore_lock
@@ -475,7 +473,7 @@ impl ProblemsUi {
         )
     }
 
-    fn render_edit_help_and_diff(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_edit_help_and_diff(&self, f: &mut Frame, area: Rect) {
         let edits = self.edits();
         let Some(edit) = edits.get(self.edit_index) else {
             return;
@@ -496,7 +494,7 @@ impl ProblemsUi {
         f.render_widget(paragraph, area);
     }
 
-    fn render_usage_source(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_usage_source(&self, f: &mut Frame, area: Rect) {
         let usages = self.usages();
         let Some(usage) = usages.get(self.usage_index) else {
             return;
@@ -505,12 +503,7 @@ impl ProblemsUi {
         render_source_location(usage.source_location(), area, f);
     }
 
-    fn render_backtrace_source(
-        &self,
-        frames: &[backtrace::Frame],
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-        area: Rect,
-    ) {
+    fn render_backtrace_source(&self, frames: &[backtrace::Frame], f: &mut Frame, area: Rect) {
         let Some(frame) = frames.get(self.backtrace_index) else {
             return;
         };
@@ -528,7 +521,7 @@ impl ProblemsUi {
         }
     }
 
-    fn render_usage_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_usage_details(&self, f: &mut Frame, area: Rect) {
         let usages = self.usages();
         let Some(usage) = usages.get(self.usage_index) else {
             return;
@@ -556,7 +549,7 @@ impl ProblemsUi {
         f.render_widget(paragraph, area);
     }
 
-    fn render_internal_diagnostics(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
+    fn render_internal_diagnostics(&self, f: &mut Frame) {
         let usages = self.usages();
         let Some(usage) = usages.get(self.usage_index) else {
             return;
@@ -617,7 +610,7 @@ impl ProblemsUi {
         editor.to_toml().contains(PLACEHOLDER_COMMENT)
     }
 
-    fn render_package_details(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+    fn render_package_details(&self, f: &mut Frame, area: Rect) {
         use std::fmt::Write;
 
         let Some(pkg_id) = self.current_package_id() else {
@@ -642,7 +635,7 @@ impl ProblemsUi {
         f.render_widget(paragraph, area);
     }
 
-    fn render_package_tree(&self, f: &mut Frame<CrosstermBackend<Stdout>>) {
+    fn render_package_tree(&self, f: &mut Frame) {
         let text = self
             .package_tree_text()
             .unwrap_or_else(|error| error.to_string());
@@ -694,11 +687,7 @@ impl ProblemsUi {
         backtracer.backtrace(bin_location)
     }
 
-    fn render_comment_input(
-        &self,
-        input: &tui_input::Input,
-        f: &mut Frame<CrosstermBackend<Stdout>>,
-    ) {
+    fn render_comment_input(&self, input: &tui_input::Input, f: &mut Frame) {
         let area = centre_area(f.size(), 80, 3);
         let paragraph = Paragraph::new(input.value()).block(active_block().title("Set comment"));
         f.render_widget(Clear, area);
@@ -717,11 +706,7 @@ impl ProblemsUi {
     }
 }
 
-fn render_source_location(
-    source_location: &SourceLocation,
-    area: Rect,
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-) {
+fn render_source_location(source_location: &SourceLocation, area: Rect, f: &mut Frame) {
     let lines = usage_source_lines(source_location, (area.height as usize).saturating_sub(2))
         .unwrap_or_else(error_lines);
 
@@ -821,7 +806,7 @@ fn format_line(out: &mut Vec<Span>, column: Option<u32>, line: &str) {
     }
 }
 
-fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
+fn render_help(f: &mut Frame, mode: Option<&Mode>) {
     let mut keys = vec![];
     let mut title = "Help";
     match mode {
@@ -887,7 +872,7 @@ fn render_help(f: &mut Frame<CrosstermBackend<Stdout>>, mode: Option<&Mode>) {
     f.render_widget(table, area);
 }
 
-fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
+fn render_auto_accept(f: &mut Frame) {
     render_message(f, None, &[
         "Auto-accept edits for all problems that only have a single edit?",
         "",
@@ -897,11 +882,7 @@ fn render_auto_accept(f: &mut Frame<CrosstermBackend<Stdout>>) {
     ]);
 }
 
-fn render_message<S: AsRef<str>>(
-    f: &mut Frame<CrosstermBackend<Stdout>>,
-    title: Option<&str>,
-    raw_lines: &[S],
-) {
+fn render_message<S: AsRef<str>>(f: &mut Frame, title: Option<&str>, raw_lines: &[S]) {
     let width = raw_lines
         .iter()
         .map(|line| line.as_ref().len())
