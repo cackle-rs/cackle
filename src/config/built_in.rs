@@ -9,9 +9,6 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
         ApiName::from("fs"),
         perm(
             &[
-                // std::env provides quite a few functions that return paths, which can in turn
-                // allow filesystem access.
-                "std::env",
                 "std::fs",
                 "std::os::linux::fs",
                 "std::os::unix::fs",
@@ -22,19 +19,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
                 "std::os::windows::io",
                 "std::path",
             ],
-            &[
-                "std::env::Args",
-                "std::env::ArgsOs",
-                "std::env::VarError",
-                "std::env::_var",
-                "std::env::_var_os",
-                "std::env::args",
-                "std::env::args_os",
-                "std::env::var",
-                "std::env::var_os",
-                "std::env::vars",
-                "std::env::vars_os",
-            ],
+            &[],
         ),
     );
     result.insert(ApiName::from("env"), perm(&["std::env"], &[]));
