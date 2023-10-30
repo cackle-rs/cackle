@@ -2,6 +2,7 @@ name: cackle-cron
 on:
   schedule:
     - cron: '36 19 * * *'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
