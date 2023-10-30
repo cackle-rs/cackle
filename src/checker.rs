@@ -373,7 +373,7 @@ impl Checker {
             .or_else(|| {
                 // If the source path is from the rust standard library, or from one of the
                 // precompiled crates that comes with the standard library, then report no crates.
-                if is_in_rust_std(source_path) {
+                if self.is_in_rust_std(source_path) {
                     return Some(Cow::Owned(vec![]));
                 }
 
@@ -382,6 +382,17 @@ impl Checker {
                     .package_id_for_path(source_path)
                     .map(|pkg_id| Cow::Owned(vec![pkg_id.clone()]))
             })
+    }
+
+    // Returns whether `source_path` is from the rust standard library or precompiled crates that are
+    // bundled with the standard library (e.g. hashbrown).
+    pub(crate) fn is_in_rust_std(&self, source_path: &Path) -> bool {
+        // Pre 2023-10-26
+        source_path.starts_with("/rustc/")
+            || source_path.starts_with("/cargo/registry")
+            // Post 2023-10-26
+            || source_path.starts_with("/rust/")
+            || source_path.starts_with(&self.sysroot)
     }
 
     /// Returns all APIs that are matched by `name`. e.g. The name `["std", "fs", "write"]` might
@@ -584,12 +595,6 @@ impl Checker {
         }
         self.mark_parent_allow_apis_used(api, &parent);
     }
-}
-
-// Returns whether `source_path` is from the rust standard library or precompiled crates that are
-// bundled with the standard library (e.g. hashbrown).
-pub(crate) fn is_in_rust_std(source_path: &Path) -> bool {
-    source_path.starts_with("/rustc/") || source_path.starts_with("/cargo/registry")
 }
 
 #[cfg(test)]

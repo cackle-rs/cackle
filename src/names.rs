@@ -28,7 +28,7 @@ pub(crate) struct Namespace {
     pub(crate) parts: Arc<[Arc<str>]>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub(crate) struct SymbolAndName<'input> {
     pub(crate) symbol: Option<Symbol<'input>>,
     pub(crate) debug_name: Option<DebugName<'input>>,

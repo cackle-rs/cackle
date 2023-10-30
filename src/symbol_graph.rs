@@ -160,7 +160,7 @@ fn scan_object_with_bin_bytes(
     let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
     let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
-    let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf).with_context(|| {
+    let debug_artifacts = dwarf::DebugArtifacts::from_dwarf(&dwarf, checker).with_context(|| {
         format!(
             "Failed while processing debug info for `{}`",
             link_info.output_file.display()

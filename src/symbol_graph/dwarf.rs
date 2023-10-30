@@ -1,4 +1,5 @@
 use crate::checker::BinLocation;
+use crate::checker::Checker;
 use crate::location::SourceLocation;
 use crate::names::DebugName;
 use crate::names::Namespace;
@@ -63,27 +64,44 @@ impl<'input> CallLocation<'input> {
 }
 
 impl<'input> DebugArtifacts<'input> {
-    pub(crate) fn from_dwarf(dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>) -> Result<Self> {
-        let mut scanner = DwarfScanner {
-            out: DebugArtifacts::default(),
-        };
-        scanner.scan(dwarf)?;
+    pub(crate) fn from_dwarf(
+        dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
+        checker: &Checker,
+    ) -> Result<Self> {
+        let mut scanner = DwarfScanner::default();
+        scanner.index_units(dwarf)?;
+        scanner.scan(dwarf, checker)?;
         Ok(scanner.out)
     }
 }
 
 impl<'input> DwarfScanner<'input> {
-    fn scan(&mut self, dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>) -> Result<()> {
-        let mut units = dwarf.units();
-        while let Some(header) = units.next()? {
+    fn index_units(&mut self, dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>) -> Result<()> {
+        let mut unit_headers = dwarf.units();
+        while let Some(header) = unit_headers.next()? {
+            let Some(debug_offset) = header.offset().as_debug_info_offset() else {
+                continue;
+            };
             let unit = dwarf.unit(header)?;
+            self.unit_offsets.push(debug_offset);
+            self.units.push(unit);
+        }
+        Ok(())
+    }
+
+    fn scan(
+        &mut self,
+        dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>,
+        checker: &Checker,
+    ) -> Result<()> {
+        for unit in &self.units {
             let compdir = path_from_opt_slice(unit.comp_dir);
-            if crate::checker::is_in_rust_std(compdir) {
+            if checker.is_in_rust_std(compdir) {
                 continue;
             }
 
             let mut unit_state = UnitState {
-                subprogram_namespaces: get_subprogram_namespaces(&unit, dwarf)?,
+                subprogram_namespaces: get_subprogram_namespaces(unit, dwarf)?,
                 dwarf,
                 unit,
                 frames: Vec::new(),
@@ -122,7 +140,7 @@ impl<'input> DwarfScanner<'input> {
                     }
                     for spec in abbrev.attributes() {
                         let attr = entries.read_attribute(*spec)?;
-                        inline_scanner.handle_attribute(attr, &unit_state)?;
+                        inline_scanner.handle_attribute(attr, &unit_state, self)?;
                         symbol_scanner.handle_attribute(attr)?;
                     }
                     if let Some(inlined_function) =
@@ -152,6 +170,21 @@ impl<'input> DwarfScanner<'input> {
             }
         }
         Ok(())
+    }
+
+    fn unit_containing(
+        &self,
+        offset: gimli::DebugInfoOffset,
+    ) -> Result<&Unit<EndianSlice<'input, LittleEndian>>> {
+        match self.unit_offsets.binary_search(&offset) {
+            Ok(0) | Err(0) => {}
+            Ok(index) | Err(index) => {
+                if let Some(unit) = self.units.get(index - 1) {
+                    return Ok(unit);
+                }
+            }
+        }
+        bail!("Debug info unit not found for offset {}", offset.0)
     }
 }
 
@@ -216,16 +249,17 @@ fn get_subprogram_namespaces(
 struct UnitState<'input, 'dwarf> {
     dwarf: &'dwarf Dwarf<EndianSlice<'input, LittleEndian>>,
     frames: Vec<FrameState<'input>>,
-    unit: Unit<EndianSlice<'input, LittleEndian>, usize>,
+    unit: &'dwarf Unit<EndianSlice<'input, LittleEndian>, usize>,
     compdir: &'input Path,
     subprogram_namespaces: FxHashMap<UnitOffset, Namespace>,
 }
+
 impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
     fn attr_string(
         &self,
         attr: AttributeValue<EndianSlice<'input, LittleEndian>, usize>,
     ) -> Result<gimli::EndianSlice<'input, LittleEndian>> {
-        Ok(self.dwarf.attr_string(&self.unit, attr)?)
+        Ok(self.dwarf.attr_string(self.unit, attr)?)
     }
 
     fn get_directory_and_filename(
@@ -263,41 +297,63 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
     fn get_symbol_and_name(
         &self,
         attr: gimli::Attribute<EndianSlice<'input, LittleEndian>>,
+        scanner: &DwarfScanner<'input>,
         max_depth: u32,
     ) -> Result<SymbolAndName<'input>> {
+        match attr.value() {
+            AttributeValue::UnitRef(unit_offset) => {
+                let unit = self.unit;
+                return self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner);
+            }
+            AttributeValue::DebugInfoRef(offset) => {
+                let unit = scanner.unit_containing(offset)?;
+                let unit_offset = offset
+                    .to_unit_offset(&unit.header)
+                    .ok_or_else(|| anyhow!("Invalid unit offset"))?;
+                return self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner);
+            }
+            _ => {
+                bail!("Unsupported abstract_origin type: {:?}", attr.value());
+            }
+        }
+    }
+
+    fn get_symbol_and_name_in_unit(
+        &self,
+        unit: &Unit<EndianSlice<'input, LittleEndian>, usize>,
+        unit_offset: UnitOffset,
+        max_depth: u32,
+        scanner: &DwarfScanner<'input>,
+    ) -> Result<SymbolAndName<'input>> {
         let mut names = SymbolAndName::default();
-        if let AttributeValue::UnitRef(offset) = attr.value() {
-            let mut x = self.unit.entries_raw(Some(offset))?;
-            if let Some(abbrev) = x.read_abbreviation()? {
-                for spec in abbrev.attributes() {
-                    let attr = x.read_attribute(*spec)?;
-                    match attr.name() {
-                        gimli::DW_AT_specification => {
-                            if max_depth == 0 {
-                                bail!("Recursion limit reached when resolving inlined functions");
-                            }
-                            return self.get_symbol_and_name(attr, max_depth - 1);
+        let mut entries = unit.entries_raw(Some(unit_offset))?;
+        if let Some(abbrev) = entries.read_abbreviation()? {
+            for spec in abbrev.attributes() {
+                let attr = entries.read_attribute(*spec)?;
+                match attr.name() {
+                    gimli::DW_AT_specification => {
+                        if max_depth == 0 {
+                            bail!("Recursion limit reached when resolving inlined functions");
                         }
-                        gimli::DW_AT_linkage_name => {
-                            let value = self.attr_string(attr.raw_value())?;
-                            names.symbol = Some(Symbol::borrowed(value.slice()));
-                        }
-                        gimli::DW_AT_name => {
-                            let value = self.attr_string(attr.raw_value())?.to_string()?;
-                            names.debug_name = Some(DebugName::new(
-                                self.subprogram_namespaces
-                                    .get(&offset)
-                                    .cloned()
-                                    .unwrap_or_else(Namespace::empty),
-                                value,
-                            ));
-                        }
-                        _ => (),
+                        return self.get_symbol_and_name(attr, scanner, max_depth - 1);
                     }
+                    gimli::DW_AT_linkage_name => {
+                        let value = self.attr_string(attr.raw_value())?;
+                        names.symbol = Some(Symbol::borrowed(value.slice()));
+                    }
+                    gimli::DW_AT_name => {
+                        let value = self.attr_string(attr.raw_value())?.to_string()?;
+                        names.debug_name = Some(DebugName::new(
+                            self.subprogram_namespaces
+                                .get(&unit_offset)
+                                .cloned()
+                                .unwrap_or_else(Namespace::empty),
+                            value,
+                        ));
+                    }
+                    _ => (),
                 }
             }
-        } else {
-            bail!("Unsupported abstract_origin type: {:?}", attr.value());
         }
         Ok(names)
     }
@@ -340,8 +396,11 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
     }
 }
 
+#[derive(Default)]
 struct DwarfScanner<'input> {
     out: DebugArtifacts<'input>,
+    unit_offsets: Vec<gimli::DebugInfoOffset>,
+    units: Vec<gimli::Unit<EndianSlice<'input, LittleEndian>>>,
 }
 
 impl<'input> SymbolDebugInfo<'input> {
@@ -470,6 +529,7 @@ impl<'input> InlinedFunctionScanner<'input> {
         &mut self,
         attr: Attribute<EndianSlice<'input, LittleEndian>>,
         unit_state: &UnitState<'input, 'dwarf>,
+        scanner: &DwarfScanner<'input>,
     ) -> Result<()> {
         match attr.name() {
             gimli::DW_AT_linkage_name => {
@@ -482,7 +542,7 @@ impl<'input> InlinedFunctionScanner<'input> {
                     Some(DebugName::new(unit_state.namespace(), value.to_string()?));
             }
             gimli::DW_AT_abstract_origin => {
-                self.names = unit_state.get_symbol_and_name(attr, 10)?;
+                self.names = unit_state.get_symbol_and_name(attr, scanner, 10)?;
             }
             gimli::DW_AT_call_file => {
                 let (directory, filename) = unit_state.get_directory_and_filename(attr.value())?;
@@ -498,7 +558,7 @@ impl<'input> InlinedFunctionScanner<'input> {
             gimli::DW_AT_low_pc => {
                 self.low_pc = unit_state
                     .dwarf
-                    .attr_address(&unit_state.unit, attr.value())
+                    .attr_address(unit_state.unit, attr.value())
                     .context("Unsupported DW_AT_low_pc")?;
                 if self.symbol_start.is_none() {
                     self.symbol_start = self.low_pc;
@@ -507,11 +567,11 @@ impl<'input> InlinedFunctionScanner<'input> {
             gimli::DW_AT_ranges => {
                 if let Some(ranges_offset) = unit_state
                     .dwarf
-                    .attr_ranges_offset(&unit_state.unit, attr.value())?
+                    .attr_ranges_offset(unit_state.unit, attr.value())?
                 {
                     if let Some(first_range) = unit_state
                         .dwarf
-                        .ranges(&unit_state.unit, ranges_offset)?
+                        .ranges(unit_state.unit, ranges_offset)?
                         .next()?
                     {
                         self.low_pc = Some(first_range.begin);
