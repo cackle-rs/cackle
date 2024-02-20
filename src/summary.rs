@@ -79,7 +79,6 @@ impl Summary {
             .permissions
             .packages
             .iter()
-            .map(|(k, v)| (k, v))
             .collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_ids()

@@ -461,8 +461,6 @@ pub(crate) fn split_simple(value: &str) -> Name {
 
 #[cfg(test)]
 mod tests {
-    use crate::demangle::NonMangledIterator;
-
     use super::*;
 
     #[track_caller]

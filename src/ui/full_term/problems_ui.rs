@@ -665,9 +665,7 @@ impl ProblemsUi {
 
     fn current_package_id(&self) -> Option<PackageId> {
         let pstore = &self.problem_store.lock();
-        let Some((_, problem)) = pstore.deduplicated_into_iter().nth(self.problem_index) else {
-            return None;
-        };
+        let (_, problem) = pstore.deduplicated_into_iter().nth(self.problem_index)?;
         problem.pkg_id().cloned()
     }
 
