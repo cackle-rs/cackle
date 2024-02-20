@@ -75,11 +75,8 @@ impl PackageSummary {
 
 impl Summary {
     pub(crate) fn new(crate_index: &CrateIndex, config: &Config) -> Self {
-        let pkg_configs: FxHashMap<&PermSel, &PackageConfig> = config
-            .permissions
-            .packages
-            .iter()
-            .collect();
+        let pkg_configs: FxHashMap<&PermSel, &PackageConfig> =
+            config.permissions.packages.iter().collect();
         let mut packages: Vec<PackageSummary> = crate_index
             .package_ids()
             .map(|pkg_id| {
