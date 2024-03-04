@@ -157,9 +157,6 @@ allow_unsafe = true
 
 [pkg.is-terminal]
 allow_unsafe = true
-allow_apis = [
-    "termios",
-]
 
 [pkg.camino]
 allow_unsafe = true
