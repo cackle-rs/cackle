@@ -48,12 +48,6 @@ pub(crate) enum Problem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct ErrorDetails {
-    pub(crate) short: String,
-    pub(crate) detail: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BinExecutionFailed {
     pub(crate) crate_sel: CrateSel,
     pub(crate) output: BinExecutionOutput,

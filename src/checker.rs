@@ -602,17 +602,6 @@ mod tests {
     use super::*;
     use crate::config::testing::parse;
     use crate::symbol::Symbol;
-    use std::fmt::Debug;
-    use std::fmt::Display;
-
-    // Wraps a type T and makes it implement Debug by deferring to the Display implementation of T.
-    struct DebugAsDisplay<T: Display>(T);
-
-    impl<T: Display> Debug for DebugAsDisplay<T> {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
-        }
-    }
 
     fn checker_for_testing() -> Checker {
         Checker::new(
