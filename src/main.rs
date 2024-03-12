@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(feature = "ui"), allow(dead_code, unused_variables))]
+#![allow(unknown_lints)]
 #![allow(clippy::assigning_clones)]
 
 mod build_script_checker;
