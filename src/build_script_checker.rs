@@ -53,7 +53,12 @@ impl BuildScriptReport {
 
 /// Cargo instructions that should be harmless, so would just add noise if we were required to
 /// explicitly allow them.
-const ALWAYS_PERMITTED: &[&str] = &["cargo:rerun-if-", "cargo:warning", "cargo:rustc-cfg="];
+const ALWAYS_PERMITTED: &[&str] = &[
+    "cargo:rerun-if-",
+    "cargo:warning",
+    "cargo:rustc-cfg=",
+    "cargo:rustc-check-cfg=",
+];
 
 fn check_directive(
     instruction: &str,
