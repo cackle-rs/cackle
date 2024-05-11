@@ -1,3 +1,6 @@
+# Version 0.8.0
+* Ignores cargo:rustc-check-cfg= build script directives.
+
 # Version 0.7.0
 * Fixes for recent changes in rustc nightly
 * `std::env` no longer included in `fs` API. It shouldn't be needed and was causing some false
