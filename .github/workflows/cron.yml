@@ -16,7 +16,7 @@ jobs:
     name: cackle with latest
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: cackle-rs/cackle-action@latest
       - run: cargo update
@@ -28,7 +28,7 @@ jobs:
     name: Test Nightly
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
       id: rust-toolchain
     - run: sudo apt update && sudo apt install git bubblewrap
