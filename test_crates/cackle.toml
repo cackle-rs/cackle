@@ -124,6 +124,7 @@ allow_apis = [
 [pkg.crab-7]
 allow_unsafe = true
 allow_apis = [
+    "env",
     "fs",
 ]
 
