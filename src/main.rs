@@ -5,6 +5,7 @@
 #![cfg_attr(not(feature = "ui"), allow(dead_code, unused_variables))]
 #![allow(unknown_lints)]
 #![allow(clippy::assigning_clones)]
+#![allow(clippy::needless_borrows_for_generic_args)]
 
 mod build_script_checker;
 mod checker;
