@@ -159,6 +159,10 @@ struct Args {
     #[clap(long, short)]
     no_ui: bool,
 
+    /// Disable backtraces (may reduce peak memory consumption).
+    #[clap(long)]
+    no_backtrace: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }

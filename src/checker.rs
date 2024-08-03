@@ -330,8 +330,9 @@ impl Checker {
                 crate::symbol_graph::scan_objects(paths, link_info, self)?;
             graph_outputs.apis = self.config.raw.apis.clone();
             check_state.graph_outputs = Some(graph_outputs);
-            self.backtracers
-                .insert(link_info.output_file.clone(), backtracer);
+            if let Some(b) = backtracer {
+                self.backtracers.insert(link_info.output_file.clone(), b);
+            }
         }
         let graph_outputs = check_state.graph_outputs.as_ref().unwrap();
         let problems = graph_outputs.problems(self)?;

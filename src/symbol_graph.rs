@@ -65,7 +65,7 @@ enum Filetype {
 
 struct ApiUsageCollector<'input, 'backtracer> {
     outputs: ScanOutputs,
-    backtracer: &'backtracer mut Backtracer,
+    backtracer: Option<&'backtracer mut Backtracer>,
 
     bin: BinInfo<'input>,
     debug_enabled: bool,
@@ -132,25 +132,28 @@ pub(crate) fn scan_objects(
     paths: &[PathBuf],
     link_info: &LinkInfo,
     checker: &mut Checker,
-) -> Result<(ScanOutputs, Backtracer)> {
+) -> Result<(ScanOutputs, Option<Backtracer>)> {
     log::info!("Scanning {}", link_info.output_file.display());
     let start = Instant::now();
     let file_bytes = std::fs::read(&link_info.output_file)
         .with_context(|| format!("Failed to read `{}`", link_info.output_file.display()))?;
     checker.timings.add_timing(start, "Read bin file");
 
-    let mut backtracer = Backtracer::new(checker.sysroot.clone());
+    let backtraces = !checker.args.no_backtrace;
+    let mut backtracer = backtraces.then(|| Backtracer::new(checker.sysroot.clone()));
     let outputs =
-        scan_object_with_bin_bytes(&file_bytes, checker, &mut backtracer, link_info, paths)?;
+        scan_object_with_bin_bytes(&file_bytes, checker, backtracer.as_mut(), link_info, paths)?;
 
-    backtracer.provide_bin_bytes(file_bytes);
+    if let Some(b) = backtracer.as_mut() {
+        b.provide_bin_bytes(file_bytes);
+    }
     Ok((outputs, backtracer))
 }
 
 fn scan_object_with_bin_bytes(
     bin_file_bytes: &Vec<u8>,
     checker: &mut Checker,
-    backtracer: &mut Backtracer,
+    backtracer: Option<&mut Backtracer>,
     link_info: &LinkInfo,
     paths: &[PathBuf],
 ) -> Result<ScanOutputs> {
@@ -365,7 +368,9 @@ impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
                 }
                 for target_symbol in target_symbols {
                     if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol) {
-                        self.backtracer.add_reference(bin_location, *target_address);
+                        if let Some(b) = self.backtracer.as_mut() {
+                            b.add_reference(bin_location, *target_address);
+                        }
                     }
                     let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
