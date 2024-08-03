@@ -282,11 +282,10 @@ The field `common.version` is the only required field in the config file.
 
 ```toml
 [common]
-version = 1
+version = 2
 ```
 
-At present, the only supported version is 1. If we decide to change the default values for any
-fields in future, we'll add a new supported version number and 1 will continue to have the defaults
-it has now. In this regard, `common.version` is a bit like `package.edition` in `Cargo.toml`. It's
+If we decide to change the default values for any fields in future, we'll add a new supported version number.
+In this regard, `common.version` is a bit like `package.edition` in `Cargo.toml`. It's
 intended as a way to preserve old behaviour while making breaking changes, in particular breaking
 changes that might otherwise go unnoticed.
