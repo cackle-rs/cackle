@@ -121,6 +121,9 @@ impl<'a> CargoRunner<'a> {
             self.args,
             &self.config.raw.common,
         );
+        for pkg in &self.args.package {
+            command.arg("-p").arg(pkg);
+        }
         if self.args.command.is_none() {
             let default_build_flags = ["--all-targets".to_owned()];
             for flag in self

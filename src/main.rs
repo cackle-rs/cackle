@@ -82,7 +82,7 @@ enum OuterCommand {
 #[clap(version, about)]
 struct Args {
     /// Directory containing crate to analyze. Defaults to current working directory.
-    #[clap(short, long)]
+    #[clap(long)]
     path: Option<PathBuf>,
 
     /// Path to cackle.toml. Defaults to cackle.toml in the directory containing Cargo.toml.
@@ -162,6 +162,12 @@ struct Args {
     /// Disable backtraces (may reduce peak memory consumption).
     #[clap(long)]
     no_backtrace: bool,
+
+    // We may at some point allow this to be a short flag, but should probably wait a few releases.
+    // -p was previously accepted for --path.
+    /// Packages to build and analyse.
+    #[clap(long)]
+    package: Vec<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
