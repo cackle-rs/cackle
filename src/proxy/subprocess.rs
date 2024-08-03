@@ -148,7 +148,14 @@ fn proxy_binary(
         let Some(sandbox) = crate::sandbox::for_perm_sel(&sandbox_config, &orig_bin, &perm_sel)?
         else {
             // Config says to run without a sandbox.
-            return Ok(command.args(args).status()?.into());
+            return Ok(command
+                // If the command is a build script and it runs rustc, we want it to invoke rustc
+                // directly, not to go via our wrapper. This is also consistent with what happens if
+                // the command were to be run in a sandbox.
+                .env_remove("RUSTC_WRAPPER")
+                .args(args)
+                .status()?
+                .into());
         };
 
         let output = sandbox.run(&command)?;
