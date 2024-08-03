@@ -127,9 +127,6 @@ allow_unsafe = true
 
 [pkg.crc32fast]
 allow_unsafe = true
-build.allow_apis = [
-    "process",
-]
 
 [pkg.indexmap]
 allow_unsafe = true
@@ -139,9 +136,6 @@ allow_unsafe = true
 
 [pkg.syn]
 allow_unsafe = true
-build.allow_apis = [
-    "process",
-]
 
 [pkg.utf8parse]
 allow_unsafe = true
