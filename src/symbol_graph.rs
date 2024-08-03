@@ -139,7 +139,9 @@ pub(crate) fn scan_objects(
         .with_context(|| format!("Failed to read `{}`", link_info.output_file.display()))?;
     checker.timings.add_timing(start, "Read bin file");
 
-    let backtraces = !checker.args.no_backtrace;
+    // Backtraces require that we keep a bunch of stuff around, which uses up memory, so we only do
+    // it if the UI is active and if we haven't explicitly disabled backtraces.
+    let backtraces = !checker.args.no_backtrace && !checker.args.no_ui;
     let mut backtracer = backtraces.then(|| Backtracer::new(checker.sysroot.clone()));
     let outputs =
         scan_object_with_bin_bytes(&file_bytes, checker, backtracer.as_mut(), link_info, paths)?;
