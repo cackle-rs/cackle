@@ -315,21 +315,7 @@ allow_unsafe = true
 [pkg.tui-input]
 allow_unsafe = true
 
-[pkg.zerocopy-derive]
-allow_proc_macro = true
-
-[pkg.zerocopy]
-allow_unsafe = true
-
 [pkg.allocator-api2]
-allow_unsafe = true
-
-[pkg.version_check]
-from.build.allow_apis = [
-    "process",
-]
-
-[pkg.ahash]
 allow_unsafe = true
 
 [pkg.lru]
@@ -337,3 +323,6 @@ allow_unsafe = true
 
 [pkg.derive_more]
 allow_proc_macro = true
+
+[pkg.foldhash]
+allow_unsafe = true
