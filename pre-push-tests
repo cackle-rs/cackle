@@ -3,4 +3,8 @@ set -e
 cargo fmt --check
 cargo test
 cargo clippy -- -D warnings
+
+if [ ! -d "target/cackle/saved-cackle-rpcs" ]; then
+    cargo run --release -- acl --save-requests
+fi
 cargo run --release -- acl --replay-requests
