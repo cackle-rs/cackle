@@ -326,3 +326,6 @@ allow_proc_macro = true
 
 [pkg.foldhash]
 allow_unsafe = true
+
+[pkg.getrandom]
+allow_unsafe = true
