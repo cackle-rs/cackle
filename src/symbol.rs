@@ -15,7 +15,7 @@ pub(crate) struct Symbol<'data> {
     bytes: Bytes<'data>,
 }
 
-impl<'data> Symbol<'data> {
+impl Symbol<'_> {
     pub(crate) fn borrowed(data: &[u8]) -> Symbol {
         Symbol {
             bytes: Bytes::Borrowed(data),
@@ -86,7 +86,7 @@ impl<'data> Symbol<'data> {
     }
 }
 
-impl<'data> Display for Symbol<'data> {
+impl Display for Symbol<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(sym_string) = self.to_str() {
             write!(f, "{:#}", demangle(sym_string))?;
@@ -97,7 +97,7 @@ impl<'data> Display for Symbol<'data> {
     }
 }
 
-impl<'data> Debug for Symbol<'data> {
+impl Debug for Symbol<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(sym_string) = self.to_str() {
             // For valid UTF-8, we just print as a string. We want something that fits on one line,

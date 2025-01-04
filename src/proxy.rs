@@ -90,7 +90,7 @@ pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()
     Ok(())
 }
 
-impl<'a> CargoRunner<'a> {
+impl CargoRunner<'_> {
     /// Invokes `cargo build` in the specified directory with us acting as proxy versions of rustc
     /// and the linker. If calling this, you must call handle_wrapped_binaries from the start of
     /// main.

@@ -81,7 +81,7 @@ impl Namespace {
     }
 }
 
-impl<'input> DebugName<'input> {
+impl DebugName<'_> {
     pub(crate) fn names_iterator(&self) -> NamesIterator<NonMangledIterator> {
         NamesIterator::new(NonMangledIterator::new(
             &self.namespace.parts,
@@ -186,7 +186,7 @@ pub(crate) struct NamePartsIterator<'it, 'data, I: Clone + Iterator<Item = Deman
     ended: bool,
 }
 
-impl<'it, 'data, I> Iterator for NamePartsIterator<'it, 'data, I>
+impl<'data, I> Iterator for NamePartsIterator<'_, 'data, I>
 where
     I: Clone + Iterator<Item = DemangleToken<'data>>,
 {
@@ -207,7 +207,7 @@ where
     }
 }
 
-impl<'it, 'data, I> Drop for NamePartsIterator<'it, 'data, I>
+impl<'data, I> Drop for NamePartsIterator<'_, 'data, I>
 where
     I: Clone + Iterator<Item = DemangleToken<'data>>,
 {
@@ -343,7 +343,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
     }
 }
 
-impl<'input> DebugName<'input> {
+impl DebugName<'_> {
     pub(crate) fn to_heap(&self) -> DebugName<'static> {
         DebugName {
             namespace: self.namespace.clone(),
@@ -377,7 +377,7 @@ enum NamesIteratorState<I> {
     },
 }
 
-impl<'input> SymbolAndName<'input> {
+impl SymbolAndName<'_> {
     pub(crate) fn symbol_or_debug_name(&self) -> Result<SymbolOrDebugName> {
         if let Some(debug_name) = self.debug_name.as_ref() {
             return Ok(SymbolOrDebugName::DebugName(debug_name.to_heap()));
@@ -396,7 +396,7 @@ impl Display for Name {
     }
 }
 
-impl<'input> Display for SymbolAndName<'input> {
+impl Display for SymbolAndName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = self.debug_name.as_ref() {
             Display::fmt(&name, f)?;
@@ -428,7 +428,7 @@ impl Display for Namespace {
     }
 }
 
-impl<'input> Display for DebugName<'input> {
+impl Display for DebugName<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.namespace, f)?;
         if !self.namespace.is_empty() {

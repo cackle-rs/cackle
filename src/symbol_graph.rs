@@ -249,7 +249,7 @@ impl ScanOutputs {
     }
 }
 
-impl<'input, 'backtracer> ApiUsageCollector<'input, 'backtracer> {
+impl<'input> ApiUsageCollector<'input, '_> {
     fn process_file(
         &mut self,
         filename: &Path,
@@ -552,7 +552,7 @@ enum LocationFetcher<'a> {
     AlreadyResolved(&'a SourceLocation),
 }
 
-impl<'a> LocationFetcher<'a> {
+impl LocationFetcher<'_> {
     fn location(&self) -> Result<SourceLocation> {
         match self {
             LocationFetcher::FrameWithFallback {
@@ -698,7 +698,7 @@ impl<'symbol, 'input: 'symbol> BinInfo<'input> {
     }
 }
 
-impl<'a> TryFrom<&addr2line::Location<'a>> for SourceLocation {
+impl TryFrom<&addr2line::Location<'_>> for SourceLocation {
     type Error = ();
     fn try_from(value: &addr2line::Location) -> std::result::Result<Self, ()> {
         let addr2line::Location {
@@ -713,7 +713,7 @@ impl<'a> TryFrom<&addr2line::Location<'a>> for SourceLocation {
     }
 }
 
-impl<'input> BinInfo<'input> {
+impl BinInfo<'_> {
     /// Runs `callback` for each name in `symbol` or in the name obtained for the debug information
     /// for `symbol`. Also supplies information about the name source and a set of APIs that match
     /// the name.
@@ -785,7 +785,7 @@ pub(crate) enum NameSource<'symbol> {
     DebugName(DebugName<'static>),
 }
 
-impl<'symbol> NameSource<'symbol> {
+impl NameSource<'_> {
     fn to_owned(&self) -> NameSource<'static> {
         match self {
             NameSource::Symbol(symbol) => NameSource::Symbol(symbol.to_heap()),
@@ -794,7 +794,7 @@ impl<'symbol> NameSource<'symbol> {
     }
 }
 
-impl<'symbol> Display for NameSource<'symbol> {
+impl Display for NameSource<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NameSource::Symbol(symbol) => symbol.fmt(f),
