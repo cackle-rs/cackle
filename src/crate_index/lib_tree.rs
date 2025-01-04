@@ -41,7 +41,7 @@ struct LibTreeBuilder<'a> {
     pkg_name_to_ids: &'a FxHashMap<Arc<str>, Vec<PackageId>>,
 }
 
-impl<'a> LibTreeBuilder<'a> {
+impl LibTreeBuilder<'_> {
     fn build(mut self, dir: &Path) -> Result<LibTree> {
         let output = Command::new("cargo")
             .current_dir(dir)

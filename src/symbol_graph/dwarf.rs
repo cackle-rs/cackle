@@ -47,7 +47,7 @@ pub(crate) struct InlinedFunction<'input> {
     pub(crate) call_location: CallLocation<'input>,
 }
 
-impl<'input> CallLocation<'input> {
+impl CallLocation<'_> {
     pub(crate) fn location(&self) -> Result<SourceLocation> {
         let line = self
             .line
@@ -254,7 +254,7 @@ struct UnitState<'input, 'dwarf> {
     subprogram_namespaces: FxHashMap<UnitOffset, Namespace>,
 }
 
-impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
+impl<'input> UnitState<'input, '_> {
     fn attr_string(
         &self,
         attr: AttributeValue<EndianSlice<'input, LittleEndian>, usize>,
@@ -303,14 +303,14 @@ impl<'input, 'dwarf> UnitState<'input, 'dwarf> {
         match attr.value() {
             AttributeValue::UnitRef(unit_offset) => {
                 let unit = self.unit;
-                return self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner);
+                self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner)
             }
             AttributeValue::DebugInfoRef(offset) => {
                 let unit = scanner.unit_containing(offset)?;
                 let unit_offset = offset
                     .to_unit_offset(&unit.header)
                     .ok_or_else(|| anyhow!("Invalid unit offset"))?;
-                return self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner);
+                self.get_symbol_and_name_in_unit(unit, unit_offset, max_depth, scanner)
             }
             _ => {
                 bail!("Unsupported abstract_origin type: {:?}", attr.value());
@@ -403,7 +403,7 @@ struct DwarfScanner<'input> {
     units: Vec<gimli::Unit<EndianSlice<'input, LittleEndian>>>,
 }
 
-impl<'input> SymbolDebugInfo<'input> {
+impl SymbolDebugInfo<'_> {
     pub(crate) fn source_location(&self) -> SourceLocation {
         let mut filename = self.compdir.to_owned();
         if let Some(directory) = self.directory {

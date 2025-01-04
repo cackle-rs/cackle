@@ -20,7 +20,7 @@ pub(crate) enum CowArc<'data, T: ?Sized> {
     Borrowed(&'data T),
 }
 
-impl<'data, T: ?Sized> CowArc<'data, T> {
+impl<T: ?Sized> CowArc<'_, T> {
     /// Returns a reference to the data contained within. Note that the returned reference is valid
     /// for the lifetime of `self`, not for 'data, since if we're stored on the heap, we can't
     /// provide a reference that's valid for 'data, which may be longer (and likely 'static).
@@ -32,7 +32,7 @@ impl<'data, T: ?Sized> CowArc<'data, T> {
     }
 }
 
-impl<'data, T: ?Sized> Clone for CowArc<'data, T> {
+impl<T: ?Sized> Clone for CowArc<'_, T> {
     fn clone(&self) -> Self {
         match self {
             Self::Heap(arg0) => Self::Heap(Arc::clone(arg0)),
@@ -41,7 +41,7 @@ impl<'data, T: ?Sized> Clone for CowArc<'data, T> {
     }
 }
 
-impl<'data, V: Clone> CowArc<'data, [V]> {
+impl<V: Clone> CowArc<'_, [V]> {
     /// Create an instance that is heap-allocated and reference counted and thus can be used beyond
     /// the lifetime 'data.
     pub(crate) fn to_heap(&self) -> CowArc<'static, [V]> {
@@ -52,7 +52,7 @@ impl<'data, V: Clone> CowArc<'data, [V]> {
     }
 }
 
-impl<'data> CowArc<'data, str> {
+impl CowArc<'_, str> {
     /// Create an instance that is heap-allocated and reference counted and thus can be used beyond
     /// the lifetime 'data.
     pub(crate) fn to_heap(&self) -> CowArc<'static, str> {
@@ -63,7 +63,7 @@ impl<'data> CowArc<'data, str> {
     }
 }
 
-impl<'data, T: ?Sized> Deref for CowArc<'data, T> {
+impl<T: ?Sized> Deref for CowArc<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -71,27 +71,27 @@ impl<'data, T: ?Sized> Deref for CowArc<'data, T> {
     }
 }
 
-impl<'data, T: PartialEq + ?Sized> PartialEq for CowArc<'data, T> {
+impl<T: PartialEq + ?Sized> PartialEq for CowArc<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.data().eq(other.data())
     }
 }
 
-impl<'data, T: Hash + ?Sized> Hash for CowArc<'data, T> {
+impl<T: Hash + ?Sized> Hash for CowArc<'_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.data().hash(state);
     }
 }
 
-impl<'data, T: PartialOrd + ?Sized> PartialOrd for CowArc<'data, T> {
+impl<T: PartialOrd + ?Sized> PartialOrd for CowArc<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.data().partial_cmp(other.data())
     }
 }
 
-impl<'data, T: Eq + ?Sized> Eq for CowArc<'data, T> {}
+impl<T: Eq + ?Sized> Eq for CowArc<'_, T> {}
 
-impl<'data, T: Ord + ?Sized> Ord for CowArc<'data, T> {
+impl<T: Ord + ?Sized> Ord for CowArc<'_, T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.data().cmp(other.data())
     }

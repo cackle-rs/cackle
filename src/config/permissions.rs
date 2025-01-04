@@ -361,7 +361,7 @@ impl<'de> Deserialize<'de> for PermSel {
 
 struct PermSelVisitor;
 
-impl<'de> serde::de::Visitor<'de> for PermSelVisitor {
+impl serde::de::Visitor<'_> for PermSelVisitor {
     type Value = PermSel;
 
     fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
