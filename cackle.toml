@@ -329,3 +329,6 @@ allow_unsafe = true
 
 [pkg.getrandom]
 allow_unsafe = true
+build.allow_apis = [
+    "process",
+]
