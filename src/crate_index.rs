@@ -248,10 +248,7 @@ impl PackageId {
         let name = get_env("CARGO_PKG_NAME")?;
         let version_string = get_env("CARGO_PKG_VERSION")?;
         let version = Version::parse(&version_string).with_context(|| {
-            format!(
-                "Package `{}` has invalid version string `{}`",
-                name, version_string
-            )
+            format!("Package `{name}` has invalid version string `{version_string}`")
         })?;
         let non_unique_pkg_names = get_env(MULTIPLE_VERSION_PKG_NAMES_ENV)?;
         let name_is_unique = non_unique_pkg_names.split(',').all(|p| p != name);
@@ -267,7 +264,7 @@ impl PackageId {
         &self.version
     }
 
-    pub(crate) fn crate_name(&self) -> Cow<str> {
+    pub(crate) fn crate_name<'id>(&'id self) -> Cow<'id, str> {
         if self.name.contains('-') {
             self.name.replace('-', "_").into()
         } else {

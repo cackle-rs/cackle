@@ -79,8 +79,7 @@ impl LibTreeBuilder<'_> {
             .context("Failed to parse package version from `cargo tree`")?;
         let packages_with_name = self.pkg_name_to_ids.get(pkg_name).with_context(|| {
             format!(
-                "`cargo tree` output contained package `{}` not in `cargo metadata` output",
-                pkg_name
+                "`cargo tree` output contained package `{pkg_name}` not in `cargo metadata` output"
             )
         })?;
         let package_id = packages_with_name

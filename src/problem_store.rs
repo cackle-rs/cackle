@@ -48,7 +48,7 @@ impl ProblemStoreRef {
         outcome.recv().unwrap_or(Outcome::GiveUp)
     }
 
-    pub(crate) fn lock(&self) -> MutexGuard<ProblemStore> {
+    pub(crate) fn lock<'a>(&'a self) -> MutexGuard<'a, ProblemStore> {
         self.inner.lock().unwrap()
     }
 }

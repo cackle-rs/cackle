@@ -115,7 +115,7 @@ impl Display for CommandDisplay {
             let arg = arg.to_string_lossy();
             if arg.contains(' ') || arg.contains('"') || arg.is_empty() {
                 // Use debug print, since that gives us quotes.
-                write!(f, " {:?}", arg)?;
+                write!(f, " {arg:?}")?;
             } else {
                 // Print without quotes, since it probably isn't necessary.
                 write!(f, " {arg}")?

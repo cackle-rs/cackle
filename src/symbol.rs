@@ -15,8 +15,8 @@ pub(crate) struct Symbol<'data> {
     bytes: Bytes<'data>,
 }
 
-impl Symbol<'_> {
-    pub(crate) fn borrowed(data: &[u8]) -> Symbol {
+impl<'data> Symbol<'data> {
+    pub(crate) fn borrowed(data: &'data [u8]) -> Symbol<'data> {
         Symbol {
             bytes: Bytes::Borrowed(data),
         }
@@ -40,7 +40,7 @@ impl Symbol<'_> {
     }
 
     /// Splits the name of this symbol into names. See `crate::names::split_names` for details.
-    pub(crate) fn names(&self) -> Result<NamesIterator<DemangleIterator>> {
+    pub(crate) fn names<'a>(&'a self) -> Result<NamesIterator<'a, DemangleIterator<'a>>> {
         Ok(NamesIterator::new(DemangleIterator::new(self.to_str()?)))
     }
 
