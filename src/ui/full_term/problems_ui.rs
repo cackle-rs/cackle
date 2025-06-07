@@ -770,10 +770,7 @@ fn usage_source_lines(
         } else {
             "  "
         };
-        let mut spans = vec![Span::from(format!(
-            "{marker}{:gutter_width$}: ",
-            line_number
-        ))];
+        let mut spans = vec![Span::from(format!("{marker}{line_number:gutter_width$}: "))];
         let column = (line_number == target_line)
             .then(|| source_location.column())
             .flatten();

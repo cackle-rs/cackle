@@ -494,7 +494,9 @@ impl<'input> SymbolDebugInfoScanner<'input> {
     }
 }
 
-fn path_from_opt_slice(slice: Option<gimli::EndianSlice<gimli::LittleEndian>>) -> &Path {
+fn path_from_opt_slice<'input>(
+    slice: Option<gimli::EndianSlice<'input, gimli::LittleEndian>>,
+) -> &'input Path {
     slice
         .map(|dir| Path::new(OsStr::from_bytes(dir.slice())))
         .unwrap_or_else(|| Path::new(""))

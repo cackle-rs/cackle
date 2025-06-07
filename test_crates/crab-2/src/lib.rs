@@ -33,7 +33,7 @@ pub mod stuff {
         println!("CRAB_2_EXT_ENV: {:?}", option_env!("CRAB_2_EXT_ENV"));
 
         let total: u32 = crate::DATA.iter().cloned().map(|byte| byte as u32).sum();
-        println!("{}", total);
+        println!("{total}");
     }
 }
 

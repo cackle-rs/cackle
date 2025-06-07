@@ -427,7 +427,7 @@ fn display_usages(
             for u in local_usages {
                 write!(f, "      -> {} [{}", u.to_source, u.source_location.line(),)?;
                 if let Some(column) = u.source_location.column() {
-                    write!(f, ":{}", column)?;
+                    write!(f, ":{column}")?;
                 }
                 writeln!(f, "]")?;
             }

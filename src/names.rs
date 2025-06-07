@@ -81,8 +81,8 @@ impl Namespace {
     }
 }
 
-impl DebugName<'_> {
-    pub(crate) fn names_iterator(&self) -> NamesIterator<NonMangledIterator> {
+impl<'input> DebugName<'input> {
+    pub(crate) fn names_iterator<'a>(&'a self) -> NamesIterator<'a, NonMangledIterator<'a>> {
         NamesIterator::new(NonMangledIterator::new(
             &self.namespace.parts,
             self.name.as_ref(),
@@ -254,7 +254,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                     if self.as_final == Some(text)
                         && self
                             .as_final
-                            .is_some_and(|t| t.as_ptr() as usize == text.as_ptr() as usize)
+                            .is_some_and(|t| std::ptr::eq(t.as_ptr(), text.as_ptr()))
                     {
                         // This text was already output as the final part of an as-name. Ignore it.
                         continue;
@@ -343,7 +343,7 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
     }
 }
 
-impl DebugName<'_> {
+impl<'input> DebugName<'input> {
     pub(crate) fn to_heap(&self) -> DebugName<'static> {
         DebugName {
             namespace: self.namespace.clone(),
@@ -351,7 +351,7 @@ impl DebugName<'_> {
         }
     }
 
-    pub(crate) fn new(namespace: Namespace, name: &str) -> DebugName {
+    pub(crate) fn new(namespace: Namespace, name: &'input str) -> DebugName<'input> {
         DebugName {
             namespace,
             name: Utf8Bytes::Borrowed(name),
@@ -449,7 +449,7 @@ impl Display for SymbolOrDebugName {
 
 impl Debug for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Name({})", self)
+        write!(f, "Name({self})")
     }
 }
 

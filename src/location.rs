@@ -50,7 +50,7 @@ impl Display for SourceLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} [{}", self.filename.display(), self.line)?;
         if let Some(column) = self.column {
-            write!(f, ":{}", column)?;
+            write!(f, ":{column}")?;
         }
         write!(f, "]")
     }

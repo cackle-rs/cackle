@@ -356,21 +356,21 @@ impl Checker {
         Problem::UsesBuildScript(pkg_id.clone()).into()
     }
 
-    pub(crate) fn pkg_ids_from_source_path(
-        &self,
+    pub(crate) fn pkg_ids_from_source_path<'checker>(
+        &'checker self,
         source_path: &Path,
-    ) -> Result<Cow<Vec<PackageId>>> {
+    ) -> Result<Cow<'checker, [PackageId]>> {
         self.opt_pkg_ids_from_source_path(source_path)
             .ok_or_else(|| anyhow!("Couldn't find crate name for {}", source_path.display(),))
     }
 
-    pub(crate) fn opt_pkg_ids_from_source_path(
-        &self,
+    pub(crate) fn opt_pkg_ids_from_source_path<'checker>(
+        &'checker self,
         source_path: &Path,
-    ) -> Option<Cow<Vec<PackageId>>> {
+    ) -> Option<Cow<'checker, [PackageId]>> {
         self.path_to_pkg_ids
             .get(source_path)
-            .map(Cow::Borrowed)
+            .map(|ids| Cow::Borrowed(ids.as_slice()))
             .or_else(|| {
                 // If the source path is from the rust standard library, or from one of the
                 // precompiled crates that comes with the standard library, then report no crates.

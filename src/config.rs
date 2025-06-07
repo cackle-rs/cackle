@@ -479,7 +479,7 @@ mod tests {
     fn check_unknown_field(context: &str) {
         // Make sure that without the unknown field, it parses OK.
         parse(context).unwrap();
-        assert!(parse(&format!("{}\n no_such_field = 1\n", context)).is_err());
+        assert!(parse(&format!("{context}\n no_such_field = 1\n")).is_err());
     }
 
     #[test]
