@@ -291,7 +291,7 @@ impl<'input> ApiUsageCollector<'input, '_> {
         checker: &Checker,
         ctx: &addr2line::Context<EndianSlice<'input, LittleEndian>>,
     ) -> Result<()> {
-        debug!("Processing object file {}", filename);
+        debug!("Processing object file {filename}");
 
         let obj = object::File::parse(file_bytes).context("Failed to parse object file")?;
         let object_index = ObjectIndex::new(&obj);
