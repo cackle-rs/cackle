@@ -216,7 +216,7 @@ fn main() -> Result<()> {
     let (abort_send, abort_recv) = std::sync::mpsc::channel();
     let cackle = Cackle::new(args, abort_send)?;
     let exit_code = cackle.run_and_report_errors(abort_recv);
-    info!("Shutdown with exit code {}", exit_code);
+    info!("Shutdown with exit code {exit_code}");
     std::process::exit(exit_code.code());
 }
 
