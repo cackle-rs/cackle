@@ -127,6 +127,9 @@ allow_unsafe = true
 
 [pkg.crc32fast]
 allow_unsafe = true
+build.allow_apis = [
+    "process",
+]
 
 [pkg.indexmap]
 allow_unsafe = true
