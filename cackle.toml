@@ -344,3 +344,8 @@ build.allow_apis = [
 allow_apis = [
     "fs",
 ]
+
+[pkg.quote]
+build.allow_apis = [
+    "process",
+]
