@@ -98,12 +98,6 @@ build.allow_apis = [
     "process",
 ]
 
-[pkg.autocfg]
-allow_apis = [
-    "fs",
-    "process",
-]
-
 [pkg.bitflags]
 allow_unsafe = true
 
@@ -349,3 +343,6 @@ allow_apis = [
 build.allow_apis = [
     "process",
 ]
+
+[pkg.simd-adler32]
+allow_unsafe = true
