@@ -48,19 +48,30 @@ pub(crate) fn command(
             &[]
         }
     };
+
     command
         .arg("--config")
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.inherits=\"dev\""));
+
     // Optimisation would likely make it harder to figure out where code came from.
     command
         .arg("--config")
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.opt-level=0"));
+
+    // The user may have turned off or reduced debug info in their ~/.cargo/config.toml. We need
+    // debug info, so make sure it's on.
+    command
+        .arg("--config")
+        .arg(format!("profile.{DEFAULT_PROFILE_NAME}.debug=true"));
+
     // We currently always clean before we build, so incremental compilation would just be a waste.
     command
         .arg("--config")
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.incremental=false"));
+
     // We don't currently support split debug info.
     command.arg("--config").arg("split-debuginfo=\"off\"");
+
     let profile = profile_name(args, config);
     command.arg("--profile").arg(profile);
     command.env(PROFILE_NAME_ENV, profile);
