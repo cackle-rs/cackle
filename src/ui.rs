@@ -52,7 +52,12 @@ pub(crate) fn start_ui(
     let mut ui: Box<dyn UserInterface> = match args.ui_kind() {
         Kind::None => {
             info!("Starting null UI");
-            Box::new(null_ui::NullUi::new(args, abort_sender))
+            Box::new(null_ui::NullUi::new(
+                args,
+                abort_sender,
+                config_path.to_owned(),
+                checker,
+            ))
         }
         #[cfg(feature = "ui")]
         Kind::Basic => {

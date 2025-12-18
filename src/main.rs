@@ -159,6 +159,12 @@ struct Args {
     #[clap(long, short)]
     no_ui: bool,
 
+    /// Automatically accept the default (first) fix for all problems.
+    /// When multiple fixes are available, always applies the most sensible option.
+    /// Useful for automated configuration generation.
+    #[clap(long)]
+    auto_accept_fixes: bool,
+
     /// Disable backtraces (may reduce peak memory consumption).
     #[clap(long)]
     no_backtrace: bool,
