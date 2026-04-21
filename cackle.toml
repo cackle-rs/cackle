@@ -185,9 +185,6 @@ allow_unsafe = true
 [pkg.clap_lex]
 allow_unsafe = true
 
-[pkg.ryu]
-allow_unsafe = true
-
 [pkg.itoa]
 allow_unsafe = true
 
@@ -326,9 +323,6 @@ allow_unsafe = true
 
 [pkg.getrandom]
 allow_unsafe = true
-build.allow_apis = [
-    "process",
-]
 
 [pkg.serde_core]
 allow_unsafe = true
@@ -345,4 +339,16 @@ build.allow_apis = [
 ]
 
 [pkg.simd-adler32]
+allow_unsafe = true
+
+[pkg.wit-bindgen-rust-macro]
+allow_proc_macro = true
+
+[pkg.zmij]
+build.allow_apis = [
+    "process",
+]
+allow_unsafe = true
+
+[pkg.errno]
 allow_unsafe = true
