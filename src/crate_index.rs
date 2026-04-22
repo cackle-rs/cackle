@@ -11,8 +11,8 @@ use anyhow::bail;
 use cargo_metadata::DependencyKind;
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
-use fxhash::FxHashMap;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -380,7 +380,7 @@ pub(crate) mod testing {
     use super::PackageId;
     use super::PackageInfo;
     use cargo_metadata::semver::Version;
-    use fxhash::FxHashSet;
+    use rustc_hash::FxHashSet;
     use std::sync::Arc;
 
     pub(crate) fn pkg_id(name: &str) -> PackageId {

@@ -4,7 +4,7 @@ use crate::demangle::DemangleToken;
 use crate::names::NamesIterator;
 use crate::names::SymbolOrDebugName;
 use anyhow::Result;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashSet;
 
 /// Returns a list of name prefixes that are common to all of the from-names in the supplied API
 /// usages. These are candidates for names that are missing from an API when an off-tree usage is

@@ -1,6 +1,6 @@
 use crate::config::ApiName;
-use fxhash::FxHashMap;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 
 /// A map from a path prefix to a set of APIs. Stored as a tree where each level of the tree does
 /// lookup for the next part of the name. e.g. `std::path::PathBuf` would be stored as a tree with 4

@@ -7,7 +7,7 @@ use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use anyhow::Result;
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt::Display;

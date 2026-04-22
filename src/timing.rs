@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::time::Duration;
 use std::time::Instant;
 
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 /// Records how long different parts of execution take.
 #[derive(Default)]

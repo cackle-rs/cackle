@@ -1,7 +1,7 @@
 use crate::config::ApiName;
 use crate::config::Config;
 use crate::config::MAX_VERSION;
-use fxhash::FxHashSet;
+use rustc_hash::FxHashSet;
 use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
