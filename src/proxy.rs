@@ -209,7 +209,7 @@ impl CargoRunner<'_> {
             // We need to concurrently accept connections from our proxy subprocesses and also check to
             // see if our main subprocess has terminated. It should be possible to do this without
             // polling... but it's so much simpler to just poll.
-            match listener.accept() { Ok((mut connection, _)) => {
+            if let Ok((mut connection, _)) = listener.accept() {
                 let request: rpc::Request = rpc::read_from_stream(&mut connection)
                     .context("Malformed request from subprocess")?;
                 let request_handler = (request_creator)(request);
@@ -224,10 +224,10 @@ impl CargoRunner<'_> {
                             let _ = error_send.send(error);
                         }
                     })?;
-            } _ => {
+            } else {
                 // Avoid using too much CPU with our polling.
                 std::thread::sleep(Duration::from_millis(10));
-            }}
+            }
         }
 
         Ok(output_waiter)

@@ -62,14 +62,14 @@ pub(crate) fn handle_wrapped_binaries() -> Result<()> {
     } else if is_path_to_rustc(args.peek()) {
         // We're wrapping rustc.
         exit_status = proxy_rustc(&rpc_client)?;
-    } else { match LinkInfo::from_env() { Ok(link_info) => {
+    } else if let Ok(link_info) = LinkInfo::from_env() {
         // We're wrapping the linker.
         exit_status = proxy_linker(link_info, rpc_client, args)?;
-    } _ => {
+    } else {
         // We're not sure what we're wrapping, something went wrong.
         let args: Vec<String> = std::env::args().collect();
         bail!("Unexpected proxy invocation with args: {args:?}");
-    }}};
+    };
     std::process::exit(exit_status.code());
 }
 
