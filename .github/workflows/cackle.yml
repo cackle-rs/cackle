@@ -23,15 +23,17 @@ env:
 jobs:
   cackle:
     name: Cackle check and test
+    # bubblewrap is broken on Ubuntu 24.04
+    # update to ubuntu-latest once this is solved or Ubuntu 26.04 is available on GitHub
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         id: rust-toolchain
       - uses: cackle-rs/cackle-action@latest
       # Note, we don't cache the target dir, since it currently wouldn't help. We also don't include
       # the toolchain or the OS in the cache key.
-      - uses: actions/cache@v3
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/

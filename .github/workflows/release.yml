@@ -17,12 +17,14 @@ jobs:
       matrix:
         include:
         - build: linux
+          # bubblewrap is broken on Ubuntu 24.04
+          # update to ubuntu-latest once this is solved or Ubuntu 26.04 is available on GitHub
           os: ubuntu-22.04
           target: x86_64-unknown-linux-musl
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - uses: actions-rs/toolchain@v1
       with:
@@ -50,7 +52,7 @@ jobs:
         tar zcf $n.tar.gz $n
 
     - name: Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         body_path: REL.md
         files: |

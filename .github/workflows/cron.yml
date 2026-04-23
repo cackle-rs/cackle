@@ -14,9 +14,11 @@ jobs:
   cackle:
     if: github.repository == 'cackle-rs/cackle'
     name: cackle with latest
+    # bubblewrap is broken on Ubuntu 24.04
+    # update to ubuntu-latest once this is solved or Ubuntu 26.04 is available on GitHub
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: cackle-rs/cackle-action@latest
       - run: cargo update
@@ -26,9 +28,11 @@ jobs:
   test-nightly:
     if: github.repository == 'cackle-rs/cackle'
     name: Test Nightly
+    # bubblewrap is broken on Ubuntu 24.04
+    # update to ubuntu-latest once this is solved or Ubuntu 26.04 is available on GitHub
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
       id: rust-toolchain
     - run: sudo apt update && sudo apt install git bubblewrap
