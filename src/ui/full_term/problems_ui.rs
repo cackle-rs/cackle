@@ -784,8 +784,8 @@ fn usage_source_lines(
 fn format_line(out: &mut Vec<Span>, column: Option<u32>, line: &str) {
     let mut offset = 0;
     let column_offset = column.map(|c| (c as usize).saturating_sub(1));
-    for token in rustc_ap_rustc_lexer::tokenize(line) {
-        let new_offset = offset + token.len;
+    for token in ra_ap_rustc_lexer::tokenize(line, ra_ap_rustc_lexer::FrontmatterAllowed::No) {
+        let new_offset = offset + usize::try_from(token.len).unwrap();
         let token_text = &line[offset..new_offset];
         let mut style = Style::default();
         if let Some(colour) = syntax_styling::colour_for_token_kind(token.kind, token_text) {

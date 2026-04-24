@@ -22,8 +22,8 @@ pub(crate) fn scan_path(path: &Path) -> Result<Vec<SourceLocation>> {
 fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
     let mut offset = 0;
     let mut locations = Vec::new();
-    for token in rustc_ap_rustc_lexer::tokenize(source) {
-        let new_offset = offset + token.len;
+    for token in ra_ap_rustc_lexer::tokenize(source, ra_ap_rustc_lexer::FrontmatterAllowed::No) {
+        let new_offset = offset + usize::try_from(token.len).unwrap();
         let token_text = &source[offset..new_offset];
         if token_text == "unsafe" {
             let column = source[..new_offset]

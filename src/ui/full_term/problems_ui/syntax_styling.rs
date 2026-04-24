@@ -1,6 +1,6 @@
+use ra_ap_rustc_lexer::LiteralKind;
+use ra_ap_rustc_lexer::TokenKind;
 use ratatui::style::Color;
-use rustc_ap_rustc_lexer::LiteralKind;
-use rustc_ap_rustc_lexer::TokenKind;
 
 pub(super) fn colour_for_token_kind(kind: TokenKind, token_text: &str) -> Option<Color> {
     match kind {
