@@ -18,7 +18,7 @@ pub fn create_write_to_file(_item: TokenStream) -> TokenStream {
     .unwrap()
 }
 
-#[proc_macro_derive(FooBar, attributes(marker))]
+#[proc_macro_derive(FooBar)]
 pub fn derive_foo_bar(_item: TokenStream) -> TokenStream {
     "impl FooBar for Foo { fn foo_bar() -> u32 { 42 } }"
         .parse()
