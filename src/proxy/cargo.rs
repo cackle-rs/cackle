@@ -69,14 +69,6 @@ pub(crate) fn command(
         .arg("--config")
         .arg(format!("profile.{DEFAULT_PROFILE_NAME}.incremental=false"));
 
-    // Our demangler unfortunately doesn't yet support the v0 mangling scheme.
-    if is_nightly() {
-        command.env(
-            "RUSTFLAGS",
-            "-Csymbol-mangling-version=legacy -Zunstable-options",
-        );
-    }
-
     // We don't currently support split debug info.
     command.arg("--config").arg("split-debuginfo=\"off\"");
 
@@ -85,12 +77,4 @@ pub(crate) fn command(
     command.env(PROFILE_NAME_ENV, profile);
     command.args(extra_args);
     command
-}
-
-/// Returns whether we're using nightly rustc.
-fn is_nightly() -> bool {
-    Command::new("rustc")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains("-nightly"))
 }

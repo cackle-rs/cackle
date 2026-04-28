@@ -751,17 +751,20 @@ impl BinInfo<'_> {
                     )?;
                 }
             }
-        } else if let Some(symbol) = symbol_and_name.symbol.as_ref() {
-            let mut symbol_it = symbol.names()?;
-            while let Some((parts, name)) = symbol_it.next_name()? {
-                let apis = checker.apis_for_name_iterator(parts);
-                if !apis.is_empty() {
-                    got_apis = true;
-                    (callback)(
-                        name.create_name()?,
-                        NameSource::Symbol(symbol.clone()),
-                        apis,
-                    )?;
+        }
+        if !got_apis {
+            if let Some(symbol) = symbol_and_name.symbol.as_ref() {
+                let mut symbol_it = symbol.names()?;
+                while let Some((parts, name)) = symbol_it.next_name()? {
+                    let apis = checker.apis_for_name_iterator(parts);
+                    if !apis.is_empty() {
+                        got_apis = true;
+                        (callback)(
+                            name.create_name()?,
+                            NameSource::Symbol(symbol.clone()),
+                            apis,
+                        )?;
+                    }
                 }
             }
         }
