@@ -27,10 +27,31 @@ fn parse_deps(deps_text: &str) -> Result<Vec<PathBuf>> {
     let mut deps = Vec::new();
     for line in deps_text.lines() {
         if let Some(filename) = line.strip_suffix(':') {
-            deps.push(PathBuf::from(filename));
+            // Unescape Makefile escaping (e.g., "\ " -> " ")
+            let unescaped = unescape_makefile_path(filename);
+            deps.push(PathBuf::from(unescaped));
         }
     }
     Ok(deps)
+}
+
+fn unescape_makefile_path(path: &str) -> String {
+    let mut result = String::new();
+    let mut chars = path.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            // Check if this is an escaped character
+            if let Some(next_ch) = chars.next() {
+                result.push(next_ch);
+            } else {
+                // Trailing backslash, keep it
+                result.push(ch);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 fn deps_path_from_rustc_args(mut args: impl Iterator<Item = String>) -> Result<Option<PathBuf>> {
@@ -153,6 +174,21 @@ mod tests {
         assert_eq!(
             path_strings(&deps),
             &["foo/src/lib.rs", "/some/absolute/path/extra.rs"]
+        )
+    }
+
+    #[test]
+    fn test_parse_deps_with_spaces() {
+        let deps = parse_deps(indoc::indoc! {r#"
+            /some/path/foo-1235.rmeta: foo/src/lib.rs /path\ with\ spaces/extra.rs
+
+            foo/src/lib.rs:
+            /path\ with\ spaces/extra.rs:
+            "#})
+        .unwrap();
+        assert_eq!(
+            path_strings(&deps),
+            &["foo/src/lib.rs", "/path with spaces/extra.rs"]
         )
     }
 }
