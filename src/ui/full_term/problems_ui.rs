@@ -144,6 +144,9 @@ impl ProblemsUi {
         }
     }
 
+    // clippy::collapsible_match false positive: using `self.modes.len()` as a match guard
+    // doesn't compile due to the mutable borrow from `self.modes.last_mut()` above.
+    #[allow(clippy::collapsible_match)]
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(mode) = self.modes.last_mut() else {
             return Ok(());
@@ -261,10 +264,8 @@ impl ProblemsUi {
                     self.comment.as_deref().unwrap_or_default().into(),
                 ));
             }
-            (Mode::SelectProblem, KeyCode::Char('a')) => {
-                if !self.accept_single_enabled {
-                    self.modes.push(Mode::PromptAutoAccept);
-                }
+            (Mode::SelectProblem, KeyCode::Char('a')) if !self.accept_single_enabled => {
+                self.modes.push(Mode::PromptAutoAccept);
             }
             (Mode::PromptAutoAccept, KeyCode::Enter) => {
                 self.accept_single_enabled = true;

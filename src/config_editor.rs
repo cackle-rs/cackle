@@ -94,16 +94,16 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
                 perm_sel: PermSel::for_primary(pkg_id.pkg_name()),
             }));
         }
-        Problem::ExecutionFailed(failure) => {
-            if failure.output.sandbox_config.kind != Some(SandboxKind::Disabled) {
-                let perm_sel = PermSel::for_build_script(failure.crate_sel.pkg_name());
-                if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
-                    edits.push(Box::new(SandboxAllowNetwork {
-                        perm_sel: perm_sel.clone(),
-                    }));
-                }
-                edits.push(Box::new(DisableSandbox { perm_sel }));
+        Problem::ExecutionFailed(failure)
+            if failure.output.sandbox_config.kind != Some(SandboxKind::Disabled) =>
+        {
+            let perm_sel = PermSel::for_build_script(failure.crate_sel.pkg_name());
+            if !failure.output.sandbox_config.allow_network.unwrap_or(false) {
+                edits.push(Box::new(SandboxAllowNetwork {
+                    perm_sel: perm_sel.clone(),
+                }));
             }
+            edits.push(Box::new(DisableSandbox { perm_sel }));
         }
         Problem::DisallowedBuildInstruction(failure) => {
             edits.append(&mut edits_for_build_instruction(failure));

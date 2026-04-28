@@ -308,24 +308,20 @@ impl<'data, I: Clone + Iterator<Item = DemangleToken<'data>>> Iterator
                         NamesIteratorState::AsSkip {
                             gt_depth,
                             return_point,
-                        } => {
-                            if *gt_depth == 0 {
-                                match self.it.next() {
-                                    Some(DemangleToken::Text(text)) => {
-                                        self.it = return_point.clone();
-                                        self.as_final = Some(text);
-                                        self.state = NamesIteratorState::OutputtingName;
-                                        return Some(NameToken::Part(text));
-                                    }
-                                    _ => {
-                                        self.it = return_point.clone();
-                                        self.as_final = None;
-                                        self.state = NamesIteratorState::Inactive;
-                                        return Some(NameToken::EndName);
-                                    }
-                                }
+                        } if *gt_depth == 0 => match self.it.next() {
+                            Some(DemangleToken::Text(text)) => {
+                                self.it = return_point.clone();
+                                self.as_final = Some(text);
+                                self.state = NamesIteratorState::OutputtingName;
+                                return Some(NameToken::Part(text));
                             }
-                        }
+                            _ => {
+                                self.it = return_point.clone();
+                                self.as_final = None;
+                                self.state = NamesIteratorState::Inactive;
+                                return Some(NameToken::EndName);
+                            }
+                        },
                         _ => {}
                     }
                 }

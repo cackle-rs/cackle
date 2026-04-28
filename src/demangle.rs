@@ -105,10 +105,10 @@ fn parse_decimal(data: &str) -> Option<(u64, &str)> {
 }
 
 fn parse_disambiguator(data: &str) -> Option<&str> {
-    if data.starts_with('s') {
+    if let Some(rest) = data.strip_prefix('s') {
         // Disambiguator - skip 's' and everything until '_'
-        if let Some(end) = data[1..].find('_') {
-            return Some(&data[end + 2..]); // Skip past the '_'
+        if let Some(end) = rest.find('_') {
+            return Some(&rest[end + 1..]); // Skip past the '_'
         }
         None
     } else {
@@ -118,11 +118,9 @@ fn parse_disambiguator(data: &str) -> Option<&str> {
 
 fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
     // Check for punycode (u followed by decimal length)
-    if data.starts_with('u') {
-        let rest = &data[1..];
+    if let Some(rest) = data.strip_prefix('u') {
         if let Some((len, rest)) = parse_decimal(rest) {
-            if rest.starts_with('_') {
-                let rest = &rest[1..];
+            if let Some(rest) = rest.strip_prefix('_') {
                 // Punycode identifier - for simplicity, we'll just extract the raw bytes
                 if len as usize <= rest.len() {
                     let (ident, rest) = rest.split_at(len as usize);

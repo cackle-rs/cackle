@@ -201,11 +201,7 @@ impl CrateIndex {
             if let Some(pkg_id) = self.dir_to_pkg_id.get(path) {
                 return Some(pkg_id);
             }
-            if let Some(parent) = path.parent() {
-                path = parent;
-            } else {
-                return None;
-            }
+            path = path.parent()?;
         }
     }
 
