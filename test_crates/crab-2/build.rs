@@ -8,6 +8,7 @@ fn main() {
     run(Command::new("cc")
         .arg("-c")
         .arg(base_dir.join("nothing.c"))
+        .arg("-fPIC")
         .arg("-o")
         .arg(&object_file));
     run(Command::new("ar")
