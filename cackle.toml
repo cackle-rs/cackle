@@ -264,6 +264,7 @@ test.sandbox.make_writable = [
     "test_crates/custom_target_dir",
 ]
 test.sandbox.allow_network = true
+test.allow_unsafe = true
 
 [pkg.clap_builder]
 allow_apis = [

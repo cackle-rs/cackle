@@ -71,7 +71,8 @@ fn integration_test() -> Result<()> {
     // Trigger crab-2 to rebuild its test, but not rerun its build script. This ensures that
     // variables set by the build script survive between runs even if the build script doesn't
     // rerun.
-    std::env::set_var("CRAB_2_EXT_ENV", "1");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("CRAB_2_EXT_ENV", "1") };
 
     run_with_args(&tmpdir, &["test", "-v"], false)?;
     let out = run_with_args(
@@ -86,7 +87,8 @@ fn integration_test() -> Result<()> {
     };
     assert_eq!(n, 42);
 
-    std::env::set_var("CRAB_9_CRASH_TEST", "1");
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe { std::env::set_var("CRAB_9_CRASH_TEST", "1") };
     let out = run_with_args(
         &tmpdir,
         &[
