@@ -1,5 +1,5 @@
-use crate::config::permissions::PermSel;
 use crate::config::Config;
+use crate::config::permissions::PermSel;
 use crate::crate_index::PackageId;
 use crate::problem::DisallowedBuildInstruction;
 use crate::problem::Problem;
@@ -42,9 +42,10 @@ impl BuildScriptReport {
                 ));
             }
             if let Some(rest) = line.strip_prefix("cargo:rustc-env=")
-                && let Some((var_name, _value)) = rest.split_once('=') {
-                    report.env_vars.push(var_name.to_owned());
-                }
+                && let Some((var_name, _value)) = rest.split_once('=')
+            {
+                report.env_vars.push(var_name.to_owned());
+            }
         }
         Ok(report)
     }
@@ -95,8 +96,8 @@ fn matches(instruction: &str, rule: &str) -> bool {
 mod tests {
     use crate::config;
     use crate::config::SandboxConfig;
-    use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
+    use crate::crate_index::testing::pkg_id;
     use crate::problem::DisallowedBuildInstruction;
     use crate::problem::Problem;
     use crate::problem::ProblemList;

@@ -5,10 +5,10 @@ use crate::names::DebugName;
 use crate::names::Namespace;
 use crate::names::SymbolAndName;
 use crate::symbol::Symbol;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use fxhash::FxHashMap;
 use gimli::Attribute;
 use gimli::AttributeValue;
@@ -151,9 +151,9 @@ impl<'input> DwarfScanner<'input> {
                     if (tag == gimli::DW_TAG_subprogram || tag == gimli::DW_TAG_variable)
                         && let Some((symbol, debug_info)) =
                             symbol_scanner.get_debug_info(&unit_state)?
-                        {
-                            self.out.symbol_debug_info.insert(symbol, debug_info);
-                        }
+                    {
+                        self.out.symbol_debug_info.insert(symbol, debug_info);
+                    }
                 } else if tag == gimli::DW_TAG_namespace || tag == gimli::DW_TAG_structure_type {
                     namespace = unit_state.scan_namespace(&mut entries, abbrev.attributes())?;
                 } else {
@@ -231,9 +231,10 @@ fn get_subprogram_namespaces(
             }
             _ => {
                 if abbrev.tag() == gimli::DW_TAG_subprogram
-                    && let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
-                        subprogram_namespaces.insert(unit_offset, parent_namespace.clone());
-                    }
+                    && let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref())
+                {
+                    subprogram_namespaces.insert(unit_offset, parent_namespace.clone());
+                }
                 entries.skip_attributes(abbrev.attributes())?;
             }
         }
@@ -572,9 +573,9 @@ impl<'input> InlinedFunctionScanner<'input> {
                         .dwarf
                         .ranges(unit_state.unit, ranges_offset)?
                         .next()?
-                    {
-                        self.low_pc = Some(first_range.begin);
-                    }
+                {
+                    self.low_pc = Some(first_range.begin);
+                }
             }
             _ => (),
         }

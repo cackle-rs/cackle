@@ -1,9 +1,9 @@
 //! Locates and parses depinfo emitted by the rust compiler.
 
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -125,28 +125,32 @@ mod tests {
 
     #[test]
     fn test_source_files_from_rustc_args_missing_crate_name() {
-        assert!(deps_path(&[
-            "rustc",
-            "--emit=dep-info,link",
-            "-C",
-            "extra-filename=-0188200cb614ae3d",
-            "--out-dir",
-            "/some/directory/target/debug/deps",
-        ])
-        .is_err());
+        assert!(
+            deps_path(&[
+                "rustc",
+                "--emit=dep-info,link",
+                "-C",
+                "extra-filename=-0188200cb614ae3d",
+                "--out-dir",
+                "/some/directory/target/debug/deps",
+            ])
+            .is_err()
+        );
     }
 
     #[test]
     fn test_source_files_from_rustc_args_missing_out_dir() {
-        assert!(deps_path(&[
-            "rustc",
-            "--emit=dep-info,link",
-            "--crate-name",
-            "foo",
-            "-C",
-            "extra-filename=-0188200cb614ae3d",
-        ])
-        .is_err());
+        assert!(
+            deps_path(&[
+                "rustc",
+                "--emit=dep-info,link",
+                "--crate-name",
+                "foo",
+                "-C",
+                "extra-filename=-0188200cb614ae3d",
+            ])
+            .is_err()
+        );
     }
 
     #[test]

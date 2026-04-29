@@ -1,21 +1,21 @@
 //! This module is responsible for applying automatic edits to cackle.toml.
 
 use crate::checker::common_prefix::common_to_prefixes;
-use crate::config::permissions::PermSel;
-use crate::config::versions::Version;
 use crate::config::ApiName;
 use crate::config::ApiPath;
 use crate::config::Config;
 use crate::config::PackageName;
 use crate::config::SandboxKind;
+use crate::config::permissions::PermSel;
+use crate::config::versions::Version;
 use crate::problem::ApiUsages;
 use crate::problem::AvailableApi;
 use crate::problem::PossibleExportedApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
 use crate::problem::UnusedAllowApi;
-use anyhow::anyhow;
 use anyhow::Result;
+use anyhow::anyhow;
 use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::fmt::Display;
@@ -1119,9 +1119,10 @@ fn set_table_value(
 ) {
     table[key] = item;
     if let Some(comment) = &opts.comment
-        && let Some(decor) = table.key_decor_mut(key) {
-            *decor = toml_edit::Decor::new(format!("# {comment}\n"), " ");
-        }
+        && let Some(decor) = table.key_decor_mut(key)
+    {
+        *decor = toml_edit::Decor::new(format!("# {comment}\n"), " ");
+    }
 }
 
 #[cfg(test)]
@@ -1129,15 +1130,15 @@ mod tests {
     use super::ConfigEditor;
     use super::Edit;
     use super::InlineStdApi;
-    use crate::config::permissions::PermSel;
-    use crate::config::permissions::PermissionScope;
     use crate::config::ApiName;
     use crate::config::Config;
     use crate::config::SandboxConfig;
+    use crate::config::permissions::PermSel;
+    use crate::config::permissions::PermissionScope;
     use crate::config_editor::fixes_for_problem;
-    use crate::crate_index::testing::pkg_id;
     use crate::crate_index::CrateSel;
     use crate::crate_index::PackageId;
+    use crate::crate_index::testing::pkg_id;
     use crate::location::SourceLocation;
     use crate::problem::ApiUsages;
     use crate::problem::DisallowedBuildInstruction;

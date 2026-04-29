@@ -11,9 +11,9 @@ use self::object_file_path::ObjectFilePath;
 use crate::checker::ApiUsage;
 use crate::checker::BinLocation;
 use crate::checker::Checker;
-use crate::config::permissions::PermissionScope;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
+use crate::config::permissions::PermissionScope;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::link_info::LinkInfo;
@@ -26,10 +26,10 @@ use crate::problem::ApiUsages;
 use crate::problem::PossibleExportedApi;
 use crate::problem::ProblemList;
 use crate::symbol::Symbol;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use ar::Archive;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
@@ -370,9 +370,10 @@ impl<'input> ApiUsageCollector<'input, '_> {
                 }
                 for target_symbol in target_symbols {
                     if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol)
-                        && let Some(b) = self.backtracer.as_mut() {
-                            b.add_reference(bin_location, *target_address);
-                        }
+                        && let Some(b) = self.backtracer.as_mut()
+                    {
+                        b.add_reference(bin_location, *target_address);
+                    }
                     let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
                         bin_location,
@@ -653,9 +654,10 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .get(section_index.0)
             .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?;
         if let Some(first_symbol_info) = section_info.first_symbol.as_ref()
-            && bin_symbols.contains_key(&first_symbol_info.symbol) {
-                return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
-            }
+            && bin_symbols.contains_key(&first_symbol_info.symbol)
+        {
+            return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
+        }
         Ok(SymbolOrSection::Section(section_index))
     }
 
@@ -750,30 +752,30 @@ impl BinInfo<'_> {
                 }
             }
         }
-        if !got_apis
-            && let Some(symbol) = symbol_and_name.symbol.as_ref() {
-                let mut symbol_it = symbol.names()?;
-                while let Some((parts, name)) = symbol_it.next_name()? {
-                    let apis = checker.apis_for_name_iterator(parts);
-                    if !apis.is_empty() {
-                        got_apis = true;
-                        (callback)(
-                            name.create_name()?,
-                            NameSource::Symbol(symbol.clone()),
-                            apis,
-                        )?;
-                    }
+        if !got_apis && let Some(symbol) = symbol_and_name.symbol.as_ref() {
+            let mut symbol_it = symbol.names()?;
+            while let Some((parts, name)) = symbol_it.next_name()? {
+                let apis = checker.apis_for_name_iterator(parts);
+                if !apis.is_empty() {
+                    got_apis = true;
+                    (callback)(
+                        name.create_name()?,
+                        NameSource::Symbol(symbol.clone()),
+                        apis,
+                    )?;
                 }
             }
+        }
         if let Some(symbol) = symbol_and_name.symbol.as_ref()
-            && !got_apis {
-                // The need to call `to_heap` here is just to get past an annoying variance issue.
-                // Fortunately it doesn't seem to affect performance significantly, so probably the
-                // optimiser is able to get rid of the allocation.
-                if let Some(x) = self.symbol_has_no_apis.get_mut(&symbol.to_heap()) {
-                    *x = true;
-                }
+            && !got_apis
+        {
+            // The need to call `to_heap` here is just to get past an annoying variance issue.
+            // Fortunately it doesn't seem to affect performance significantly, so probably the
+            // optimiser is able to get rid of the allocation.
+            if let Some(x) = self.symbol_has_no_apis.get_mut(&symbol.to_heap()) {
+                *x = true;
             }
+        }
         Ok(())
     }
 }

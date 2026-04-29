@@ -20,12 +20,13 @@ use crate::problem_store::ProblemId;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreRef;
 use crate::symbol_graph::backtrace;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use ratatui::Frame;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
@@ -43,7 +44,6 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Row;
 use ratatui::widgets::Table;
 use ratatui::widgets::Wrap;
-use ratatui::Frame;
 use std::path::Path;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -394,11 +394,12 @@ impl ProblemsUi {
                     for (usage_index, usage) in usages.iter().enumerate() {
                         items.push(ListItem::new(format!("  {}", usage.list_display())));
                         if let Some(frames) = backtrace_frames
-                            && usage_index == self.usage_index {
-                                for bt_frame in frames {
-                                    items.push(ListItem::new(format!("    {bt_frame}")));
-                                }
+                            && usage_index == self.usage_index
+                        {
+                            for bt_frame in frames {
+                                items.push(ListItem::new(format!("    {bt_frame}")));
                             }
+                        }
                     }
                 }
             }
@@ -868,13 +869,17 @@ fn render_help(f: &mut Frame, mode: Option<&Mode>) {
 }
 
 fn render_auto_accept(f: &mut Frame) {
-    render_message(f, None, &[
-        "Auto-accept edits for all problems that only have a single edit?",
-        "",
-        "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
-        "",
-        "Press enter to accept, or escape to cancel.",
-    ]);
+    render_message(
+        f,
+        None,
+        &[
+            "Auto-accept edits for all problems that only have a single edit?",
+            "",
+            "It's recommended that you look over the resulting cackle.toml afterwards to see if there are any crates with permissions that you don't think they should have.",
+            "",
+            "Press enter to accept, or escape to cancel.",
+        ],
+    );
 }
 
 fn render_message<S: AsRef<str>>(f: &mut Frame, title: Option<&str>, raw_lines: &[S]) {

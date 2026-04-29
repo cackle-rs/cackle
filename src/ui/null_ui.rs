@@ -1,5 +1,6 @@
 //! A user-interface that never prompts. This is used when non-interactive mode is selected.
 
+use crate::Args;
 use crate::checker::Checker;
 use crate::config::Config;
 use crate::config_editor;
@@ -10,15 +11,14 @@ use crate::problem::Severity;
 use crate::problem_store::ProblemId;
 use crate::problem_store::ProblemStore;
 use crate::problem_store::ProblemStoreRef;
-use crate::Args;
 use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 
 pub(crate) struct NullUi {
     args: Arc<Args>,

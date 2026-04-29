@@ -4,10 +4,10 @@ use crate::crate_index::PackageId;
 use crate::problem::AvailableApi;
 use crate::problem::Problem;
 use crate::problem::ProblemList;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -465,8 +465,8 @@ pub(crate) mod testing {
 #[cfg(test)]
 mod tests {
     use super::testing::parse;
-    use crate::config::permissions::PermSel;
     use crate::config::SandboxKind;
+    use crate::config::permissions::PermSel;
 
     #[test]
     fn empty() {
@@ -533,10 +533,12 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert!(config
-            .permissions
-            .get(&PermSel::for_build_script("foo"))
-            .is_some());
+        assert!(
+            config
+                .permissions
+                .get(&PermSel::for_build_script("foo"))
+                .is_some()
+        );
     }
 
     #[test]

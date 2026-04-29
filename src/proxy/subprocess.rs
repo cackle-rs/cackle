@@ -1,17 +1,17 @@
 //! This module contains code that is intended for running in a subprocess when we're proxying
 //! rustc, the linker or a build script. See comment on parent module for more details.
 
+use super::CONFIG_PATH_ENV;
+use super::ExitCode;
 use super::cackle_exe;
 use super::errors::get_disallowed_unsafe_locations;
 use super::rpc::BinExecutionOutput;
 use super::rpc::RustcOutput;
 use super::run_command;
-use super::ExitCode;
-use super::CONFIG_PATH_ENV;
-use crate::config::permissions::PermSel;
-use crate::config::permissions::Permissions;
 use crate::config::Config;
 use crate::config::RustcConfig;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::Permissions;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::link_info::LinkInfo;
@@ -20,10 +20,10 @@ use crate::outcome::Outcome;
 use crate::proxy::rpc::RpcClient;
 use crate::sandbox::RustcSandboxInputs;
 use crate::unsafe_checker;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use serde::Deserialize;
 use serde::Serialize;
 use std::ffi::OsString;

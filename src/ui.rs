@@ -1,19 +1,19 @@
 //! User interface for showing problems to the user and asking them what they'd like to do about
 //! them.
 
+use crate::Args;
 use crate::checker::Checker;
 use crate::crate_index::CrateIndex;
 use crate::events::AppEvent;
 use crate::problem_store::ProblemStoreRef;
-use crate::Args;
 use anyhow::Result;
 use clap::ValueEnum;
 use log::info;
 use std::path::Path;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
 
 #[cfg(feature = "ui")]

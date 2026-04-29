@@ -1,5 +1,5 @@
-use crate::config::CommonConfig;
 use crate::Args;
+use crate::config::CommonConfig;
 use clap::Parser;
 use std::path::Path;
 use std::process::Command;

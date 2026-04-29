@@ -4,9 +4,9 @@
 //! avoiding heap allocation. This demangler was built experimentally based on observed mangled
 //! symbols. We almost certainly get stuff wrong.
 
+use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
-use anyhow::Result;
 use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -120,13 +120,14 @@ fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
     // Check for punycode (u followed by decimal length)
     if let Some(rest) = data.strip_prefix('u') {
         if let Some((len, rest)) = parse_decimal(rest)
-            && let Some(rest) = rest.strip_prefix('_') {
-                // Punycode identifier - for simplicity, we'll just extract the raw bytes
-                if len as usize <= rest.len() {
-                    let (ident, rest) = rest.split_at(len as usize);
-                    return Some((ident, rest));
-                }
+            && let Some(rest) = rest.strip_prefix('_')
+        {
+            // Punycode identifier - for simplicity, we'll just extract the raw bytes
+            if len as usize <= rest.len() {
+                let (ident, rest) = rest.split_at(len as usize);
+                return Some((ident, rest));
             }
+        }
         return None;
     }
 
@@ -320,13 +321,14 @@ impl<'data> Iterator for DemangleIterator<'data> {
                         *data = rest;
                     }
                     if let Some(rest) = data.strip_prefix('$')
-                        && let Some(end_escape) = rest.find('$') {
-                            *data = &rest[end_escape + 1..];
-                            if let Ok(ch) = symbol(&rest[..end_escape]) {
-                                return Some(DemangleToken::Char(ch));
-                            }
-                            return Some(DemangleToken::UnsupportedEscape(&rest[..end_escape]));
+                        && let Some(end_escape) = rest.find('$')
+                    {
+                        *data = &rest[end_escape + 1..];
+                        if let Ok(ch) = symbol(&rest[..end_escape]) {
+                            return Some(DemangleToken::Char(ch));
                         }
+                        return Some(DemangleToken::UnsupportedEscape(&rest[..end_escape]));
+                    }
                     let end = data
                         .bytes()
                         .position(|b| b == b'.' || b == b'$')
@@ -553,24 +555,80 @@ mod tests {
 
     #[test]
     fn test_nested() {
-        check("_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
-            &["<", "alloc", "string", "String", " ", "as", " ", "core", "fmt", "Debug", ">", "fmt", "h3b29bd412ff2951f"]
+        check(
+            "_ZN58_$LT$alloc..string..String$u20$as$u20$core..fmt..Debug$GT$3fmt17h3b29bd412ff2951fE",
+            &[
+                "<",
+                "alloc",
+                "string",
+                "String",
+                " ",
+                "as",
+                " ",
+                "core",
+                "fmt",
+                "Debug",
+                ">",
+                "fmt",
+                "h3b29bd412ff2951f",
+            ],
         );
     }
 
     #[test]
     fn test_generics() {
-        check("_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE",
-            &["core", "ptr", "drop_in_place", "<", "std", "rt", "lang_start", "<", "(", ")", ">",
-                "{", "{", "closure", "}", "}", ">", "h0bb7e9fe967fc41c"]
+        check(
+            "_ZN4core3ptr85drop_in_place$LT$std..rt..lang_start$LT$$LP$$RP$$GT$..$u7b$$u7b$closure$u7d$$u7d$$GT$17h0bb7e9fe967fc41cE",
+            &[
+                "core",
+                "ptr",
+                "drop_in_place",
+                "<",
+                "std",
+                "rt",
+                "lang_start",
+                "<",
+                "(",
+                ")",
+                ">",
+                "{",
+                "{",
+                "closure",
+                "}",
+                "}",
+                ">",
+                "h0bb7e9fe967fc41c",
+            ],
         );
     }
 
     #[test]
     fn test_literal_number() {
-        check("_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E",
-            &["<", "proc_macro2", "Span", " ", "as", " ", "syn", "span", "IntoSpans", "<",
-                "[", "proc_macro2", "Span", ";", " ", "1", "]", ">", ">", "into_spans", "h8cc941d826bfc6f7"]
+        check(
+            "_ZN104_$LT$proc_macro2..Span$u20$as$u20$syn..span..IntoSpans$LT$$u5b$proc_macro2..Span$u3b$$u20$1$u5d$$GT$$GT$10into_spans17h8cc941d826bfc6f7E",
+            &[
+                "<",
+                "proc_macro2",
+                "Span",
+                " ",
+                "as",
+                " ",
+                "syn",
+                "span",
+                "IntoSpans",
+                "<",
+                "[",
+                "proc_macro2",
+                "Span",
+                ";",
+                " ",
+                "1",
+                "]",
+                ">",
+                ">",
+                "into_spans",
+                "h8cc941d826bfc6f7",
+            ],
         );
     }
 

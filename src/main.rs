@@ -37,10 +37,10 @@ mod ui;
 mod unsafe_checker;
 
 use crate::proxy::subprocess::PROXY_BIN_ARG;
-use anyhow::anyhow;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use checker::Checker;
 use clap::Parser;
 use clap::Subcommand;
@@ -51,16 +51,16 @@ use outcome::ExitCode;
 use outcome::Outcome;
 use problem::Problem;
 use problem_store::ProblemStoreRef;
-use proxy::cargo::profile_name;
-use proxy::cargo::CargoOptions;
-use proxy::rpc::Request;
 use proxy::CargoOutputWaiter;
+use proxy::cargo::CargoOptions;
+use proxy::cargo::profile_name;
+use proxy::rpc::Request;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::thread::JoinHandle;
 use summary::SummaryOptions;
 use symbol_graph::ScanOutputs;
@@ -410,9 +410,10 @@ impl Cackle {
                     self.abort_sender.clone(),
                     |request| {
                         if self.args.save_requests
-                            && let Err(error) = self.save_request(&request) {
-                                println!("Failed to save request: {error}");
-                            }
+                            && let Err(error) = self.save_request(&request)
+                        {
+                            println!("Failed to save request: {error}");
+                        }
                         self.new_request_handler(Some(request))
                     },
                 );

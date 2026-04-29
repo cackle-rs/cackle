@@ -1,6 +1,6 @@
-use crate::config::permissions::PermSel;
 use crate::config::Config;
 use crate::config::PackageConfig;
+use crate::config::permissions::PermSel;
 use crate::crate_index::CrateIndex;
 use clap::{Parser, ValueEnum};
 use fxhash::FxHashMap;

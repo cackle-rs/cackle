@@ -2,11 +2,11 @@
 //! multiple problems and report them all, although in the case of errors, we usually stop.
 
 use crate::checker::ApiUsage;
-use crate::config::permissions::PermSel;
-use crate::config::permissions::PermissionScope;
 use crate::config::ApiConfig;
 use crate::config::ApiName;
 use crate::config::ApiPath;
+use crate::config::permissions::PermSel;
+use crate::config::permissions::PermissionScope;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;

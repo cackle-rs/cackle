@@ -21,16 +21,16 @@
 //! * We can capture their output and check for any directives to cargo that haven't been permitted.
 
 use self::rpc::Request;
+use crate::Args;
+use crate::RequestHandler;
 use crate::config::CommonConfig;
 use crate::config::Config;
 use crate::crate_index::CrateIndex;
 use crate::outcome::ExitCode;
 use crate::outcome::Outcome;
-use crate::Args;
-use crate::RequestHandler;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::bail;
 use std::io::Write;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
@@ -38,9 +38,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
-use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
+use std::sync::mpsc::channel;
 use std::thread::JoinHandle;
 use std::time::Duration;
 

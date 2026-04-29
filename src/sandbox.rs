@@ -1,11 +1,11 @@
-use crate::config::permissions::PermSel;
 use crate::config::RustcConfig;
 use crate::config::SandboxConfig;
 use crate::config::SandboxKind;
+use crate::config::permissions::PermSel;
 use crate::crate_index::CrateSel;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::bail;
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::path::Path;
@@ -160,9 +160,10 @@ impl RustcSandboxInputs {
             }
         }
         if let Ok(socket_path) = std::env::var(crate::proxy::SOCKET_ENV)
-            && let Some(dir) = Path::new(&socket_path).parent() {
-                result.output_directories.push(dir.to_owned());
-            }
+            && let Some(dir) = Path::new(&socket_path).parent()
+        {
+            result.output_directories.push(dir.to_owned());
+        }
         result
             .output_directories
             .retain(|d| !d.starts_with(&target_dir));
@@ -233,7 +234,9 @@ pub(crate) fn verify_kind(kind: SandboxKind) -> Result<()> {
             .output()
             .is_err()
     {
-        anyhow::bail!("Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`");
+        anyhow::bail!(
+            "Failed to run `bwrap`, perhaps it needs to be installed? On systems with apt you can `sudo apt install bubblewrap`"
+        );
     }
     Ok(())
 }
@@ -282,9 +285,10 @@ fn get_env(var_name: &str) -> Result<String> {
 fn build_directory(executable: &Path) -> Option<&Path> {
     let parent = executable.parent()?;
     if parent.file_name().is_some_and(|n| n == "deps")
-        && let Some(grandparent) = parent.parent() {
-            return Some(grandparent);
-        }
+        && let Some(grandparent) = parent.parent()
+    {
+        return Some(grandparent);
+    }
     Some(parent)
 }
 

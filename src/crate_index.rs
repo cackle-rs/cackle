@@ -2,15 +2,15 @@
 //! to which crates, which are proc macros etc.
 
 use self::lib_tree::LibTree;
+use crate::config::PackageName;
 use crate::config::permissions::PermSel;
 use crate::config::permissions::PermissionScope;
-use crate::config::PackageName;
-use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::bail;
+use cargo_metadata::DependencyKind;
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
-use cargo_metadata::DependencyKind;
 use fxhash::FxHashMap;
 use fxhash::FxHashSet;
 use serde::Deserialize;
