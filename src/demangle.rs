@@ -119,15 +119,14 @@ fn parse_disambiguator(data: &str) -> Option<&str> {
 fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
     // Check for punycode (u followed by decimal length)
     if let Some(rest) = data.strip_prefix('u') {
-        if let Some((len, rest)) = parse_decimal(rest) {
-            if let Some(rest) = rest.strip_prefix('_') {
+        if let Some((len, rest)) = parse_decimal(rest)
+            && let Some(rest) = rest.strip_prefix('_') {
                 // Punycode identifier - for simplicity, we'll just extract the raw bytes
                 if len as usize <= rest.len() {
                     let (ident, rest) = rest.split_at(len as usize);
                     return Some((ident, rest));
                 }
             }
-        }
         return None;
     }
 
@@ -320,15 +319,14 @@ impl<'data> Iterator for DemangleIterator<'data> {
                     while let Some(rest) = data.strip_prefix('.') {
                         *data = rest;
                     }
-                    if let Some(rest) = data.strip_prefix('$') {
-                        if let Some(end_escape) = rest.find('$') {
+                    if let Some(rest) = data.strip_prefix('$')
+                        && let Some(end_escape) = rest.find('$') {
                             *data = &rest[end_escape + 1..];
                             if let Ok(ch) = symbol(&rest[..end_escape]) {
                                 return Some(DemangleToken::Char(ch));
                             }
                             return Some(DemangleToken::UnsupportedEscape(&rest[..end_escape]));
                         }
-                    }
                     let end = data
                         .bytes()
                         .position(|b| b == b'.' || b == b'$')

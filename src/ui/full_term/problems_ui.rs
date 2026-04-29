@@ -393,13 +393,12 @@ impl ProblemsUi {
                         usages_for_problem(pstore_lock, self.problem_index, &self.crate_index);
                     for (usage_index, usage) in usages.iter().enumerate() {
                         items.push(ListItem::new(format!("  {}", usage.list_display())));
-                        if let Some(frames) = backtrace_frames {
-                            if usage_index == self.usage_index {
+                        if let Some(frames) = backtrace_frames
+                            && usage_index == self.usage_index {
                                 for bt_frame in frames {
                                     items.push(ListItem::new(format!("    {bt_frame}")));
                                 }
                             }
-                        }
                     }
                 }
             }

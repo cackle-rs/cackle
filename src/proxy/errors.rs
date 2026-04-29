@@ -23,8 +23,8 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
         let Ok(message) = serde_json::from_str::<Message>(line) else {
             continue;
         };
-        if message.level == "error" && message.code.code == "unsafe_code" {
-            if let Some(first_span) = message.spans.first() {
+        if message.level == "error" && message.code.code == "unsafe_code"
+            && let Some(first_span) = message.spans.first() {
                 let filename = Path::new(&first_span.file_name);
                 locations.push(SourceLocation::new(
                     std::fs::canonicalize(filename).unwrap_or_else(|_| filename.to_owned()),
@@ -32,7 +32,6 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
                     Some(first_span.column_start),
                 ));
             }
-        }
     }
     locations
 }

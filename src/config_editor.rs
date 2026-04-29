@@ -1118,11 +1118,10 @@ fn set_table_value(
     opts: &EditOpts,
 ) {
     table[key] = item;
-    if let Some(comment) = &opts.comment {
-        if let Some(decor) = table.key_decor_mut(key) {
+    if let Some(comment) = &opts.comment
+        && let Some(decor) = table.key_decor_mut(key) {
             *decor = toml_edit::Decor::new(format!("# {comment}\n"), " ");
         }
-    }
 }
 
 #[cfg(test)]

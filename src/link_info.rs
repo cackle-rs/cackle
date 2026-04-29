@@ -50,11 +50,10 @@ impl LinkInfo {
 fn get_output_file() -> Result<Arc<Path>> {
     let mut args = std::env::args();
     while let Some(arg) = args.next() {
-        if arg == "-o" {
-            if let Some(output) = args.next() {
+        if arg == "-o"
+            && let Some(output) = args.next() {
                 return Ok(Arc::from(Path::new(&output)));
             }
-        }
     }
     bail!("Failed to find output file in linker command line");
 }

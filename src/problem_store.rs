@@ -211,11 +211,10 @@ impl NotificationEntry {
             return;
         }
         self.problem_ids.extend(replacements.iter());
-        if self.problem_ids.is_empty() {
-            if let Some(sender) = self.sender.take() {
+        if self.problem_ids.is_empty()
+            && let Some(sender) = self.sender.take() {
                 let _ = sender.send(Outcome::Continue);
             }
-        }
     }
 }
 

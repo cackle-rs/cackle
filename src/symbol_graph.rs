@@ -369,11 +369,10 @@ impl<'input> ApiUsageCollector<'input, '_> {
                     });
                 }
                 for target_symbol in target_symbols {
-                    if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol) {
-                        if let Some(b) = self.backtracer.as_mut() {
+                    if let Some(target_address) = self.bin.symbol_addresses.get(&target_symbol)
+                        && let Some(b) = self.backtracer.as_mut() {
                             b.add_reference(bin_location, *target_address);
                         }
-                    }
                     let target = self.bin.get_symbol_and_name(&target_symbol);
                     self.process_reference(
                         bin_location,
@@ -653,11 +652,10 @@ impl<'obj, 'data> ObjectIndex<'obj, 'data> {
             .section_infos
             .get(section_index.0)
             .ok_or_else(|| anyhow!("Unnamed symbol has invalid section index"))?;
-        if let Some(first_symbol_info) = section_info.first_symbol.as_ref() {
-            if bin_symbols.contains_key(&first_symbol_info.symbol) {
+        if let Some(first_symbol_info) = section_info.first_symbol.as_ref()
+            && bin_symbols.contains_key(&first_symbol_info.symbol) {
                 return Ok(SymbolOrSection::Symbol(first_symbol_info.symbol.clone()));
             }
-        }
         Ok(SymbolOrSection::Section(section_index))
     }
 
@@ -752,8 +750,8 @@ impl BinInfo<'_> {
                 }
             }
         }
-        if !got_apis {
-            if let Some(symbol) = symbol_and_name.symbol.as_ref() {
+        if !got_apis
+            && let Some(symbol) = symbol_and_name.symbol.as_ref() {
                 let mut symbol_it = symbol.names()?;
                 while let Some((parts, name)) = symbol_it.next_name()? {
                     let apis = checker.apis_for_name_iterator(parts);
@@ -767,9 +765,8 @@ impl BinInfo<'_> {
                     }
                 }
             }
-        }
-        if let Some(symbol) = symbol_and_name.symbol.as_ref() {
-            if !got_apis {
+        if let Some(symbol) = symbol_and_name.symbol.as_ref()
+            && !got_apis {
                 // The need to call `to_heap` here is just to get past an annoying variance issue.
                 // Fortunately it doesn't seem to affect performance significantly, so probably the
                 // optimiser is able to get rid of the allocation.
@@ -777,7 +774,6 @@ impl BinInfo<'_> {
                     *x = true;
                 }
             }
-        }
         Ok(())
     }
 }

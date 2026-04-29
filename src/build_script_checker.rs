@@ -41,11 +41,10 @@ impl BuildScriptReport {
                     allow_build_instructions,
                 ));
             }
-            if let Some(rest) = line.strip_prefix("cargo:rustc-env=") {
-                if let Some((var_name, _value)) = rest.split_once('=') {
+            if let Some(rest) = line.strip_prefix("cargo:rustc-env=")
+                && let Some((var_name, _value)) = rest.split_once('=') {
                     report.env_vars.push(var_name.to_owned());
                 }
-            }
         }
         Ok(report)
     }

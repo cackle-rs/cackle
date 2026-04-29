@@ -148,13 +148,12 @@ impl<'input> DwarfScanner<'input> {
                     {
                         self.out.inlined_functions.push(inlined_function);
                     }
-                    if tag == gimli::DW_TAG_subprogram || tag == gimli::DW_TAG_variable {
-                        if let Some((symbol, debug_info)) =
+                    if (tag == gimli::DW_TAG_subprogram || tag == gimli::DW_TAG_variable)
+                        && let Some((symbol, debug_info)) =
                             symbol_scanner.get_debug_info(&unit_state)?
                         {
                             self.out.symbol_debug_info.insert(symbol, debug_info);
                         }
-                    }
                 } else if tag == gimli::DW_TAG_namespace || tag == gimli::DW_TAG_structure_type {
                     namespace = unit_state.scan_namespace(&mut entries, abbrev.attributes())?;
                 } else {
@@ -231,11 +230,10 @@ fn get_subprogram_namespaces(
                 }
             }
             _ => {
-                if abbrev.tag() == gimli::DW_TAG_subprogram {
-                    if let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
+                if abbrev.tag() == gimli::DW_TAG_subprogram
+                    && let Some(parent_namespace) = stack.last().and_then(|e| e.as_ref()) {
                         subprogram_namespaces.insert(unit_offset, parent_namespace.clone());
                     }
-                }
                 entries.skip_attributes(abbrev.attributes())?;
             }
         }
@@ -570,15 +568,13 @@ impl<'input> InlinedFunctionScanner<'input> {
                 if let Some(ranges_offset) = unit_state
                     .dwarf
                     .attr_ranges_offset(unit_state.unit, attr.value())?
-                {
-                    if let Some(first_range) = unit_state
+                    && let Some(first_range) = unit_state
                         .dwarf
                         .ranges(unit_state.unit, ranges_offset)?
                         .next()?
                     {
                         self.low_pc = Some(first_range.begin);
                     }
-                }
             }
             _ => (),
         }

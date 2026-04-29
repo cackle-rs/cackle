@@ -159,11 +159,10 @@ impl RustcSandboxInputs {
                 result.output_directories.push(rest.into());
             }
         }
-        if let Ok(socket_path) = std::env::var(crate::proxy::SOCKET_ENV) {
-            if let Some(dir) = Path::new(&socket_path).parent() {
+        if let Ok(socket_path) = std::env::var(crate::proxy::SOCKET_ENV)
+            && let Some(dir) = Path::new(&socket_path).parent() {
                 result.output_directories.push(dir.to_owned());
             }
-        }
         result
             .output_directories
             .retain(|d| !d.starts_with(&target_dir));
@@ -282,11 +281,10 @@ fn get_env(var_name: &str) -> Result<String> {
 
 fn build_directory(executable: &Path) -> Option<&Path> {
     let parent = executable.parent()?;
-    if parent.file_name().is_some_and(|n| n == "deps") {
-        if let Some(grandparent) = parent.parent() {
+    if parent.file_name().is_some_and(|n| n == "deps")
+        && let Some(grandparent) = parent.parent() {
             return Some(grandparent);
         }
-    }
     Some(parent)
 }
 

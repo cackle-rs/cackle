@@ -409,11 +409,10 @@ impl Cackle {
                     abort_recv,
                     self.abort_sender.clone(),
                     |request| {
-                        if self.args.save_requests {
-                            if let Err(error) = self.save_request(&request) {
+                        if self.args.save_requests
+                            && let Err(error) = self.save_request(&request) {
                                 println!("Failed to save request: {error}");
                             }
-                        }
                         self.new_request_handler(Some(request))
                     },
                 );

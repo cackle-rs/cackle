@@ -413,13 +413,12 @@ impl Checker {
     ) -> Result<()> {
         let api = &api_usage.api_name;
         let perm_sel = api_usage.perm_sel();
-        if let Some(crate_info) = self.crate_infos.get_mut(&perm_sel) {
-            if crate_info.allowed_apis.contains(api) {
+        if let Some(crate_info) = self.crate_infos.get_mut(&perm_sel)
+            && crate_info.allowed_apis.contains(api) {
                 crate_info.unused_allowed_apis.remove(api);
                 self.mark_parent_allow_apis_used(api, &perm_sel);
                 return Ok(());
             }
-        }
 
         // Partition all usages into on-tree and off-tree usages. On-tree are those usages that are
         // referencing a name from one of our dependencies. Off-tree are those that reference names
@@ -430,9 +429,9 @@ impl Checker {
         let all_deps = self.crate_index.name_prefix_to_pkg_id();
         if let Some(crate_deps) = self.crate_index.transitive_deps(&api_usage.pkg_id) {
             for usage in &api_usage.usages {
-                if let Some(first_name_part) = usage.to_name.parts.first() {
-                    if !crate_deps.contains(first_name_part) {
-                        if let Some(pkg_id) = all_deps.get(first_name_part) {
+                if let Some(first_name_part) = usage.to_name.parts.first()
+                    && !crate_deps.contains(first_name_part)
+                        && let Some(pkg_id) = all_deps.get(first_name_part) {
                             // If we detect an off-tree usage where the outer function/variable is
                             // defined by crate that also defined the restricted API that's being
                             // accessed, then we ignore it completely.
@@ -448,8 +447,6 @@ impl Checker {
                             }
                             continue;
                         }
-                    }
-                }
                 on_tree.push(usage.clone());
             }
         } else {
@@ -566,13 +563,12 @@ impl Checker {
                     continue;
                 }
             }
-            if let Some(api_config) = self.config.raw.apis.get(&p.api) {
-                if api_config.no_auto_detect.contains(&perm_sel.package_name)
-                    || api_config.include.contains(&p.api_path())
+            if let Some(api_config) = self.config.raw.apis.get(&p.api)
+                && (api_config.no_auto_detect.contains(&perm_sel.package_name)
+                    || api_config.include.contains(&p.api_path()))
                 {
                     continue;
                 }
-            }
             problems.push(Problem::PossibleExportedApi(p.clone()));
         }
     }
