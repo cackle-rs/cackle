@@ -162,7 +162,7 @@ impl<'data> Iterator for DemangleIterator<'data> {
                 let rest = &remaining[1..];
 
                 macro_rules! set_remaining {
-                    ($val:expr_2021) => {
+                    ($val:expr) => {
                         *remaining = $val
                     };
                 }
