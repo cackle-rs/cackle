@@ -79,7 +79,7 @@ impl<'input> DwarfScanner<'input> {
     fn index_units(&mut self, dwarf: &Dwarf<EndianSlice<'input, LittleEndian>>) -> Result<()> {
         let mut unit_headers = dwarf.units();
         while let Some(header) = unit_headers.next()? {
-            let Some(debug_offset) = header.offset().as_debug_info_offset() else {
+            let Some(debug_offset) = header.offset().to_debug_info_offset(&header) else {
                 continue;
             };
             let unit = dwarf.unit(header)?;

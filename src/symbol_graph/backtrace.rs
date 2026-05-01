@@ -2,7 +2,7 @@ use crate::checker::BinLocation;
 use crate::location::SourceLocation;
 use anyhow::Context;
 use anyhow::Result;
-use gimli::Dwarf;
+use gimli::DwarfSections;
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 use std::fmt::Display;
@@ -61,9 +61,9 @@ impl Backtracer {
                 self.bin_bytes.len()
             )
         })?;
-        let owned_dwarf = Dwarf::load(|id| super::load_section(&obj, id))?;
-        let dwarf =
-            owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
+        let owned_dwarf_sections = DwarfSections::load(|id| super::load_section(&obj, id))?;
+        let dwarf = owned_dwarf_sections
+            .borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
         let ctx = addr2line::Context::from_dwarf(dwarf)
             .context("Failed in addr2line during backtrace")?;
 

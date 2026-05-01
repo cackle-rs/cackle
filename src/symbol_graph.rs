@@ -31,7 +31,7 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use ar::Archive;
-use gimli::Dwarf;
+use gimli::DwarfSections;
 use gimli::EndianSlice;
 use gimli::LittleEndian;
 use log::debug;
@@ -162,8 +162,9 @@ fn scan_object_with_bin_bytes(
     let start = Instant::now();
     let obj = object::File::parse(bin_file_bytes.as_slice())
         .with_context(|| format!("Failed to parse {}", link_info.output_file.display()))?;
-    let owned_dwarf = Dwarf::load(|id| load_section(&obj, id))?;
-    let dwarf = owned_dwarf.borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
+    let owned_dwarf_sections = DwarfSections::load(|id| load_section(&obj, id))?;
+    let dwarf = owned_dwarf_sections
+        .borrow(|section| gimli::EndianSlice::new(section, gimli::LittleEndian));
     let start = checker.timings.add_timing(start, "Parse bin");
     let debug_artifacts =
         dwarf::DebugArtifacts::from_dwarf(&dwarf, checker).with_context(|| {
