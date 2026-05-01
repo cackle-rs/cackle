@@ -176,9 +176,6 @@ allow_unsafe = true
 [pkg.serde_json]
 allow_unsafe = true
 
-[pkg.static_assertions]
-allow_unsafe = true
-
 [pkg.parking_lot]
 allow_unsafe = true
 
@@ -204,9 +201,6 @@ allow_unsafe = true
 [pkg.stable_deref_trait]
 allow_unsafe = true
 
-[pkg.byteorder]
-allow_unsafe = true
-
 [pkg.winnow]
 allow_unsafe = true
 
@@ -228,9 +222,6 @@ allow_unsafe = true
 
 [pkg.toml_edit]
 allow_unsafe = true
-allow_apis = [
-    "fs",
-]
 
 [pkg.memchr]
 allow_unsafe = true
@@ -238,14 +229,14 @@ allow_unsafe = true
 [pkg.once_cell]
 allow_unsafe = true
 
-[pkg.lazy_static]
-allow_unsafe = true
-
 [pkg.addr2line]
 allow_unsafe = true
 
 [pkg.object]
 allow_unsafe = true
+build.allow_apis = [
+    "process",
+]
 
 [pkg.colored]
 allow_unsafe = true
@@ -316,9 +307,6 @@ allow_unsafe = true
 [pkg.lru]
 allow_unsafe = true
 
-[pkg.derive_more]
-allow_proc_macro = true
-
 [pkg.foldhash]
 allow_unsafe = true
 
@@ -353,3 +341,11 @@ allow_unsafe = true
 
 [pkg.errno]
 allow_unsafe = true
+
+[pkg.toml_parser]
+allow_unsafe = true
+
+[pkg.toml]
+allow_apis = [
+    "fs",
+]
