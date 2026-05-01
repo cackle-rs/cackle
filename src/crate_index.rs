@@ -9,6 +9,7 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use cargo_metadata::DependencyKind;
+use cargo_metadata::TargetKind;
 use cargo_metadata::camino::Utf8PathBuf;
 use cargo_metadata::semver::Version;
 use rustc_hash::FxHashMap;
@@ -97,10 +98,17 @@ impl CrateIndex {
             let mut has_build_script = false;
             let mut has_test = false;
             for target in &package.targets {
-                if target.kind.iter().any(|kind| kind == "proc-macro") {
+                if target
+                    .kind
+                    .iter()
+                    .any(|kind| kind == &TargetKind::ProcMacro)
+                {
                     is_proc_macro = true;
                 }
-                has_build_script |= target.kind.iter().any(|kind| kind == "custom-build");
+                has_build_script |= target
+                    .kind
+                    .iter()
+                    .any(|kind| kind == &TargetKind::CustomBuild);
                 has_test |= target.test;
             }
             if let Some(dir) = package.manifest_path.parent() {
