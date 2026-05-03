@@ -10,6 +10,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
         perm(
             &[
                 "std::fs",
+                "std::os::darwin::fs",
                 "std::os::linux::fs",
                 "std::os::unix::fs",
                 "std::os::unix::io",
