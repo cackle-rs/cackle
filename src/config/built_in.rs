@@ -45,6 +45,7 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
         perm(
             &[
                 "std::process",
+                "std::os::linux::process",
                 "std::unix::process",
                 "std::windows::process",
             ],
