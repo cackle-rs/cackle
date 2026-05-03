@@ -30,6 +30,7 @@ use ratatui::Frame;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
@@ -91,9 +92,9 @@ impl ProblemsUi {
 
     pub(super) fn render(&self, f: &mut Frame) {
         let chunks = if self.show_package_details {
-            split_vertical(f.size(), &[30, 50, 20])
+            split_vertical(f.area(), &[30, 50, 20])
         } else {
-            split_vertical(f.size(), &[35, 65])
+            split_vertical(f.area(), &[35, 65])
         };
         let (top, middle) = (chunks[0], chunks[1]);
 
@@ -687,11 +688,14 @@ impl ProblemsUi {
     }
 
     fn render_comment_input(&self, input: &tui_input::Input, f: &mut Frame) {
-        let area = centre_area(f.size(), 80, 3);
+        let area = centre_area(f.area(), 80, 3);
         let paragraph = Paragraph::new(input.value()).block(active_block().title("Set comment"));
         f.render_widget(Clear, area);
         f.render_widget(paragraph, area);
-        f.set_cursor(area.x + 1 + input.visual_cursor() as u16, area.y + 1);
+        f.set_cursor_position(Position::new(
+            area.x + 1 + input.visual_cursor() as u16,
+            area.y + 1,
+        ));
     }
 
     pub(crate) fn needs_cursor(&self) -> bool {
@@ -856,14 +860,12 @@ fn render_help(f: &mut Frame, mode: Option<&Mode>) {
         .into_iter()
         .map(|(key, action)| Row::new(vec![key, action]))
         .collect();
-    let area = centre_area(f.size(), width as u16, height as u16);
+    let area = centre_area(f.area(), width as u16, height as u16);
     let constraints = [
         Constraint::Length(left_col_width as u16),
         Constraint::Max(area.width),
     ];
-    let table = Table::new(rows)
-        .block(active_block().title(title))
-        .widths(&constraints);
+    let table = Table::new(rows, &constraints).block(active_block().title(title));
     f.render_widget(Clear, area);
     f.render_widget(table, area);
 }
@@ -890,7 +892,7 @@ fn render_message<S: AsRef<str>>(f: &mut Frame, title: Option<&str>, raw_lines: 
         .unwrap_or(0)
         + 2;
     let height = raw_lines.len() + 2;
-    let area = centre_area(f.size(), (width as u16).max(20), (height as u16).max(5));
+    let area = centre_area(f.area(), (width as u16).max(20), (height as u16).max(5));
     let mut block = active_block();
     if let Some(title) = title {
         block = block.title(title);

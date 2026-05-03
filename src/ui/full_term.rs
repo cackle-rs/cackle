@@ -187,7 +187,7 @@ fn render_build_progress(f: &mut Frame, area: Rect) {
 }
 
 fn render_error(f: &mut Frame, error: &anyhow::Error) {
-    let area = message_area(f.size());
+    let area = message_area(f.area());
     let block = Block::default()
         .title("Error")
         .borders(Borders::ALL)

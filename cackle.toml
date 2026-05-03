@@ -209,6 +209,8 @@ allow_unsafe = true
 allow_apis = [
     "fs",
     "process",
+    "rustix-other",
+    "termios",
 ]
 
 [pkg.flate2]
@@ -270,12 +272,6 @@ allow_apis = [
 
 [pkg.anstyle-query]
 allow_unsafe = true
-
-[pkg.paste]
-allow_proc_macro = true
-build.allow_apis = [
-    "process",
-]
 
 [pkg.tempfile]
 allow_apis = [
@@ -349,3 +345,54 @@ allow_unsafe = true
 allow_apis = [
     "fs",
 ]
+
+[pkg.document-features]
+allow_proc_macro = true
+allow_apis = [
+    "fs",
+]
+
+[pkg.wasm-bindgen-macro]
+allow_proc_macro = true
+
+[pkg.instability]
+allow_proc_macro = true
+
+[pkg.num-derive]
+allow_proc_macro = true
+
+[pkg.pest_derive]
+allow_proc_macro = true
+
+[pkg.wezterm-dynamic-derive]
+allow_proc_macro = true
+
+[pkg.phf_macros]
+allow_proc_macro = true
+
+[pkg.darling_macro]
+allow_proc_macro = true
+
+[pkg.derive_more-impl]
+allow_proc_macro = true
+
+[pkg.static_assertions]
+allow_unsafe = true
+
+[pkg.ryu]
+allow_unsafe = true
+
+[pkg.powerfmt]
+allow_unsafe = true
+
+[pkg.castaway]
+allow_unsafe = true
+
+[pkg.deranged]
+allow_unsafe = true
+
+[pkg.compact_str]
+allow_unsafe = true
+
+[pkg.time]
+allow_unsafe = true
