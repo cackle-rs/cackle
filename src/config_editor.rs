@@ -21,14 +21,14 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::path::Path;
 use toml_edit::Array;
-use toml_edit::Document;
+use toml_edit::DocumentMut;
 use toml_edit::Formatted;
 use toml_edit::Item;
 use toml_edit::Value;
 
 #[derive(Clone)]
 pub(crate) struct ConfigEditor {
-    document: Document,
+    document: DocumentMut,
 }
 
 pub(crate) trait Edit {
@@ -1119,9 +1119,9 @@ fn set_table_value(
 ) {
     table[key] = item;
     if let Some(comment) = &opts.comment
-        && let Some(decor) = table.key_decor_mut(key)
+        && let Some(mut key) = table.key_mut(key)
     {
-        *decor = toml_edit::Decor::new(format!("# {comment}\n"), " ");
+        *key.leaf_decor_mut() = toml_edit::Decor::new(format!("# {comment}\n"), " ");
     }
 }
 
