@@ -27,7 +27,12 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
     result.insert(
         ApiName::from("net"),
         perm(
-            &["std::net", "std::os::wasi::net", "std::os::windows::net"],
+            &[
+                "std::net",
+                "std::os::linux::net",
+                "std::os::wasi::net",
+                "std::os::windows::net",
+            ],
             &[],
         ),
     );
