@@ -189,6 +189,11 @@ impl<'data> Iterator for DemangleIterator<'data> {
                                     // Crate root in path
                                     return self.next();
                                 }
+                                b'S' => {
+                                    // Shim : symbol added by the compiler when an intermediate is needed
+                                    set_remaining!(&rest[1..]);
+                                    return self.next();
+                                }
                                 _ => {
                                     // Try to parse as identifier directly
                                     if let Some((ident, new_rest)) = parse_identifier(rest) {
