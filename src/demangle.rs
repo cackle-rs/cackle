@@ -119,10 +119,15 @@ fn parse_disambiguator(data: &str) -> Option<&str> {
 fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
     // Check for punycode (u followed by decimal length)
     if let Some(rest) = data.strip_prefix('u') {
-        if let Some((len, rest)) = parse_decimal(rest)
-            && let Some(rest) = rest.strip_prefix('_')
-        {
+        if let Some((len, rest)) = parse_decimal(rest) {
             // Punycode identifier - for simplicity, we'll just extract the raw bytes
+
+            // In the case where the bytes start with a number, an underscore is added to distinguish decimal-number and bytes
+            let rest = match rest.strip_prefix('_') {
+                Some(new_rest) => new_rest,
+                None => rest,
+            };
+
             if len as usize <= rest.len() {
                 let (ident, rest) = rest.split_at(len as usize);
                 return Some((ident, rest));
@@ -133,6 +138,13 @@ fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
 
     // Regular identifier: decimal length followed by that many bytes
     let (len, rest) = parse_decimal(data)?;
+    
+    // In the case where the bytes start with a number, an underscore is added to distinguish decimal-number and bytes
+    let rest = match rest.strip_prefix('_') {
+        Some(new_rest) => new_rest,
+        None => rest,
+    };
+
     if len as usize <= rest.len() {
         let (ident, rest) = rest.split_at(len as usize);
         Some((ident, rest))
@@ -797,5 +809,45 @@ mod tests {
         assert!(actual.contains(&"core".to_string()));
         assert!(actual.contains(&"ptr".to_string()));
         assert!(!actual.contains(&"::".to_string()));
+    }
+
+    // +----------------------------------------+
+    // | Tests on the parsing of the identifier |
+    // +----------------------------------------+
+
+    fn check_identifier(mangled: &str, expected: &str) {
+        if let Some((ident, _)) = parse_identifier(mangled) {
+            assert_eq!(ident, expected);
+        }
+        else {
+            panic!("Empty was returned during parsing");
+        }
+    }
+
+    #[test]
+    fn test_identifier_no_disambiguator(){
+        check_identifier("7mycrate", "mycrate")        
+    }
+
+    #[test]
+    fn test_identifier_with_disambiguator_(){
+        check_identifier("s15kBYyAo9fc_7mycrate", "mycrate")        
+    }
+
+    #[test]
+    fn test_identifier_with_punycode(){
+        // Original identifier is "gödel"
+        check_identifier("u8gdel_5qa", "gdel_5qa")        
+    }
+
+    #[test]
+    fn test_identifier_with_ambiguous_length(){
+        check_identifier("4_2zip", "2zip")        
+    }
+
+    #[test]
+    fn test_identifier_punnycode_with_ambiguous_length(){
+        // Original identifier is "ρυστ"        
+        check_identifier("u6_2xaedc", "2xaedc")        
     }
 }
