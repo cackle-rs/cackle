@@ -117,33 +117,14 @@ fn parse_disambiguator(data: &str) -> Option<&str> {
 }
 
 fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
-    // Check for punycode (u followed by decimal length)
-    if let Some(rest) = data.strip_prefix('u') {
-        if let Some((len, rest)) = parse_decimal(rest) {
-            // Punycode identifier - for simplicity, we'll just extract the raw bytes
+    // Remove the 'u' prefix if punnycode (no difference with regular case : we extract the bytes)
+    let rest = data.strip_prefix('u').unwrap_or(data);
 
-            // In the case where the bytes start with a number, an underscore is added to distinguish decimal-number and bytes
-            let rest = match rest.strip_prefix('_') {
-                Some(new_rest) => new_rest,
-                None => rest,
-            };
-
-            if len as usize <= rest.len() {
-                let (ident, rest) = rest.split_at(len as usize);
-                return Some((ident, rest));
-            }
-        }
-        return None;
-    }
-
-    // Regular identifier: decimal length followed by that many bytes
-    let (len, rest) = parse_decimal(data)?;
+    // Decimal length followed by that many bytes
+    let (len, rest) = parse_decimal(rest)?;
     
     // In the case where the bytes start with a number, an underscore is added to distinguish decimal-number and bytes
-    let rest = match rest.strip_prefix('_') {
-        Some(new_rest) => new_rest,
-        None => rest,
-    };
+    let rest = rest.strip_prefix('_').unwrap_or(rest);
 
     if len as usize <= rest.len() {
         let (ident, rest) = rest.split_at(len as usize);
