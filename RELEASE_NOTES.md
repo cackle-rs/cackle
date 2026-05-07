@@ -1,3 +1,6 @@
+# Version 0.9.1
+* Release release workflow
+
 # Version 0.9.0
 * Support for recent rustc versions that use V0 mangling
 * Clear RUSTC\_WRAPPER when running build scripts - fixes #16
