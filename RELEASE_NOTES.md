@@ -1,3 +1,13 @@
+# Version 0.9.0
+* Support for recent rustc versions that use V0 mangling
+* Clear RUSTC\_WRAPPER when running build scripts - fixes #16
+* Add --no-backtrace flag to attempt to control peak memory
+* Disable backtraces when the UI is disabled
+* Allow building selected packages with --package - fixes #22
+* Auto CLI mode (#34)
+* Fix handling of spaces in filenames
+* MSRV for building cackle is now 1.95.0
+
 # Version 0.8.0
 * Ignores cargo:rustc-check-cfg= build script directives.
 

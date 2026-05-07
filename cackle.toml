@@ -224,6 +224,9 @@ allow_unsafe = true
 
 [pkg.toml_edit]
 allow_unsafe = true
+allow_apis = [
+    "fs",
+]
 
 [pkg.memchr]
 allow_unsafe = true
@@ -308,6 +311,9 @@ allow_unsafe = true
 
 [pkg.getrandom]
 allow_unsafe = true
+build.allow_apis = [
+    "process",
+]
 
 [pkg.serde_core]
 allow_unsafe = true
@@ -396,3 +402,8 @@ allow_unsafe = true
 
 [pkg.time]
 allow_unsafe = true
+
+[pkg.paste]
+build.allow_apis = [
+    "process",
+]
