@@ -27,6 +27,8 @@ jobs:
       uses: actions/checkout@v6
 
     - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
 
     - name: Extract release notes
       shell: bash
