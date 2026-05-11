@@ -1279,6 +1279,28 @@ mod tests {
     }
 
     #[test]
+    fn fix_disallowed_build_instruction_with_link_search() {
+        // Issue #21: Another example from the issue
+        let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+            pkg_id: pkg_id("crab1"),
+            instruction: "cargo:rustc-link-search=native=/home/jayvdb/work/rosalind/target/cackle/build/libwebp-sys-2e794fb2fca1ac0c/out".to_owned(),
+        });
+        // First fix should be the most specific reasonable pattern
+        check(
+            "",
+            &problem,
+            0,
+            indoc! {r#"
+                [pkg.crab1]
+                build.allow_build_instructions = [
+                    "cargo:rustc-link-search=native=*",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
             pkg_id: pkg_id("crab1"),
