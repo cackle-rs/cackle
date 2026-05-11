@@ -1236,6 +1236,28 @@ mod tests {
     }
 
     #[test]
+    fn fix_disallowed_build_instruction_first_fix_should_use_wildcard() {
+        // Issue #21: The first suggested fix should not include user-specific paths
+        let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+            pkg_id: pkg_id("crab1"),
+            instruction: "cargo:rustc-env=SOME_VAR=/home/jayvdb/.cargo/registry/src/index.crates.io-6f17d22bba15001f/some-crate-1.0.0/vendor/include".to_owned(),
+        });
+        // First fix (index 0) should use a wildcard pattern, not the literal path
+        check(
+            "",
+            &problem,
+            0,
+            indoc! {r#"
+                [pkg.crab1]
+                build.allow_build_instructions = [
+                    "cargo:rustc-env=SOME_VAR=*",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
             pkg_id: pkg_id("crab1"),
