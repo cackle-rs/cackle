@@ -191,7 +191,7 @@ impl<'data> Iterator for DemangleIterator<'data> {
                                 }
                                 b'S' => {
                                     // Shim : symbol added by the compiler when an intermediate is needed
-                                    set_remaining!(&rest[1..]);
+                                    // Just skip it (one character)
                                     return self.next();
                                 }
                                 _ => {
