@@ -407,6 +407,9 @@ fn edits_for_build_instruction(
             perm_sel: PermSel::for_build_script(failure.pkg_id.name_str()),
             instruction: format!("{instruction}{suffix}"),
         }));
+        if instruction.is_empty() {
+            break;
+        }
         suffix = "*";
         let mut separators = "=-:";
         let mut last_separator = None;
