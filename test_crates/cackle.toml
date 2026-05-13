@@ -54,6 +54,7 @@ build.sandbox.allow_network = true
 from.test.allow_apis = [
     "unix_sockets",
 ]
+allow_extern = true
 
 [pkg.crab-2]
 allow_apis = [
@@ -68,6 +69,7 @@ build.allow_build_instructions = [
     "cargo:rustc-link-*"
 ]
 build.allow_unsafe = true
+allow_extern = true
 
 [pkg.crab-3]
 allow_unsafe = true
@@ -120,6 +122,7 @@ allow_apis = [
     "crab-1::fs",
     "env",
 ]
+allow_extern = true
 
 [pkg.crab-7]
 allow_unsafe = true
@@ -127,6 +130,7 @@ allow_apis = [
     "env",
     "fs",
 ]
+allow_extern = true
 
 [pkg.crab-8]
 allow_apis = [
@@ -159,6 +163,7 @@ build.allow_apis = [
 allow_build_instructions = [
     "cargo:rustc-link-*",
 ]
+allow_extern = true
 
 [pkg.crab-11]
 test.sandbox.kind = "Disabled"
