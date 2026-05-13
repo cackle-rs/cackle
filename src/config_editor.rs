@@ -380,12 +380,36 @@ fn edits_for_build_instruction(
 ) -> Vec<Box<dyn Edit>> {
     let mut out: Vec<Box<dyn Edit>> = Vec::new();
     let mut instruction = failure.instruction.as_str();
-    let mut suffix = "";
+    // Start with wildcard suffix to avoid suggesting user-specific paths (issue #21)
+    let mut suffix = "*";
+    let mut separators = "=-:";
+    let mut last_separator = None;
+
+    // Find the last separator to truncate the value portion
+    for (pos, ch) in instruction.char_indices() {
+        if separators.contains(ch) {
+            last_separator = Some(pos);
+            // After =, only permit = as a separator. i.e. ':' and '-' are only separators up to
+            // the first equals.
+            if ch == '=' {
+                separators = "="
+            }
+        }
+    }
+
+    // If there's a separator, start from there with wildcard
+    if let Some(last_separator) = last_separator {
+        instruction = &instruction[..last_separator + 1];
+    }
+
     loop {
         out.push(Box::new(AllowBuildInstruction {
             perm_sel: PermSel::for_build_script(failure.pkg_id.name_str()),
             instruction: format!("{instruction}{suffix}"),
         }));
+        if instruction.is_empty() {
+            break;
+        }
         suffix = "*";
         let mut separators = "=-:";
         let mut last_separator = None;
@@ -1236,15 +1260,60 @@ mod tests {
     }
 
     #[test]
+    fn fix_disallowed_build_instruction_first_fix_should_use_wildcard() {
+        // Issue #21: The first suggested fix should not include user-specific paths
+        let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+            pkg_id: pkg_id("crab1"),
+            instruction: "cargo:rustc-env=SOME_VAR=/home/jayvdb/.cargo/registry/src/index.crates.io-6f17d22bba15001f/some-crate-1.0.0/vendor/include".to_owned(),
+        });
+        // First fix (index 0) should use a wildcard pattern, not the literal path
+        check(
+            "",
+            &problem,
+            0,
+            indoc! {r#"
+                [pkg.crab1]
+                build.allow_build_instructions = [
+                    "cargo:rustc-env=SOME_VAR=*",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
+    fn fix_disallowed_build_instruction_with_link_search() {
+        // Issue #21: Another example from the issue
+        let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
+            pkg_id: pkg_id("crab1"),
+            instruction: "cargo:rustc-link-search=native=/home/jayvdb/work/rosalind/target/cackle/build/libwebp-sys-2e794fb2fca1ac0c/out".to_owned(),
+        });
+        // First fix should be the most specific reasonable pattern
+        check(
+            "",
+            &problem,
+            0,
+            indoc! {r#"
+                [pkg.crab1]
+                build.allow_build_instructions = [
+                    "cargo:rustc-link-search=native=*",
+                ]
+            "#,
+            },
+        );
+    }
+
+    #[test]
     fn fix_disallowed_build_instruction() {
         let problem = Problem::DisallowedBuildInstruction(DisallowedBuildInstruction {
             pkg_id: pkg_id("crab1"),
             instruction: "cargo:rustc-env=SOME_VAR=/home/some-path".to_owned(),
         });
+        // After fix for #21, first suggestion (index 0) uses wildcard pattern
         check(
             "",
             &problem,
-            1,
+            0,
             indoc! {r#"
                 [pkg.crab1]
                 build.allow_build_instructions = [
