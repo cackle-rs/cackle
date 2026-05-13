@@ -70,7 +70,6 @@ allow_proc_macro = true
 allow_unsafe = true
 
 [pkg.serde]
-allow_unsafe = true
 allow_apis = [
     "fs",
 ]
@@ -198,9 +197,6 @@ build.allow_apis = [
 [pkg.twox-hash]
 allow_unsafe = true
 
-[pkg.stable_deref_trait]
-allow_unsafe = true
-
 [pkg.winnow]
 allow_unsafe = true
 
@@ -222,16 +218,10 @@ allow_unsafe = true
 [pkg.ruzstd]
 allow_unsafe = true
 
-[pkg.toml_edit]
-allow_unsafe = true
-
 [pkg.memchr]
 allow_unsafe = true
 
 [pkg.once_cell]
-allow_unsafe = true
-
-[pkg.addr2line]
 allow_unsafe = true
 
 [pkg.object]
@@ -257,7 +247,6 @@ test.sandbox.make_writable = [
     "test_crates/custom_target_dir",
 ]
 test.sandbox.allow_network = true
-test.allow_unsafe = true
 
 [pkg.clap_builder]
 allow_apis = [
