@@ -1,6 +1,6 @@
-//! This module tokenises Rust code and looks for the unsafe keyword. This is done as an additional
-//! layer of defence in addition to use of the -Funsafe-code flag when compiling crates, since that
-//! flag unfortunately doesn't completely prevent use of unsafe.
+//! This module tokenises Rust code and looks for the extern blocks. This is done as an additional
+//! layer of defence in addition to use of the -Fmissing-unsafe-on-extern flag when compiling crates,
+//! since that flag only works on code before Rust edition 2024.
 
 use crate::location::SourceLocation;
 use anyhow::Context;
@@ -9,12 +9,12 @@ use ra_ap_rustc_lexer::Token;
 use ra_ap_rustc_lexer::TokenKind;
 use std::path::Path;
 
-/// Returns the locations of all unsafe usages found in `path`, except if followed by extern
+/// Returns the locations of all extern block usages found in `path`
 pub(crate) fn scan_path(path: &Path) -> Result<Vec<SourceLocation>> {
     let bytes =
         std::fs::read(path).with_context(|| format!("Failed to read `{}`", path.display()))?;
     let Ok(source) = std::str::from_utf8(&bytes) else {
-        // If the file isn't valid UTF-8 then we don't need to check it for the unsafe keyword,
+        // If the file isn't valid UTF-8 then we don't need to check it for the extern blocks,
         // since it can't be a source file that the rust compiler would accept.
         return Ok(Vec::new());
     };
@@ -84,7 +84,7 @@ fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
         } else {
             // current token is last token in file
             // this should never be valid code, but we flag it nevertheless to be safe
-            if token_text == "unsafe" {
+            if token_text == "extern" {
                 add_location(source, path, &mut locations, token_end_offset, token_length);
             }
             // as there should not be another loop iteration this should be useless
@@ -96,7 +96,7 @@ fn scan_string(source: &str, path: &Path) -> Vec<SourceLocation> {
 }
 
 fn check_tokens(first_token_text: &str, second_token_text: &str) -> bool {
-    first_token_text == "unsafe" && second_token_text != "extern"
+    first_token_text == "extern" && !matches!(second_token_text, "crate" | "]" | ")")
 }
 
 /// Returns the next relevant token according to the condition given and the offset to it
@@ -133,56 +133,4 @@ fn add_location(
         .unwrap_or(1);
     let line = 1.max(source[..token_end_offset].lines().count() as u32);
     locations.push(SourceLocation::new(path, line, Some(column)));
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::unsafe_checker::scan_path;
-    use crate::unsafe_checker::scan_string;
-    use std::ops::Not;
-    use std::path::Path;
-
-    fn unsafe_line_col(source: &str) -> Option<(u32, u32)> {
-        scan_string(source, Path::new("test.rs"))
-            .first()
-            .map(|usage| (usage.line(), usage.column().unwrap()))
-    }
-
-    #[test]
-    fn test_scan_string() {
-        assert_eq!(unsafe_line_col("unsafe fn foo() {}"), Some((1, 1)));
-        assert_eq!(
-            unsafe_line_col(r#"fn foo() -> &'static str {"unsafe"}"#),
-            None
-        );
-        assert_eq!(unsafe_line_col("fn foo() { unsafe {} }"), Some((1, 12)));
-        assert_eq!(
-            unsafe_line_col(indoc::indoc! {r#"
-                fn foo() {
-                    unsafe {}
-                }"#
-            }),
-            Some((2, 5))
-        );
-        assert_eq!(
-            unsafe_line_col("#[cfg(foo)]\nunsafe fn bar() {}"),
-            Some((2, 1))
-        );
-    }
-
-    #[track_caller]
-    fn has_unsafe_in_file(path: &str) -> bool {
-        let root = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set");
-        let root = Path::new(&root);
-        scan_path(&root.join(path)).unwrap().is_empty().not()
-    }
-
-    #[test]
-    fn test_scan_test_crates() {
-        assert!(has_unsafe_in_file("test_crates/crab-1/src/lib.rs"));
-        assert!(has_unsafe_in_file("test_crates/crab-1/src/impl1.rs"));
-        assert!(!has_unsafe_in_file("test_crates/crab-2/src/lib.rs"));
-        assert!(has_unsafe_in_file("test_crates/crab-3/src/lib.rs"));
-        assert!(has_unsafe_in_file("test_crates/crab-bin/src/main.rs"));
-    }
 }

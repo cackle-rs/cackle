@@ -147,6 +147,9 @@ pub(crate) struct PackageConfig {
     pub(crate) allow_unsafe: bool,
 
     #[serde(default)]
+    pub(crate) allow_extern: bool,
+
+    #[serde(default)]
     pub(crate) allow_build_instructions: Vec<String>,
 
     #[serde(default)]

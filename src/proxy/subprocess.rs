@@ -4,6 +4,7 @@
 use super::CONFIG_PATH_ENV;
 use super::ExitCode;
 use super::cackle_exe;
+use super::errors::get_disallowed_extern_locations;
 use super::errors::get_disallowed_unsafe_locations;
 use super::rpc::BinExecutionOutput;
 use super::rpc::RustcOutput;
@@ -14,6 +15,7 @@ use crate::config::permissions::PermSel;
 use crate::config::permissions::Permissions;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
+use crate::extern_checker;
 use crate::link_info::LinkInfo;
 use crate::location::SourceLocation;
 use crate::outcome::Outcome;
@@ -247,7 +249,10 @@ impl RustcRunner {
         let unsafe_permitted = config
             .permissions
             .unsafe_permitted_for_crate(&self.crate_sel);
-        let mut command = self.get_command(unsafe_permitted)?;
+        let extern_permitted = config
+            .permissions
+            .extern_permitted_for_crate(&self.crate_sel);
+        let mut command = self.get_command(unsafe_permitted, extern_permitted)?;
         let output = match crate::sandbox::for_rustc(
             &config.rustc,
             &RustcSandboxInputs::from_env(&self.crate_sel)?,
@@ -259,6 +264,7 @@ impl RustcRunner {
             None => command.output()?,
         };
         let mut unsafe_locations = Vec::new();
+        let mut extern_locations = Vec::new();
 
         if output.status.code() == Some(0) {
             let source_paths = crate::deps::source_files_from_rustc_args(std::env::args())?;
@@ -274,8 +280,22 @@ impl RustcRunner {
             if !unsafe_permitted {
                 unsafe_locations.extend(find_unsafe_in_sources(&source_paths)?);
             }
+            if !extern_permitted {
+                extern_locations.extend(find_extern_in_sources(&source_paths)?);
+            }
         } else {
             unsafe_locations.extend(get_disallowed_unsafe_locations(&output)?);
+            extern_locations.extend(get_disallowed_extern_locations(&output)?);
+        }
+        if !extern_locations.is_empty() {
+            extern_locations.sort();
+            extern_locations.dedup();
+            let response = rpc_client.crate_uses_extern(&self.crate_sel, extern_locations)?;
+            if response == Outcome::Continue {
+                return Ok(RustcRunStatus::Retry);
+            } else {
+                return Ok(RustcRunStatus::GiveUp);
+            }
         }
         if !unsafe_locations.is_empty() {
             unsafe_locations.sort();
@@ -291,7 +311,7 @@ impl RustcRunner {
         Ok(RustcRunStatus::Done(output))
     }
 
-    fn get_command(&self, unsafe_permitted: bool) -> Result<Command> {
+    fn get_command(&self, unsafe_permitted: bool, extern_permitted: bool) -> Result<Command> {
         let mut args = std::env::args().skip(2).peekable();
         let mut command = Command::new(rustc_path_from_env()?);
         let mut linker_arg = OsString::new();
@@ -336,15 +356,28 @@ impl RustcRunner {
         if !unsafe_permitted {
             command.arg("-Funsafe-code");
         }
+        // for code that is not yet ported to Rust 2024
+        if !extern_permitted {
+            command.arg("-Fmissing-unsafe-on-extern");
+        }
         Ok(command)
     }
 }
 
-/// Searches for the unsafe keyword in the specified paths.
+/// Searches for the unsafe keyword in the specified paths, unless followed by extern
 fn find_unsafe_in_sources(paths: &[PathBuf]) -> Result<Vec<SourceLocation>> {
     let mut locations = Vec::new();
     for file in paths {
         locations.append(&mut unsafe_checker::scan_path(file)?);
+    }
+    Ok(locations)
+}
+
+/// Searches for the extern blocks in the specified paths.
+fn find_extern_in_sources(paths: &[PathBuf]) -> Result<Vec<SourceLocation>> {
+    let mut locations = Vec::new();
+    for file in paths {
+        locations.append(&mut extern_checker::scan_path(file)?);
     }
     Ok(locations)
 }

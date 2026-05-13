@@ -121,6 +121,12 @@ impl Permissions {
             .is_some_and(|crate_config| crate_config.allow_unsafe)
     }
 
+    pub(crate) fn extern_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
+        self.packages
+            .get(&PermSel::for_non_build_output(crate_sel))
+            .is_some_and(|crate_config| crate_config.allow_extern)
+    }
+
     pub(crate) fn get(&self, perm_sel: &PermSel) -> Option<&PackageConfig> {
         self.packages.get(perm_sel)
     }
@@ -184,6 +190,7 @@ impl PackageConfig {
         );
         self.allow_proc_macro |= other.allow_proc_macro;
         self.allow_unsafe |= other.allow_unsafe;
+        self.allow_extern |= other.allow_extern;
         self.sandbox.inherit(&other.sandbox);
     }
 }

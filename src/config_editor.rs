@@ -111,6 +111,9 @@ pub(crate) fn fixes_for_problem(problem: &Problem, config: &Config) -> Vec<Box<d
         Problem::DisallowedUnsafe(failure) => edits.push(Box::new(AllowUnsafe {
             perm_sel: PermSel::for_non_build_output(&failure.crate_sel),
         })),
+        Problem::DisallowedExtern(failure) => edits.push(Box::new(AllowExtern {
+            perm_sel: PermSel::for_non_build_output(&failure.crate_sel),
+        })),
         Problem::UnusedAllowApi(failure) => edits.push(Box::new(RemoveUnusedAllowApis {
             unused: failure.clone(),
         })),
@@ -1086,6 +1089,10 @@ struct AllowUnsafe {
     perm_sel: PermSel,
 }
 
+struct AllowExtern {
+    perm_sel: PermSel,
+}
+
 impl Edit for AllowUnsafe {
     fn title(&self) -> String {
         format!("Allow package `{}` to use unsafe code", self.perm_sel)
@@ -1103,6 +1110,27 @@ impl Edit for AllowUnsafe {
     fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
         let table = editor.pkg_table(&self.perm_sel)?;
         set_table_value(table, "allow_unsafe", toml_edit::value(true), opts);
+        Ok(())
+    }
+}
+
+impl Edit for AllowExtern {
+    fn title(&self) -> String {
+        format!("Allow package `{}` to use extern code", self.perm_sel)
+    }
+
+    fn help(&self) -> Cow<'static, str> {
+        "Allow this crate to use extern code. With extern code, this crate could do just about \
+         anything, so this is like a bit like a wildcard permission. Crates that use extern \
+         sometimes export APIs that you might want to restrict - e.g. network or filesystem APIs. \
+         so you should have a think about if this crate falls into that category and if it does, \
+         add some API definitions for it."
+            .into()
+    }
+
+    fn apply(&self, editor: &mut ConfigEditor, opts: &EditOpts) -> Result<()> {
+        let table = editor.pkg_table(&self.perm_sel)?;
+        set_table_value(table, "allow_extern", toml_edit::value(true), opts);
         Ok(())
     }
 }

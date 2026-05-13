@@ -12,6 +12,7 @@ use crate::crate_index::CrateSel;
 use crate::crate_index::PackageId;
 use crate::names::SymbolOrDebugName;
 use crate::proxy::rpc::BinExecutionOutput;
+use crate::proxy::rpc::ExternUsage;
 use crate::proxy::rpc::UnsafeUsage;
 use crate::symbol::Symbol;
 use std::collections::BTreeMap;
@@ -32,6 +33,7 @@ pub(crate) enum Problem {
     MissingConfiguration(PathBuf),
     UsesBuildScript(PackageId),
     DisallowedUnsafe(UnsafeUsage),
+    DisallowedExtern(ExternUsage),
     IsProcMacro(PackageId),
     DisallowedApiUsage(ApiUsages),
     OffTreeApiUsage(OffTreeApiUsage),
@@ -175,7 +177,9 @@ impl Problem {
     fn should_send_retry_to_subprocess(&self) -> bool {
         matches!(
             self,
-            &Problem::ExecutionFailed(..) | &Problem::DisallowedUnsafe(..)
+            &Problem::ExecutionFailed(..)
+                | &Problem::DisallowedUnsafe(..)
+                | &Problem::DisallowedExtern(..)
         )
     }
 
@@ -213,6 +217,7 @@ impl Problem {
             Problem::MissingConfiguration(_) => None,
             Problem::UsesBuildScript(pkg_id) => Some(pkg_id),
             Problem::DisallowedUnsafe(d) => Some(d.crate_sel.pkg_id()),
+            Problem::DisallowedExtern(d) => Some(d.crate_sel.pkg_id()),
             Problem::IsProcMacro(pkg_id) => Some(pkg_id),
             Problem::DisallowedApiUsage(d) => Some(&d.pkg_id),
             Problem::OffTreeApiUsage(d) => Some(&d.usages.pkg_id),
@@ -245,6 +250,15 @@ impl Display for Problem {
             }
             Problem::DisallowedUnsafe(usage) => {
                 write!(f, "`{}` uses unsafe", usage.crate_sel)?;
+                if f.alternate() {
+                    writeln!(f)?;
+                    for location in &usage.locations {
+                        writeln!(f, "{location}")?;
+                    }
+                }
+            }
+            Problem::DisallowedExtern(usage) => {
+                write!(f, "`{}` uses extern", usage.crate_sel)?;
                 if f.alternate() {
                     writeln!(f)?;
                     for location in &usage.locations {
