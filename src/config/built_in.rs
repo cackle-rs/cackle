@@ -10,13 +10,17 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
         perm(
             &[
                 "std::fs",
+                // Darwin is not yet supported
+                //"std::os::darwin::fs",
                 "std::os::linux::fs",
                 "std::os::unix::fs",
                 "std::os::unix::io",
-                "std::os::wasi::fs",
-                "std::os::wasi::io",
-                "std::os::windows::fs",
-                "std::os::windows::io",
+                // WASI is not yet supported
+                //"std::os::wasi::fs",
+                //"std::os::wasi::io",
+                // Windows is not yet supported
+                //"std::os::windows::fs",
+                //"std::os::windows::io",
                 "std::path",
             ],
             &[],
@@ -26,7 +30,12 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
     result.insert(
         ApiName::from("net"),
         perm(
-            &["std::net", "std::os::wasi::net", "std::os::windows::net"],
+            &[
+                "std::net",
+                "std::os::linux::net",
+                // Windows is not yet supported
+                //"std::os::windows::net",
+            ],
             &[],
         ),
     );
@@ -39,8 +48,10 @@ pub(crate) fn get_built_ins() -> BTreeMap<ApiName, ApiConfig> {
         perm(
             &[
                 "std::process",
+                "std::os::linux::process",
                 "std::unix::process",
-                "std::windows::process",
+                // Windows is not yet supported
+                //"std::windows::process",
             ],
             &["std::process::abort", "std::process::exit"],
         ),
