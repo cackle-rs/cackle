@@ -54,6 +54,12 @@ pub(crate) const VERSIONS: &[Version] = &[
             Ok(())
         },
     },
+    Version {
+        number: 3,
+        change_notes: "Added field allow_extern",
+        apply_fn: |_| {},
+        update_fn: |_| Ok(()),
+    },
 ];
 
 impl Version {
