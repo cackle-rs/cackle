@@ -1,5 +1,5 @@
 [common]
-version = 3
+version = 2
 import_std = [
     "fs",
     "net",
@@ -82,7 +82,6 @@ allow_unsafe = true
 build.allow_apis = [
     "process",
 ]
-allow_extern = true
 
 [pkg.proc-macro2]
 allow_unsafe = true
@@ -103,7 +102,6 @@ allow_unsafe = true
 
 [pkg.linux-raw-sys]
 allow_unsafe = true
-allow_extern = true
 
 [pkg.hashbrown]
 allow_unsafe = true
@@ -131,7 +129,6 @@ allow_unsafe = true
 
 [pkg.signal-hook-registry]
 allow_unsafe = true
-allow_extern = true
 
 [pkg.syn]
 allow_unsafe = true
@@ -196,7 +193,6 @@ build.allow_apis = [
     "fs",
     "process",
 ]
-allow_extern = true
 
 [pkg.twox-hash]
 allow_unsafe = true
@@ -301,7 +297,6 @@ allow_unsafe = true
 
 [pkg.getrandom]
 allow_unsafe = true
-allow_extern = true
 
 [pkg.serde_core]
 allow_unsafe = true
@@ -331,7 +326,6 @@ allow_unsafe = true
 
 [pkg.errno]
 allow_unsafe = true
-allow_extern = true
 
 [pkg.toml_parser]
 allow_unsafe = true
@@ -391,4 +385,3 @@ allow_unsafe = true
 
 [pkg.time]
 allow_unsafe = true
-allow_extern = true
