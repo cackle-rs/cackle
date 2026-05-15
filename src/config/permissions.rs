@@ -2,6 +2,7 @@ use super::PackageConfig;
 use super::PackageName;
 use super::RawConfig;
 use super::SandboxConfig;
+use crate::config::CommonConfig;
 use crate::crate_index::CrateIndex;
 use crate::crate_index::CrateKind;
 use crate::crate_index::CrateSel;
@@ -121,10 +122,21 @@ impl Permissions {
             .is_some_and(|crate_config| crate_config.allow_unsafe)
     }
 
-    pub(crate) fn extern_permitted_for_crate(&self, crate_sel: &CrateSel) -> bool {
-        self.packages
-            .get(&PermSel::for_non_build_output(crate_sel))
-            .is_some_and(|crate_config| crate_config.allow_extern)
+    pub(crate) fn extern_permitted_for_crate(
+        &self,
+        crate_sel: &CrateSel,
+        common_config: &CommonConfig,
+    ) -> bool {
+        if common_config.version <= 2 {
+            // For compatibility treat extern permission as granted when unsafe is granted
+            self.packages
+                .get(&PermSel::for_non_build_output(crate_sel))
+                .is_some_and(|crate_config| crate_config.allow_unsafe)
+        } else {
+            self.packages
+                .get(&PermSel::for_non_build_output(crate_sel))
+                .is_some_and(|crate_config| crate_config.allow_extern)
+        }
     }
 
     pub(crate) fn get(&self, perm_sel: &PermSel) -> Option<&PackageConfig> {

@@ -9,6 +9,7 @@ use super::errors::get_disallowed_unsafe_locations;
 use super::rpc::BinExecutionOutput;
 use super::rpc::RustcOutput;
 use super::run_command;
+use crate::config::CommonConfig;
 use crate::config::Config;
 use crate::config::RustcConfig;
 use crate::config::permissions::PermSel;
@@ -251,7 +252,7 @@ impl RustcRunner {
             .unsafe_permitted_for_crate(&self.crate_sel);
         let extern_permitted = config
             .permissions
-            .extern_permitted_for_crate(&self.crate_sel);
+            .extern_permitted_for_crate(&self.crate_sel, &config.common);
         let mut command = self.get_command(unsafe_permitted, extern_permitted)?;
         let output = match crate::sandbox::for_rustc(
             &config.rustc,
@@ -421,6 +422,7 @@ fn default_linker() -> String {
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug)]
 pub(crate) struct SubprocessConfig {
+    common: CommonConfig,
     permissions: Permissions,
     rustc: RustcConfig,
 }
@@ -435,6 +437,7 @@ impl SubprocessConfig {
 
     pub(crate) fn from_full_config(full_config: &Config) -> Self {
         Self {
+            common: full_config.raw.common.clone(),
             permissions: full_config.permissions.clone(),
             rustc: full_config.raw.rustc.clone(),
         }
