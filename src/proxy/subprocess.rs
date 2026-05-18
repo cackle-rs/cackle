@@ -288,20 +288,20 @@ impl RustcRunner {
             unsafe_locations.extend(get_disallowed_unsafe_locations(&output)?);
             extern_locations.extend(get_disallowed_extern_locations(&output)?);
         }
-        if !extern_locations.is_empty() {
-            extern_locations.sort();
-            extern_locations.dedup();
-            let response = rpc_client.crate_uses_extern(&self.crate_sel, extern_locations)?;
+        if !unsafe_locations.is_empty() {
+            unsafe_locations.sort();
+            unsafe_locations.dedup();
+            let response = rpc_client.crate_uses_unsafe(&self.crate_sel, unsafe_locations)?;
             if response == Outcome::Continue {
                 return Ok(RustcRunStatus::Retry);
             } else {
                 return Ok(RustcRunStatus::GiveUp);
             }
         }
-        if !unsafe_locations.is_empty() {
-            unsafe_locations.sort();
-            unsafe_locations.dedup();
-            let response = rpc_client.crate_uses_unsafe(&self.crate_sel, unsafe_locations)?;
+        if !extern_locations.is_empty() {
+            extern_locations.sort();
+            extern_locations.dedup();
+            let response = rpc_client.crate_uses_extern(&self.crate_sel, extern_locations)?;
             if response == Outcome::Continue {
                 return Ok(RustcRunStatus::Retry);
             } else {
