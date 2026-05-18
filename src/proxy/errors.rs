@@ -35,7 +35,7 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
         };
         if message.level == "error"
             && message.code.code == "unsafe_code"
-            && !message.message.contains("extern")
+            // we must ignore here whether it is extern as we will require unsafe anyway
             && let Some(first_span) = message.spans.first()
         {
             let filename = Path::new(&first_span.file_name);
@@ -57,8 +57,8 @@ fn get_disallowed_extern_locations_str(output: &str) -> Vec<SourceLocation> {
             continue;
         };
         if message.level == "error"
-            && (message.code.code == "missing_unsafe_on_extern"
-                || (message.code.code == "unsafe_code" && message.message.contains("extern")))
+            && (message.code.code == "missing_unsafe_on_extern")
+            // we must ignore unsafe here even if it is extern as it was already flaged above
             && let Some(first_span) = message.spans.first()
         {
             let filename = Path::new(&first_span.file_name);
