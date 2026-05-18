@@ -816,7 +816,7 @@ fn render_help(f: &mut Frame, mode: Option<&Mode>) {
                 ("f", "Show available automatic fixes for this problem"),
                 (
                     "d",
-                    "Select and show details of each usage (API/unsafe only)",
+                    "Select and show details of each usage (API/unsafe/extern only)",
                 ),
                 ("t", "Show tree of crate dependencies to this crate"),
                 ("up", "Select previous problem"),
@@ -828,7 +828,7 @@ fn render_help(f: &mut Frame, mode: Option<&Mode>) {
             title = "Help for select-edit";
             keys.extend([
                 ("space/enter/f", "Apply this edit"),
-                ("d", "Jump to usage details (API/unsafe only)"),
+                ("d", "Jump to usage details (API/unsafe/extern only)"),
                 ("c", "Add comment to edit (supported edits only)"),
                 ("up", "Select previous edit"),
                 ("down", "Select next edit"),
@@ -946,6 +946,17 @@ fn usages_for_problem(
                 }));
             }
         }
+        Some((_, Problem::DisallowedExtern(extern_usage))) => {
+            for location in &extern_usage.locations {
+                let pkg_dir = crate_index
+                    .pkg_dir(extern_usage.crate_sel.pkg_id())
+                    .map(|pkg_dir| pkg_dir.to_owned());
+                usages_out.push(Box::new(ExternLocation {
+                    source_location: location.clone(),
+                    pkg_dir,
+                }));
+            }
+        }
         _ => (),
     }
     usages_out.sort_by_key(|u| u.source_location().clone());
@@ -953,6 +964,11 @@ fn usages_for_problem(
 }
 
 struct UnsafeLocation {
+    source_location: SourceLocation,
+    pkg_dir: Option<PathBuf>,
+}
+
+struct ExternLocation {
     source_location: SourceLocation,
     pkg_dir: Option<PathBuf>,
 }
@@ -1025,11 +1041,30 @@ impl DisplayUsage for UnsafeLocation {
     }
 }
 
+impl DisplayUsage for ExternLocation {
+    fn source_location(&self) -> &SourceLocation {
+        &self.source_location
+    }
+
+    fn list_display(&self) -> String {
+        // In the list, we'd prefer to display source filenames relative to the package root where
+        // possible. We already know the crate name and all the usage locations for a crate will
+        // generally be under the package root. For any that aren't, we fall back to using the full
+        // filename.
+        let filename = self
+            .pkg_dir
+            .as_ref()
+            .and_then(|pkg_dir| self.source_location.filename().strip_prefix(pkg_dir).ok())
+            .unwrap_or_else(|| self.source_location.filename());
+        format!("{}:{}", filename.display(), self.source_location.line())
+    }
+}
+
 fn problem_details(problem: &Problem) -> String {
     match problem {
-        Problem::DisallowedUnsafe(..) | Problem::DisallowedApiUsage(..) => {
-            "Press 'd' to see details of each usage".to_owned()
-        }
+        Problem::DisallowedUnsafe(..)
+        | Problem::DisallowedExtern(..)
+        | Problem::DisallowedApiUsage(..) => "Press 'd' to see details of each usage".to_owned(),
         Problem::MissingConfiguration(..) => {
             "This user interface can guide you through creating an initial cackle.toml. \
              Press 'h' at any time to see what keys are available."

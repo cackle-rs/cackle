@@ -25,7 +25,7 @@ impl RpcClient {
         RpcClient { socket_path }
     }
 
-    /// Advises the parent process that the specified crate uses unsafe.
+    /// Advises the parent process that the specified crate uses unsafe, except if followed by extern.
     pub(crate) fn crate_uses_unsafe(
         &self,
         crate_sel: &CrateSel,
@@ -33,6 +33,21 @@ impl RpcClient {
     ) -> Result<Outcome> {
         let mut ipc = self.connect()?;
         let request = Request::CrateUsesUnsafe(UnsafeUsage {
+            crate_sel: crate_sel.clone(),
+            locations,
+        });
+        write_to_stream(&request, &mut ipc)?;
+        read_from_stream(&mut ipc)
+    }
+
+    /// Advises the parent process that the specified crate uses extern.
+    pub(crate) fn crate_uses_extern(
+        &self,
+        crate_sel: &CrateSel,
+        locations: Vec<SourceLocation>,
+    ) -> Result<Outcome> {
+        let mut ipc = self.connect()?;
+        let request = Request::CrateUsesExtern(ExternUsage {
             crate_sel: crate_sel.clone(),
             locations,
         });
@@ -80,8 +95,10 @@ impl RpcClient {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub(crate) enum Request {
-    /// Advises that the specified crate failed to compile because it uses unsafe.
+    /// Advises that the specified crate failed to compile because it uses unsafe, except if followed by extern.
     CrateUsesUnsafe(UnsafeUsage),
+    /// Advises that the specified crate failed to compile because it uses extern.
+    CrateUsesExtern(ExternUsage),
     LinkerInvoked(LinkInfo),
     BinExecutionComplete(BinExecutionOutput),
     RustcStarted(CrateSel),
@@ -110,6 +127,12 @@ pub(crate) struct RustcOutput {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub(crate) struct UnsafeUsage {
+    pub(crate) crate_sel: CrateSel,
+    pub(crate) locations: Vec<SourceLocation>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
+pub(crate) struct ExternUsage {
     pub(crate) crate_sel: CrateSel,
     pub(crate) locations: Vec<SourceLocation>,
 }

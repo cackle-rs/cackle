@@ -91,6 +91,9 @@ impl Summary {
                         if pkg_config.allow_unsafe {
                             permissions.push(format!("unsafe{suffix}"));
                         }
+                        if pkg_config.allow_extern {
+                            permissions.push(format!("extern{suffix}"));
+                        }
                         for api in &pkg_config.allow_apis {
                             permissions.push(format!("{api}{suffix}"));
                         }

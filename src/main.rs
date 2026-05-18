@@ -18,6 +18,7 @@ mod crate_index;
 mod demangle;
 mod deps;
 pub(crate) mod events;
+mod extern_checker;
 pub(crate) mod fs;
 pub(crate) mod link_info;
 pub(crate) mod location;

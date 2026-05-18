@@ -6,7 +6,7 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
 
-/// Returns source locations for all errors related to use of unsafe code in `output`, which should
+/// Returns source locations for all errors related to use of unsafe code except extern in `output`, which should
 /// be the output from rustc with --error-format=json.
 pub(crate) fn get_disallowed_unsafe_locations(
     rustc_output: &std::process::Output,
@@ -14,6 +14,16 @@ pub(crate) fn get_disallowed_unsafe_locations(
     let stderr =
         std::str::from_utf8(&rustc_output.stderr).context("rustc emitted invalid UTF-8")?;
     Ok(get_disallowed_unsafe_locations_str(stderr))
+}
+
+/// Returns source locations for all errors related to use of exterb code in `output`, which should
+/// be the output from rustc with --error-format=json.
+pub(crate) fn get_disallowed_extern_locations(
+    rustc_output: &std::process::Output,
+) -> Result<Vec<SourceLocation>> {
+    let stderr =
+        std::str::from_utf8(&rustc_output.stderr).context("rustc emitted invalid UTF-8")?;
+    Ok(get_disallowed_extern_locations_str(stderr))
 }
 
 fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
@@ -25,6 +35,30 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
         };
         if message.level == "error"
             && message.code.code == "unsafe_code"
+            && !message.message.contains("extern")
+            && let Some(first_span) = message.spans.first()
+        {
+            let filename = Path::new(&first_span.file_name);
+            locations.push(SourceLocation::new(
+                std::fs::canonicalize(filename).unwrap_or_else(|_| filename.to_owned()),
+                first_span.line_start,
+                Some(first_span.column_start),
+            ));
+        }
+    }
+    locations
+}
+
+fn get_disallowed_extern_locations_str(output: &str) -> Vec<SourceLocation> {
+    let mut locations = Vec::new();
+    //let workspace_root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
+    for line in output.lines() {
+        let Ok(message) = serde_json::from_str::<Message>(line) else {
+            continue;
+        };
+        if message.level == "error"
+            && (message.code.code == "missing_unsafe_on_extern"
+                || (message.code.code == "unsafe_code" && message.message.contains("extern")))
             && let Some(first_span) = message.spans.first()
         {
             let filename = Path::new(&first_span.file_name);
@@ -40,6 +74,7 @@ fn get_disallowed_unsafe_locations_str(output: &str) -> Vec<SourceLocation> {
 
 #[derive(Deserialize, PartialEq, Eq, Debug)]
 struct Message {
+    message: String,
     code: Code,
     level: String,
     spans: Vec<SpannedMessage>,
@@ -69,6 +104,7 @@ mod tests {
     #[test]
     fn test_unsafe_error() {
         let json = r#"{
+            "message": "usage of an `unsafe` block",
             "code": {"code": "unsafe_code"},
             "level": "error",
             "spans": [
