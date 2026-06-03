@@ -640,7 +640,7 @@ mod tests {
                 exclude = [
                     "std::env::var",
                 ]
-                
+
                 [api.env]
                 include = ["std::env"]
 

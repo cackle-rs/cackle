@@ -122,7 +122,7 @@ fn parse_undisambiguated_identifier(data: &str) -> Option<(&str, &str)> {
 
     // Decimal length followed by that many bytes
     let (len, rest) = parse_decimal(rest)?;
-    
+
     // In the case where the bytes start with a number, an underscore is added to distinguish decimal-number and bytes
     let rest = rest.strip_prefix('_').unwrap_or(rest);
 
@@ -804,36 +804,35 @@ mod tests {
     fn check_identifier(mangled: &str, expected: &str) {
         if let Some((ident, _)) = parse_identifier(mangled) {
             assert_eq!(ident, expected);
-        }
-        else {
+        } else {
             panic!("Empty was returned during parsing");
         }
     }
 
     #[test]
-    fn test_identifier_no_disambiguator(){
-        check_identifier("7mycrate", "mycrate")        
+    fn test_identifier_no_disambiguator() {
+        check_identifier("7mycrate", "mycrate")
     }
 
     #[test]
-    fn test_identifier_with_disambiguator_(){
-        check_identifier("s15kBYyAo9fc_7mycrate", "mycrate")        
+    fn test_identifier_with_disambiguator_() {
+        check_identifier("s15kBYyAo9fc_7mycrate", "mycrate")
     }
 
     #[test]
-    fn test_identifier_with_punycode(){
+    fn test_identifier_with_punycode() {
         // Original identifier is "gödel"
-        check_identifier("u8gdel_5qa", "gdel_5qa")        
+        check_identifier("u8gdel_5qa", "gdel_5qa")
     }
 
     #[test]
-    fn test_identifier_with_ambiguous_length(){
-        check_identifier("4_2zip", "2zip")        
+    fn test_identifier_with_ambiguous_length() {
+        check_identifier("4_2zip", "2zip")
     }
 
     #[test]
-    fn test_identifier_punnycode_with_ambiguous_length(){
-        // Original identifier is "ρυστ"        
-        check_identifier("u6_2xaedc", "2xaedc")        
+    fn test_identifier_punnycode_with_ambiguous_length() {
+        // Original identifier is "ρυστ"
+        check_identifier("u6_2xaedc", "2xaedc")
     }
 }
