@@ -385,3 +385,9 @@ allow_unsafe = true
 
 [pkg.time]
 allow_unsafe = true
+
+[pkg.palette_derive]
+allow_proc_macro = true
+
+[pkg.critical-section]
+allow_unsafe = true
