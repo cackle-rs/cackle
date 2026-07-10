@@ -42,6 +42,7 @@ include = [
 
 [api.rustix-other]
 include = [
+    "anyhow",
     "rustix"
 ]
 exclude = [
@@ -237,6 +238,7 @@ allow_unsafe = true
 allow_apis = [
     "fs",
     "process",
+    "rustix-other",
 ]
 test.sandbox.bind_writable = [
     "test_crates/crab-bin/scratch",
@@ -265,6 +267,7 @@ allow_unsafe = true
 [pkg.tempfile]
 allow_apis = [
     "fs",
+    "rustix-other",
 ]
 
 [pkg.strum_macros]
@@ -314,9 +317,6 @@ build.allow_apis = [
 
 [pkg.simd-adler32]
 allow_unsafe = true
-
-[pkg.wit-bindgen-rust-macro]
-allow_proc_macro = true
 
 [pkg.zmij]
 build.allow_apis = [
