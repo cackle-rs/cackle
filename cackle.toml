@@ -288,6 +288,9 @@ allow_unsafe = true
 
 [pkg.tui-input]
 allow_unsafe = true
+allow_apis = [
+    "rustix-other",
+]
 
 [pkg.allocator-api2]
 allow_unsafe = true
