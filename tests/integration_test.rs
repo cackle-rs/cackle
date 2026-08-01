@@ -162,19 +162,9 @@ fn create_cargo_dir(dir: &Path) {
 }
 
 fn cackle_exe() -> PathBuf {
-    target_dir().join("cargo-acl")
+    PathBuf::from(env!("CARGO_BIN_EXE_cargo-acl"))
 }
 
 fn crate_root() -> PathBuf {
     PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
-}
-
-fn target_dir() -> PathBuf {
-    std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_owned()
 }
