@@ -78,10 +78,15 @@ pub(crate) struct CargoOutputWaiter {
     stdout_thread: Option<JoinHandle<()>>,
 }
 
-pub(crate) fn clean(dir: &Path, args: &Args, config: &CommonConfig) -> Result<()> {
+pub(crate) fn clean(
+    dir: &Path,
+    target_dir: &Path,
+    args: &Args,
+    config: &CommonConfig,
+) -> Result<()> {
     // For now, we always clean before we build. It might be possible to not do this, but we'd need
     // to carefully track changes to things we care about, like cackle.toml.
-    let mut command = cargo::command("clean", dir, args, config);
+    let mut command = cargo::command("clean", dir, target_dir, args, config);
     if args.should_capture_cargo_output() {
         command.stdout(Stdio::null());
         command.stderr(Stdio::null());
@@ -118,6 +123,7 @@ impl CargoRunner<'_> {
         let mut command = cargo::command(
             "build",
             self.manifest_dir,
+            self.target_dir,
             self.args,
             &self.config.raw.common,
         );

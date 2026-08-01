@@ -365,7 +365,12 @@ impl Cackle {
             checker.load_config()?;
 
             if should_run_cargo_clean {
-                proxy::clean(&self.root_path, &self.args, &checker.config.raw.common)?;
+                proxy::clean(
+                    &self.root_path,
+                    &self.target_dir,
+                    &self.args,
+                    &checker.config.raw.common,
+                )?;
             }
         }
         if !self.args.ignore_newer_config_versions {
