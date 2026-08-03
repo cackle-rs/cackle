@@ -26,11 +26,14 @@ pub(crate) fn profile_name<'a>(args: &'a Args, config: &'a CommonConfig) -> &'a 
 pub(crate) fn command(
     base_command: &str,
     dir: &Path,
+    target_dir: &Path,
     args: &Args,
     config: &CommonConfig,
 ) -> Command {
     let mut command = Command::new("cargo");
     command.current_dir(dir);
+    // We rely on build artifacts being in the target dir.
+    command.env("CARGO_BUILD_BUILD_DIR", target_dir);
     if args.colour.should_use_colour() {
         command.arg("--color=always");
     }
